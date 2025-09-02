@@ -49,10 +49,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Install project (editable) + test deps
-        run: uv pip install -e . --group=test
+      - name: Sync project + test deps
+        run: uv sync --group=test
 
       - name: Test package
         run: >-
-          uv run -m pytest -ra --cov --cov-report=xml --cov-report=term
+          uv run pytest -ra --cov --cov-report=xml --cov-report=term
           --durations=20

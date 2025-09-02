@@ -76,14 +76,14 @@ autodoc_member_order = "bysource"
 
 
 mathjax3_config = {
-    "tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]]},
     "tex": {
+        "inlineMath": [["$", "$"], ["\\(", "\\)"]],
         "macros": {
-            "bm": ["\\boldsymbol{#1}", 1],  # \usepackage{bm}, see mathjax/MathJax#1219
+            "bm": ["\\boldsymbol{#1}", 1],  # \usepackage{bm}
             "pyhf": r"\texttt{pyhf}",
             "Combine": r"\texttt{Combine}",
             "JAX": r"\texttt{JAX}",
             "PyTree": r"\texttt{PyTree}",
-        }
+        },
     },
 }

@@ -70,10 +70,12 @@ nitpick_ignore = [
     ("py:class", "_io.BytesIO"),
 ]
 
-always_document_param_types = True
+# docs/conf.py
+
+# Replace non-core plugin setting with Sphinx built-in
+autodoc_typehints = "description"
 
 autodoc_member_order = "bysource"
-
 
 mathjax3_config = {
     "tex": {

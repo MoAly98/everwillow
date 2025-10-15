@@ -12,4 +12,14 @@ __copyright__ = f"Copyright {datetime.datetime.now().year}, everwillow developer
 __credits__ = ["Mohamed Aly", "Peter Fackeldey", "Massimiliano Galli"]
 __contact__ = "https://github.com/MoAly98/everwillow"
 __version__ = "0.0.1"
-__all__: list[str] = []
+
+# Core API
+from everwillow.fitting import fit, fixed_param_fit, FitResult
+from everwillow.state import ParamState
+
+__all__ = [
+    "fit",
+    "fixed_param_fit",
+    "FitResult",
+    "ParamState",
+]

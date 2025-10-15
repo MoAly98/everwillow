@@ -11,6 +11,7 @@ from pyhs3.distributions import PoissonDist, GaussianDist, ProductDist
 from pyhs3.parameter_points import ParameterPoint, ParameterSet
 from pyhs3.metadata import Metadata
 from pyhs3.functions import GenericFunction
+from pyhs3.data import PointData
 from pytensor.compile import mode
 from pytensor.graph.basic import graph_inputs
 from pytensor.graph.fg import FunctionGraph
@@ -81,7 +82,7 @@ n_expected_func = GenericFunction(
     expression="mu * signal + bkg_norm * background_modified"
 )
 
-# Create parameter points
+# Create parameter points (only for actual parameters, not data or templates)
 params = ParameterSet(
     name="default_values",
     parameters=[
@@ -89,16 +90,16 @@ params = ParameterSet(
         ParameterPoint(name="mu", value=1.0),
         ParameterPoint(name="bkg_norm", value=1.0),
         ParameterPoint(name="nu", value=0.0),
-
-        # Fixed - observed data
-        ParameterPoint(name="n_obs", value=90),
-        ParameterPoint(name="a_beta", value=0.0),
-
-        # Fixed - templates
-        ParameterPoint(name="signal", value=5.0),
-        ParameterPoint(name="background", value=50.0),
     ]
 )
+
+# Create data (observed values and templates)
+data = [
+    PointData(name="n_obs", value=90.0),
+    PointData(name="a_beta", value=0.0),
+    PointData(name="signal", value=5.0),
+    PointData(name="background", value=50.0),
+]
 
 # Create workspace
 ws = pyhs3.Workspace(
@@ -106,6 +107,7 @@ ws = pyhs3.Workspace(
     distributions=[main_poisson, beta_constraint, combined],
     functions=[background_modified_func, n_expected_func],
     parameter_points=[params],
+    data=data,
 )
 
 # Get the model and transpile to JAX
@@ -118,8 +120,13 @@ rich.print(f"Model has {len(inputs)} input parameters: {[inp.name for inp in inp
 params_set = ws.parameter_points[0]
 all_params = {p.name: float(p.value) for p in params_set.parameters}
 
+# Extract data values separately (these are fixed and referenced by the model)
+data_values = {data_point.name: float(data_point.value) for data_point in ws.data}
+
 rich.print("\nInitial parameters:")
 rich.print(all_params)
+rich.print("\nData values:")
+rich.print(data_values)
 
 # ===== Step 3: Define NLL function for everwillow =====
 def nll_fn(params):
@@ -129,8 +136,11 @@ def nll_fn(params):
     This is what everwillow expects: a function that takes any pytree
     and returns a scalar NLL value.
     """
+    # Combine params with data values for the jaxified function
+    all_values = {**params, **data_values}
+
     # Call jaxified with parameters in correct order (as expected by pyhs3 graph)
-    param_values = [params[inp.name] for inp in inputs]
+    param_values = [all_values[inp.name] for inp in inputs]
     prob = jaxified(*param_values)[0]
 
     return -jnp.log(prob)
@@ -147,7 +157,7 @@ rich.print("="*60)
 result = ew.fit(
     nll_fn,
     all_params,
-    fixed=["n_obs", "a_beta", "signal", "background"],
+    fixed=[],  # No fixed parameters - all three (mu, bkg_norm, nu) are free
     max_steps=100
 )
 
@@ -166,7 +176,7 @@ result_fixed = ew.fixed_param_fit(
     {"mu": 1.5},
     nll_fn,
     all_params,
-    fixed=["n_obs", "a_beta", "signal", "background"]
+    fixed=[]  # No additional fixed parameters beyond mu
 )
 
 rich.print("\nFitted parameters:", result_fixed.params)

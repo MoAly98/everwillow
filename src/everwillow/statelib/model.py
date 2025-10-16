@@ -12,14 +12,9 @@ P = tp.ParamSpec("P")
 class Model:
     """Callable wrapper around a log-density function.
 
-    Args:
+    Attributes:
         logpdf: Callable that evaluates the log-density for a pytree-shaped
             parameter container.
-
-    Notes:
-        The model accepts either a `FlatState` or a raw pytree at call time. A
-        FlatState input is converted back to its original pytree structure
-        before invoking `logpdf`.
 
     Examples:
         >>> scale = 0.5
@@ -38,11 +33,12 @@ class Model:
         """Evaluate the wrapped log-density function.
 
         Args:
-            parameters: Either a `FlatState` produced by
-                `FlatState.from_pytree` or a raw pytree compatible with `logpdf`.
+            parameters: Either a ``FlatState`` produced by
+                ``FlatState.from_pytree`` or a raw pytree compatible with
+                ``logpdf``.
 
         Returns:
-            float: Log-density computed by `logpdf`.
+            Log-density computed by ``logpdf``.
         """
 
         if isinstance(parameters, FlatState):
@@ -56,15 +52,9 @@ class Model:
 class CombinedModel:
     """Sum multiple model evaluations over a shared merged state.
 
-    Args:
-        models: Ordered collection of `Model` instances that each consume one
-            segment of a merged `FlatState`.
-
-    Notes:
-        The caller is responsible for merging the individual states beforehand
-        (see `statelib.merge_states`). Each model receives its sub-state in
-        the same order in which the models are provided, and the combined
-        log-density is the arithmetic sum of the constituent results.
+    Attributes:
+        models: Ordered collection of ``Model`` instances that each consume one
+            segment of a merged ``FlatState``.
     """
 
     models: tuple[Model, ...]
@@ -74,6 +64,14 @@ class CombinedModel:
         cls,
         *models: Model,
     ) -> "CombinedModel":
+        """Create a ``CombinedModel`` from individual model components.
+
+        Args:
+            *models: Ordered sequence of models to combine.
+
+        Returns:
+            CombinedModel configured to sum the provided models.
+        """
         return cls(models=tuple(models))
 
     def __call__(
@@ -83,11 +81,11 @@ class CombinedModel:
         """Evaluate all models on the provided merged state.
 
         Args:
-            parameters: Merged `FlatState` containing one internal state per
+            parameters: Merged ``FlatState`` containing one internal state per
                 model in the construction order.
 
         Returns:
-            float: Sum of the log-density values returned by each model.
+            Sum of the log-density values returned by each model.
         """
 
         states = self._normalize_states(parameters)
@@ -102,14 +100,14 @@ class CombinedModel:
         """Split and validate the merged state before evaluation.
 
         Args:
-            parameters: Merged FlatState expected to contain one segment per
+            parameters: Merged ``FlatState`` expected to contain one segment per
                 model.
 
         Returns:
-            tuple[FlatState, ...]: Tuple of per-model FlatStates.
+            Tuple of per-model ``FlatState`` instances.
 
         Raises:
-            TypeError: If `parameters` is not a FlatState.
+            TypeError: If ``parameters`` is not a ``FlatState``.
             ValueError: If the number of segments does not match the number of models.
         """
         if not isinstance(parameters, FlatState):

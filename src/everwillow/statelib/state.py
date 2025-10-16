@@ -50,18 +50,24 @@ class SegmentRecord(tp.Generic[V]):
 
 
 class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
-    """Immutable mapping that tracks flattened pytree parameters and metadata.
+    """Immutable mapping of flattened pytree values with rich metadata.
 
-    The state keeps ordered per-segment records containing treedef metadata,
-    the keys owned by each segment, and the associated values. A read-only
-    `collections.ChainMap` overlays the segments so every value has a single
-    canonical location.
+    The state tracks ordered segment records that store the original treedef,
+    the owned keys, and the associated values. A read-only ``ChainMap`` provides
+    the public mapping interface while preserving per-segment isolation.
 
     Attributes:
         n_internal_states: Number of registered segments.
         raw_mapping: Read-only view over the flattened mapping.
-        treedefs: Mapping from segment identifiers to `jax.tree_util.PyTreeDef`.
+        treedefs: Mapping from segment identifiers to ``jax.tree_util.PyTreeDef``.
         own_keys: Mapping from segment identifiers to the keys they own.
+
+    Examples:
+        >>> state = FlatState.from_pytree({"a": 1, "b": 2})
+        >>> state[("a",)]
+        1
+        >>> state.to_pytree()
+        {'a': 1, 'b': 2}
     """
 
     __slots__ = ("_mapping", "_segments", "_segment_order", "_primary_segment")
@@ -159,11 +165,11 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             segment_id: Identifier of the desired sub-state.
 
         Returns:
-            FlatState[V]: New instance containing only entries owned by the
+            FlatState: New instance containing only entries owned by the
             requested segment.
 
         Raises:
-            KeyError: If the segment identifier is not present.
+            KeyError: If ``segment_id`` is not present in the state.
         """
         if segment_id not in self._segments:
             raise KeyError(f"Tag {segment_id!r} not found in FlatState")
@@ -178,6 +184,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return flat_state
 
     def copy(self) -> FlatState[V]:
+        """Return a shallow copy of the state preserving metadata."""
         new = object.__new__(type(self))
         new._primary_segment = self._primary_segment
         new._segment_order = list(self._segment_order)
@@ -215,6 +222,18 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return self._mapping == other._mapping
 
     def to_dict(self, sep: str | None = None) -> dict[tp.Any, V]:
+        """Convert the flattened mapping to a dictionary.
+
+        Args:
+            sep: Optional separator used to join tuple keys into strings. When
+                ``None`` the tuple keys are preserved.
+
+        Returns:
+            Dictionary representation of the flattened mapping.
+
+        Raises:
+            ValueError: If ``sep`` is not ``None`` or a string.
+        """
         if isinstance(sep, str):
             return {sep.join(map(str, k)): v for k, v in self._mapping.items()}
         if sep is None:
@@ -226,6 +245,14 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         cls: type[FlatState[V]],
         pytree: PyTree | FlatState[V],
     ) -> FlatState[V]:
+        """Create a ``FlatState`` from a pytree or another ``FlatState``.
+
+        Args:
+            pytree: Source pytree to flatten or an existing ``FlatState``.
+
+        Returns:
+            New ``FlatState`` instance containing the flattened values.
+        """
         if isinstance(pytree, FlatState):
             return pytree.copy()
         path_leaves, treedef = jtu.tree_flatten_with_path(pytree)
@@ -238,6 +265,20 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return cls._new(mapping_dict, treedef=treedef, key_paths=path_map)
 
     def to_pytree(self, treedef: jtu.PyTreeDef | None = None) -> PyTree:
+        """Rebuild the original pytree representation of the state.
+
+        Args:
+            treedef: Optional ``jax.tree_util.PyTreeDef`` that determines the
+                structure of the reconstructed tree. When omitted the primary
+                segment's treedef is used.
+
+        Returns:
+            Pytree containing the state values arranged according to
+            ``treedef``.
+
+        Raises:
+            ValueError: If a treedef cannot be determined for the conversion.
+        """
         if treedef is not None:
             return jtu.tree_unflatten(treedef, self._mapping.values())
         if self.n_internal_states != 1:
@@ -254,6 +295,12 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return jtu.tree_unflatten(treedef, self._mapping.values())
 
     def tree_flatten(self) -> TreeFlattenResult:
+        """Return the flattened values and accompanying metadata.
+
+        Returns:
+            Tuple containing the flattened values, metadata required for
+            ``tree_unflatten``, and the ordered keys.
+        """
         keys = tuple(self._mapping)
         treedefs_map = {
             segment_id: self._segments[segment_id].treedef
@@ -284,6 +331,19 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         metadata: TreeFlattenMetadata,
         children: Iterable[V],
     ) -> FlatState[V]:
+        """Reconstruct a ``FlatState`` from flatten metadata.
+
+        Args:
+            metadata: Metadata tuple produced by ``tree_flatten``.
+            children: Iterable of values matching the flattened order.
+
+        Returns:
+            Reconstructed ``FlatState``.
+
+        Raises:
+            ValueError: If the number of provided children does not match the
+                metadata.
+        """
         keys, primary_segment, treedefs, own_keys, key_paths = metadata
         value_list = list(children)
         if len(value_list) != len(keys):
@@ -323,7 +383,16 @@ def map_state(
     fn: tp.Callable[[KeyPath, V], V],
     state: FlatState[V],
 ) -> FlatState[V]:
-    """Apply a callable to every value in a FlatState."""
+    """Apply a callable to every value in a ``FlatState``.
+
+    Args:
+        fn: Callable receiving ``(key, value)`` pairs and returning the updated
+            value.
+        state: Source state to transform.
+
+    Returns:
+        New ``FlatState`` containing the transformed values.
+    """
     flat_state = state.copy()
     transformed_values = {p: fn(p, v) for p, v in state.items()}
     for segment_id in flat_state._segment_order:
@@ -336,7 +405,27 @@ def map_state(
 
 
 def merge_states(*states: FlatState[V]) -> FlatState[V]:
-    """Merge one or more FlatState objects into a combined state."""
+    """Merge one or more ``FlatState`` objects into a combined state.
+
+    Args:
+        *states: Ordered sequence of states to merge.
+
+    Returns:
+        ``FlatState`` whose segments equal the concatenation of the inputs.
+
+    Raises:
+        ValueError: If no states are provided or the merge would duplicate a
+            segment identifier.
+
+    Examples:
+        >>> s1 = FlatState.from_pytree({"a": 1})
+        >>> s2 = FlatState.from_pytree({"b": 2})
+        >>> merged = merge_states(s1, s2)
+        >>> merged.n_internal_states
+        2
+        >>> list(merged.raw_mapping.keys())
+        [('a',), ('b',)]
+    """
 
     def _imerge(this: FlatState[V], other: FlatState[V]) -> FlatState[V]:
         if not isinstance(other, FlatState):
@@ -366,7 +455,23 @@ def merge_states(*states: FlatState[V]) -> FlatState[V]:
 
 
 def split_state(state: FlatState[V]) -> tuple[FlatState[V], ...]:
-    """Split a merged FlatState back into its constituent states."""
+    """Split a merged ``FlatState`` back into its constituent states.
+
+    Args:
+        state: Combined state to split.
+
+    Returns:
+        Tuple whose elements correspond to the original segments.
+
+    Examples:
+        >>> merged = merge_states(
+        ...     FlatState.from_pytree({"a": 1}),
+        ...     FlatState.from_pytree({"b": 2}),
+        ... )
+        >>> first, second = split_state(merged)
+        >>> first.to_pytree(), second.to_pytree()
+        ({'a': 1}, {'b': 2})
+    """
     return tuple(state.get_state(segment_id) for segment_id in state._segment_order)
 
 
@@ -374,7 +479,24 @@ def update_state(
     state: FlatState[V],
     updates: Mapping[KeyPath, V],
 ) -> FlatState[V]:
-    """Return a new state with updates applied to existing keys."""
+    """Return a new state with updates applied to existing keys.
+
+    Args:
+        state: Original state to update.
+        updates: Mapping of key tuples to replacement values.
+
+    Returns:
+        ``FlatState`` copy reflecting the requested updates.
+
+    Raises:
+        KeyError: If any key in ``updates`` does not exist in ``state``.
+
+    Examples:
+        >>> state = FlatState.from_pytree({"a": 1, "b": 2})
+        >>> updated = update_state(state, {("a",): 42})
+        >>> updated.to_pytree()
+        {'a': 42, 'b': 2}
+    """
     new_state = state.copy()
     for raw_key, value in updates.items():
         key = ensure_public_key(raw_key)
@@ -396,7 +518,14 @@ def update_state(
 
 
 def _validate_state(state: FlatState[V]) -> None:
-    """Check that the FlatState metadata remains consistent."""
+    """Check that the ``FlatState`` metadata remains consistent.
+
+    Args:
+        state: State instance to validate.
+
+    Raises:
+        ValueError: If any structural invariants are violated.
+    """
     segment_ids = set(state._segments.keys())
     if set(state._segment_order) != segment_ids:
         raise ValueError(
@@ -448,6 +577,7 @@ def _validate_state(state: FlatState[V]) -> None:
 
 
 def _key_path_for(state: FlatState[V], key: KeyPath) -> KeyPath:
+    """Look up the stored JAX key path for a public key."""
     for segment_id in reversed(state._segment_order):
         record = state._segments[segment_id]
         if key in record.key_paths:
@@ -456,10 +586,12 @@ def _key_path_for(state: FlatState[V], key: KeyPath) -> KeyPath:
 
 
 def _gather_leaf_key_paths(state: FlatState[V]) -> dict[KeyPath, KeyPath]:
+    """Collect the internal key-path mapping for all leaves."""
     return {key: _key_path_for(state, key) for key in state._mapping.keys()}
 
 
 def _flatstate_flatten(state: FlatState[V]) -> tuple[list[V], TreeFlattenMetadata]:
+    """Wrapper used by JAX pytree registration."""
     values, metadata, _ = state.tree_flatten()
     return values, metadata
 
@@ -467,6 +599,7 @@ def _flatstate_flatten(state: FlatState[V]) -> tuple[list[V], TreeFlattenMetadat
 def _flatstate_flatten_with_keys(
     state: FlatState[V],
 ) -> tuple[list[tuple[KeyPath, V]], TreeFlattenMetadata]:
+    """Return flattened pairs of key paths and values for JAX."""
     values, metadata, keys = state.tree_flatten()
     key_lookup = _gather_leaf_key_paths(state)
     key_children = [
@@ -479,6 +612,7 @@ def _flatstate_unflatten(
     metadata: TreeFlattenMetadata,
     children: Iterable[V],
 ) -> FlatState[V]:
+    """Inverse of :func:`_flatstate_flatten` for JAX pytree support."""
     return FlatState.tree_unflatten(metadata, children)
 
 

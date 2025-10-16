@@ -14,13 +14,34 @@ ValueT = tp.TypeVar("ValueT")
 
 
 def _identity(key: KeyPath, value: ValueT) -> ValueT:
+    """Return the value unchanged.
+
+    Args:
+        key: Original key for the value (unused).
+        value: Value associated with ``key``.
+
+    Returns:
+        The unmodified ``value``.
+    """
     del key  # unused in default identity
     return value
 
 
 @dataclasses.dataclass(frozen=True)
 class Transform(tp.Generic[ValueT]):
-    """Describe how a single key/value pair should be rewritten."""
+    """Describe how a single key/value pair should be rewritten.
+
+    Attributes:
+        new_key: Replacement key tuple used in the transformed state.
+        value_fn: Callable that receives the original key and value and returns
+            the updated value to store under ``new_key``. Defaults to the
+            identity function.
+
+    Examples:
+        >>> transform = Transform(new_key=("scale",), value_fn=lambda _k, v: 2 * v)
+        >>> transform.new_key
+        ('scale',)
+    """
 
     new_key: KeyPath
     value_fn: tp.Callable[[KeyPath, ValueT], ValueT] = dataclasses.field(
@@ -32,7 +53,26 @@ def apply_transformations(
     state: FlatState[ValueT],
     transformations: tp.Mapping[KeyPath, Transform[ValueT]],
 ) -> FlatState[ValueT]:
-    """Rewrite selected entries in a FlatState."""
+    """Rewrite selected entries in a ``FlatState``.
+
+    Args:
+        state: Original state whose segments will be updated.
+        transformations: Mapping from existing keys to ``Transform`` objects.
+
+    Returns:
+        New ``FlatState`` instance containing the transformed key/value pairs.
+
+    Raises:
+        TypeError: If ``state`` is not a ``FlatState`` instance.
+        KeyError: If transformations reference keys not present in ``state``.
+        ValueError: If multiple transformations target the same destination key.
+
+    Examples:
+        >>> base = FlatState.from_pytree({"a": 1, "b": 2})
+        >>> transform = {("a",): Transform(new_key=("alpha",))}
+        >>> apply_transformations(base, transform).to_dict()
+        {('alpha',): 1, ('b',): 2}
+    """
     if not isinstance(state, FlatState):
         raise TypeError("'state' must be a FlatState instance")
     normalized_transformations: dict[KeyPath, Transform[ValueT]] = {

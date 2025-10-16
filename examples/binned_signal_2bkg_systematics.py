@@ -26,6 +26,10 @@ This showcases:
 
 from collections.abc import Callable
 
+import jax
+# JAX float64
+jax.config.update("jax_enable_x64", True)
+
 import evermore as evm
 import jax.numpy as jnp
 import pyhs3
@@ -42,6 +46,7 @@ from pytensor.graph.fg import FunctionGraph
 from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
+
 
 # ============================================================================
 # UTILITY: Convert PyTensor graph to JAX function
@@ -453,12 +458,13 @@ except Exception as e:
 rich.print("\nAttempt 2: Extract values, use wrapper with args API")
 
 # Extract numeric values from evermore's dynamic parameters
-initial_evm_values = {
-    "mu": evm_dynamic.mu.value,
-    "norm1": evm_dynamic.norm1.value,
-    "norm2": evm_dynamic.norm2.value,
-    "shape1": evm_dynamic.shape1.value,
-}
+# initial_evm_values = {
+#     "mu": evm_dynamic.mu.value,
+#     "norm1": evm_dynamic.norm1.value,
+#     "norm2": evm_dynamic.norm2.value,
+#     "shape1": evm_dynamic.shape1.value,
+# }
+initial_evm_values = evm.tree.pure(evm_dynamic)
 
 # Wrapper to reconstruct Params structure for evermore loss
 from model import Params  # noqa: E402
@@ -468,12 +474,7 @@ def evm_nll_wrapper(params_dict, static, hists, observation):
     """Reconstruct Params and call evermore loss."""
     dynamic = evm.tree.update_values(
         evm_dynamic,
-        values=Params(
-            mu=params_dict["mu"],
-            norm1=params_dict["norm1"],
-            norm2=params_dict["norm2"],
-            shape1=params_dict["shape1"],
-        ),
+        initial_evm_values,
     )
     return evm_loss(dynamic, static, hists, observation)
 

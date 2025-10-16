@@ -13,17 +13,16 @@ Key features demonstrated:
 """
 
 from collections.abc import Callable
-import rich
-import jax
-import jax.numpy as jnp
 
+import jax.numpy as jnp
 import pyhs3
-from pyhs3.typing.aliases import TensorVar
-from pyhs3.distributions import PoissonDist, GaussianDist, ProductDist
-from pyhs3.parameter_points import ParameterPoint, ParameterSet
-from pyhs3.metadata import Metadata
-from pyhs3.functions import GenericFunction
+import rich
 from pyhs3.data import PointData
+from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
+from pyhs3.functions import GenericFunction
+from pyhs3.metadata import Metadata
+from pyhs3.parameter_points import ParameterPoint, ParameterSet
+from pyhs3.typing.aliases import TensorVar
 from pytensor.compile import mode
 from pytensor.graph.basic import graph_inputs
 from pytensor.graph.fg import FunctionGraph
@@ -31,10 +30,10 @@ from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
 
-
 # ============================================================================
 # UTILITY: Convert PyTensor graph to JAX function
 # ============================================================================
+
 
 def get_jaxified_graph(
     model: pyhs3.Model,
@@ -79,37 +78,35 @@ metadata = Metadata(hs3_version="0.2")
 # Main Poisson distribution for observed counts
 main_poisson = PoissonDist(
     name="main_poisson",
-    x="n_obs",              # Observed counts
-    mean="n_expected"       # Expected counts (computed from function)
+    x="n_obs",  # Observed counts
+    mean="n_expected",  # Expected counts (computed from function)
 )
 
 # Gaussian constraint on nuisance parameter (auxiliary measurement)
 beta_constraint = GaussianDist(
     name="beta_constraint",
-    x="a_beta",             # Auxiliary observable
-    mean="nu",              # Nuisance parameter
-    sigma=1.0               # Constraint width
+    x="a_beta",  # Auxiliary observable
+    mean="nu",  # Nuisance parameter
+    sigma=1.0,  # Constraint width
 )
 
 # Combined likelihood = main × constraint
 combined = ProductDist(
-    type="product_dist",
-    name="model",
-    factors=["main_poisson", "beta_constraint"]
+    type="product_dist", name="model", factors=["main_poisson", "beta_constraint"]
 )
 
 # Background with uncertainty: background * (1 + nu)
 background_modified_func = GenericFunction(
     type="generic_function",
     name="background_modified",
-    expression="background * (1 + nu)"
+    expression="background * (1 + nu)",
 )
 
 # Expected counts: signal contribution + background contribution
 n_expected_func = GenericFunction(
     type="generic_function",
     name="n_expected",
-    expression="mu * signal + bkg_norm * background_modified"
+    expression="mu * signal + bkg_norm * background_modified",
 )
 
 # Define parameters (physics parameters to fit)
@@ -117,18 +114,18 @@ params = ParameterSet(
     name="default_values",
     parameters=[
         # Free parameters (will vary during fit)
-        ParameterPoint(name="mu", value=1.0),           # Signal strength
-        ParameterPoint(name="bkg_norm", value=1.0),     # Background norm factor
-        ParameterPoint(name="nu", value=0.0),           # Nuisance parameter
-    ]
+        ParameterPoint(name="mu", value=1.0),  # Signal strength
+        ParameterPoint(name="bkg_norm", value=1.0),  # Background norm factor
+        ParameterPoint(name="nu", value=0.0),  # Nuisance parameter
+    ],
 )
 
 # Define data (observed values and templates - these stay fixed)
 data = [
-    PointData(name="n_obs", value=90.0),        # Main observable
-    PointData(name="a_beta", value=0.0),        # Auxiliary measurement
-    PointData(name="signal", value=5.0),        # Signal template
-    PointData(name="background", value=50.0),   # Background template
+    PointData(name="n_obs", value=90.0),  # Main observable
+    PointData(name="a_beta", value=0.0),  # Auxiliary measurement
+    PointData(name="signal", value=5.0),  # Signal template
+    PointData(name="background", value=50.0),  # Background template
 ]
 
 # Create workspace combining all components
@@ -172,6 +169,7 @@ rich.print(data_values)
 # STEP 4: Define NLL function for everwillow
 # ============================================================================
 
+
 def nll_fn(params):
     """Negative log-likelihood function for everwillow.
 
@@ -210,8 +208,8 @@ rich.print("=" * 60)
 result = ew.fit(
     nll_fn,
     all_params,
-    fixed=[],           # No fixed parameters - all three are free
-    max_steps=100
+    fixed=[],  # No fixed parameters - all three are free
+    max_steps=100,
 )
 
 rich.print("\nFitted parameters:", result.params)
@@ -230,10 +228,10 @@ rich.print("Test 2: Fixed parameter fit (mu=1.5)")
 rich.print("=" * 60)
 
 result_fixed = ew.fixed_param_fit(
-    {"mu": 1.5},        # Fix mu to this value
+    {"mu": 1.5},  # Fix mu to this value
     nll_fn,
     all_params,
-    fixed=[]            # No additional fixed parameters beyond mu
+    fixed=[],  # No additional fixed parameters beyond mu
 )
 
 rich.print("\nFitted parameters:", result_fixed.params)

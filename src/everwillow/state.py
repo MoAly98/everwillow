@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import optree
 import typing as tp
 from collections.abc import Mapping
 
+import optree
 
 K = tp.TypeVar("K", bound=tuple)
 V = tp.TypeVar("V")
@@ -25,6 +25,7 @@ class ParamState(Mapping[K, V]):
     Wraps a parameter pytree and provides utilities for partitioning (free/fixed),
     merging, and other inference operations.
     """
+
     __slots__ = ("_mapping", "_treedef")
 
     TREE_PATH_ENTRY_TYPE = optree.MappingEntry
@@ -82,10 +83,9 @@ class ParamState(Mapping[K, V]):
         """Convert to dict, optionally with joined keys."""
         if isinstance(sep, str):
             return {sep.join(map(str, k)): v for k, v in self._mapping.items()}
-        elif sep is None:
+        if sep is None:
             return {k: v for k, v in self._mapping.items()}
-        else:
-            raise ValueError("sep must be a string or None")
+        raise ValueError("sep must be a string or None")
 
     @classmethod
     def from_pytree(cls, pytree: PyTree):
@@ -119,7 +119,9 @@ class ParamState(Mapping[K, V]):
         return cls._new(dict(zip(keys, children, strict=True)), treedef=treedef)
 
 
-def partition_state(state: ParamState, fixed_keys: set[K]) -> tuple[ParamState, ParamState, PyTreeDef]:
+def partition_state(
+    state: ParamState, fixed_keys: set[K]
+) -> tuple[ParamState, ParamState, PyTreeDef]:
     """
     Partition state into free and fixed parameters.
 

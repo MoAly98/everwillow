@@ -17,25 +17,25 @@ This showcases:
 """
 
 from collections.abc import Callable
-import rich
 
+import jax
+import jax.numpy as jnp
 import pyhs3
-from pyhs3.typing.aliases import TensorVar
-from pyhs3.distributions import PoissonDist, GaussianDist, ProductDist
-from pyhs3.parameter_points import ParameterPoint, ParameterSet
-from pyhs3.metadata import Metadata
+import rich
+from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
 from pyhs3.functions import GenericFunction
+from pyhs3.metadata import Metadata
+from pyhs3.parameter_points import ParameterPoint, ParameterSet
+from pyhs3.typing.aliases import TensorVar
 from pytensor.compile import mode
 from pytensor.graph.basic import graph_inputs
 from pytensor.graph.fg import FunctionGraph
 from pytensor.link.jax.dispatch import jax_funcify
-import jax
-import jax.numpy as jnp
-
 
 # ============================================================================
 # UTILITY: Convert PyTensor graph to JAX function
 # ============================================================================
+
 
 def get_jaxified_graph(
     model: pyhs3.Model,
@@ -76,23 +76,23 @@ metadata = Metadata(hs3_version="0.2")
 # Main Poisson distribution for observed counts
 main_poisson = PoissonDist(
     name="main_poisson",
-    x="n_obs",              # Observed counts
-    mean="n_expected"       # Expected counts (computed from function)
+    x="n_obs",  # Observed counts
+    mean="n_expected",  # Expected counts (computed from function)
 )
 
 # Gaussian constraint on nuisance parameter (auxiliary measurement)
 beta_constraint = GaussianDist(
     name="beta_constraint",
-    x="a_beta",             # Auxiliary observable
-    mean="nu",              # Nuisance parameter
-    sigma=1.0               # Constraint width
+    x="a_beta",  # Auxiliary observable
+    mean="nu",  # Nuisance parameter
+    sigma=1.0,  # Constraint width
 )
 
 # Combined likelihood = main × constraint
 config = {
     "type": "product_dist",
     "name": "model",
-    "factors": ["main_poisson", "beta_constraint"]
+    "factors": ["main_poisson", "beta_constraint"],
 }
 combined = ProductDist(**config)
 
@@ -105,7 +105,7 @@ combined = ProductDist(**config)
 background_modified_config = {
     "type": "generic_function",
     "name": "background_modified",
-    "expression": "background * (1 + nu)"
+    "expression": "background * (1 + nu)",
 }
 background_modified_func = GenericFunction(**background_modified_config)
 
@@ -113,7 +113,7 @@ background_modified_func = GenericFunction(**background_modified_config)
 n_expected_config = {
     "type": "generic_function",
     "name": "n_expected",
-    "expression": "mu * signal + bkg_norm * background_modified"
+    "expression": "mu * signal + bkg_norm * background_modified",
 }
 n_expected_func = GenericFunction(**n_expected_config)
 
@@ -127,18 +127,16 @@ params = ParameterSet(
     name="default_values",
     parameters=[
         # === Free parameters (will vary during fit) ===
-        ParameterPoint(name="mu", value=1.0),           # Signal strength
-        ParameterPoint(name="bkg_norm", value=1.0),     # Background norm factor
-        ParameterPoint(name="nu", value=0.0),           # Nuisance parameter
-
+        ParameterPoint(name="mu", value=1.0),  # Signal strength
+        ParameterPoint(name="bkg_norm", value=1.0),  # Background norm factor
+        ParameterPoint(name="nu", value=0.0),  # Nuisance parameter
         # === Fixed - observed data ===
-        ParameterPoint(name="n_obs", value=90),         # Main observable
-        ParameterPoint(name="a_beta", value=0.0),       # Auxiliary measurement
-
+        ParameterPoint(name="n_obs", value=90),  # Main observable
+        ParameterPoint(name="a_beta", value=0.0),  # Auxiliary measurement
         # === Fixed - templates ===
-        ParameterPoint(name="signal", value=5.0),       # Signal template
+        ParameterPoint(name="signal", value=5.0),  # Signal template
         ParameterPoint(name="background", value=50.0),  # Background template
-    ]
+    ],
 )
 
 # Create workspace combining all components
@@ -195,6 +193,7 @@ rich.print(f"Input parameter types: {[type(inp) for inp in inputs]}")
 # STEP 6: Define negative log-likelihood function
 # ============================================================================
 
+
 def neg_loglikelihood(free_params, fixed_params):
     """Negative log-likelihood function.
 
@@ -233,10 +232,7 @@ print("=" * 60)
 
 solver = optx.BFGS(rtol=1e-5, atol=1e-5)
 solution = optx.minimise(
-    neg_loglikelihood,
-    solver,
-    y0=init_free_params,
-    args=fixed_params
+    neg_loglikelihood, solver, y0=init_free_params, args=fixed_params
 )
 
 # Display results

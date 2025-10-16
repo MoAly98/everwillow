@@ -8,7 +8,8 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import optimistix as optx
 
-from everwillow.state import ParamState, partition_state, merge_states, update_state
+from everwillow.state import ParamState, partition_state, update_state
+
 
 @dataclass(frozen=True)
 class FitResult:
@@ -21,6 +22,7 @@ class FitResult:
         success: Whether optimization converged
         solver_result: Raw solver result (optional)
     """
+
     params: tp.Any  # pytree
     nll: float
     success: bool
@@ -28,11 +30,13 @@ class FitResult:
 
 
 def fit(
-    nll_fn: tp.Callable[[tp.Any], float],
+    nll_fn: tp.Callable[..., float],
     params: tp.Any,  # pytree
     fixed: list[str] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    **solver_kwargs
+    args: tuple = (),
+    kwargs: dict | None = None,
+    **solver_kwargs,
 ) -> FitResult:
     """
     Unconditional maximum likelihood fit.
@@ -41,20 +45,29 @@ def fit(
     except those specified as fixed.
 
     Args:
-        nll_fn: Negative log-likelihood function that takes parameter pytree
+        nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
+                followed by any additional positional/keyword arguments.
         params: Initial parameter values (pytree, e.g. dict, nested dict, etc.)
         fixed: List of parameter names to hold fixed during fit
         solver: Optimistix solver (default: BFGS)
+        args: Additional positional arguments to pass to nll_fn after params
+        kwargs: Additional keyword arguments to pass to nll_fn
         **solver_kwargs: Additional kwargs for solver
 
     Returns:
         FitResult with fitted parameters and diagnostics
 
-    Example:
+    Examples:
+        >>> # Simple case: nll_fn takes only params
         >>> def my_nll(params):
         ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> result = fit(my_nll, {"mu": 0.0, "sigma": 0.5, "data": 100}, fixed=["data"])
+        >>> result = fit(my_nll, {"mu": 0.0, "sigma": 0.5})
         >>> result.params["mu"]  # Should be close to 2.0
+
+        >>> # With additional arguments
+        >>> def my_nll(params, data, templates, *, config):
+        ...     return compute_loss(params, data, templates, config)
+        >>> result = fit(my_nll, initial_params, args=(data, templates), kwargs={"config": cfg})
     """
     # Convert to ParamState for manipulation
     param_state = ParamState.from_pytree(params)
@@ -76,8 +89,12 @@ def fit(
     original_keys = list(param_state.keys())
     free_keys = list(free_state.keys())
 
+    # Handle kwargs default
+    if kwargs is None:
+        kwargs = {}
+
     # Wrap nll to only take free parameters (as flat array)
-    def wrapped_nll(free_values, args):
+    def wrapped_nll(free_values, _args):
         # Reconstruct free_state from flat array
         free_mapping = dict(zip(free_keys, free_values, strict=True))
         free_state_updated = ParamState._new(free_mapping)
@@ -96,7 +113,8 @@ def fit(
         # Convert to pytree for user's nll_fn
         full_pytree = full_state.to_pytree()
 
-        return nll_fn(full_pytree)
+        # Call user's nll_fn with params + additional args/kwargs
+        return nll_fn(full_pytree, *args, **kwargs)
 
     # Set up solver
     if solver is None:
@@ -106,12 +124,7 @@ def fit(
     y0 = jnp.array([free_state[k] for k in free_keys])
 
     # Minimize
-    solution = optx.minimise(
-        wrapped_nll,
-        solver,
-        y0=y0,
-        **solver_kwargs
-    )
+    solution = optx.minimise(wrapped_nll, solver, y0=y0, **solver_kwargs)
 
     # Reconstruct fitted parameters in original order
     fitted_free_mapping = dict(zip(free_keys, solution.value, strict=True))
@@ -135,17 +148,19 @@ def fit(
         params=fitted_pytree,
         nll=float(final_nll),
         success=True,  # TODO: Check convergence
-        solver_result=solution
+        solver_result=solution,
     )
 
 
 def fixed_param_fit(
     param_values: dict[str, float],
-    nll_fn: tp.Callable[[tp.Any], float],
+    nll_fn: tp.Callable[..., float],
     params: tp.Any,  # pytree
     fixed: list[str] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    **solver_kwargs
+    args: tuple = (),
+    kwargs: dict | None = None,
+    **solver_kwargs,
 ) -> FitResult:
     """
     Maximum likelihood fit with specific parameters fixed to given values.
@@ -155,21 +170,31 @@ def fixed_param_fit(
 
     Args:
         param_values: Dict of {param_name: value} to fix
-        nll_fn: Negative log-likelihood function
+        nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
+                followed by any additional positional/keyword arguments.
         params: Initial parameter values (pytree)
         fixed: Additional parameters to hold fixed (beyond param_values)
         solver: Optimistix solver (default: BFGS)
+        args: Additional positional arguments to pass to nll_fn after params
+        kwargs: Additional keyword arguments to pass to nll_fn
         **solver_kwargs: Additional kwargs for solver
 
     Returns:
         FitResult with fitted parameters
 
-    Example:
+    Examples:
+        >>> # Simple case
         >>> def my_nll(params):
         ...     return (params["mu"] - 2)**2
         >>> # Fix mu=1.5 and fit everything else
         >>> result = fixed_param_fit({"mu": 1.5}, my_nll, {"mu": 0.0, "data": 100}, fixed=["data"])
         >>> result.params["mu"]  # Will be 1.5 (fixed)
+
+        >>> # With additional arguments
+        >>> def my_nll(params, data, *, verbose):
+        ...     return compute_loss(params, data, verbose=verbose)
+        >>> result = fixed_param_fit({"mu": 1.5}, my_nll, initial_params,
+        ...                          args=(data,), kwargs={"verbose": True})
     """
     # Convert to ParamState
     param_state = ParamState.from_pytree(params)
@@ -193,4 +218,12 @@ def fixed_param_fit(
     # Convert back to pytree and call regular fit
     updated_pytree = updated_state.to_pytree()
 
-    return fit(nll_fn, updated_pytree, fixed=fixed_combined, solver=solver, **solver_kwargs)
+    return fit(
+        nll_fn,
+        updated_pytree,
+        fixed=fixed_combined,
+        solver=solver,
+        args=args,
+        kwargs=kwargs,
+        **solver_kwargs,
+    )

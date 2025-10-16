@@ -14,12 +14,12 @@ __contact__ = "https://github.com/MoAly98/everwillow"
 __version__ = "0.0.1"
 
 # Core API
-from everwillow.fitting import fit, fixed_param_fit, FitResult
+from everwillow.fitting import FitResult, fit, fixed_param_fit
 from everwillow.state import ParamState
 
 __all__ = [
-    "fit",
-    "fixed_param_fit",
     "FitResult",
     "ParamState",
+    "fit",
+    "fixed_param_fit",
 ]

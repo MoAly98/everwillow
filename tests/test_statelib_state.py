@@ -20,14 +20,15 @@ def test_flat_state_from_flat_state_returns_copy() -> None:
     state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1})
     clone: sl.FlatState[int] = sl.FlatState.from_pytree(state)
 
-    assert clone == state and clone is not state
+    assert clone == state
+    assert clone is not state
 
 
 def test_raw_mapping_is_read_only() -> None:
     state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1})
 
     with pytest.raises(TypeError):
-        state.raw_mapping[("a",)] = 2  # type: ignore[index]
+        state.raw_mapping["a",] = 2  # type: ignore[index]
 
 
 def test_merge_and_split_roundtrip_allows_overlapping_keys() -> None:
@@ -47,8 +48,8 @@ def test_map_state_applies_function_without_mutating_original() -> None:
 
     mapped: sl.FlatState[int] = sl.map_state(lambda _k, v: v * 10, state)
 
-    assert state[("a",)] == 1
-    assert mapped[("a",)] == 10
+    assert state["a",] == 1
+    assert mapped["a",] == 10
     assert mapped.to_pytree() == {"a": 10, "b": 20}
 
 

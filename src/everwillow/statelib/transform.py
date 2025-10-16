@@ -50,7 +50,7 @@ class Transform(tp.Generic[ValueT]):
 
 
 def apply_transformations(
-    state: FlatState[ValueT],
+    state: FlatState[ValueT] | tp.Any,
     transformations: tp.Mapping[KeyPath, Transform[ValueT]],
 ) -> FlatState[ValueT]:
     """Rewrite selected entries in a ``FlatState``.
@@ -74,16 +74,19 @@ def apply_transformations(
         {('alpha',): 1, ('b',): 2}
     """
     if not isinstance(state, FlatState):
-        raise TypeError("'state' must be a FlatState instance")
+        message = "'state' must be a FlatState instance"
+        raise TypeError(message)
+    state_instance = tp.cast(FlatState[ValueT], state)
     normalized_transformations: dict[KeyPath, Transform[ValueT]] = {
         ensure_public_key(key): transform for key, transform in transformations.items()
     }
-    state_keys = set(state.keys())
-    if set(normalized_transformations.keys()) - state_keys:
-        missing_keys = set(normalized_transformations.keys()) - state_keys
-        raise KeyError(f"Transformations contain keys not in state: {missing_keys!r}")
+    state_keys = set(state_instance)
+    if set(normalized_transformations) - state_keys:
+        missing_keys = set(normalized_transformations) - state_keys
+        message = f"Transformations contain keys not in state: {missing_keys!r}"
+        raise KeyError(message)
 
-    flat_state = state.copy()
+    flat_state = state_instance.copy()
 
     new_records: dict[object, SegmentRecord[ValueT]] = {}
     for segment_id in flat_state._segment_order:
@@ -105,10 +108,11 @@ def apply_transformations(
                     template=record.key_paths.get(key),
                 )
             if target_key in new_values:
-                raise ValueError(
+                message = (
                     "Transformations produce duplicate target key "
                     f"{target_key!r}; ensure new_key values are unique per segment"
                 )
+                raise ValueError(message)
             updated_keys.add(target_key)
             new_values[target_key] = transformed_value
             new_key_paths[target_key] = key_path

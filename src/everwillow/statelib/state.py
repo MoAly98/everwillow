@@ -3,10 +3,9 @@ from __future__ import annotations
 import dataclasses
 import types
 import typing as tp
-from collections import ChainMap
+from collections import ChainMap as TypingChainMap
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
-from typing import ChainMap as TypingChainMap
 
 import jax.tree_util as jtu
 
@@ -70,7 +69,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         {'a': 1, 'b': 2}
     """
 
-    __slots__ = ("_mapping", "_segments", "_segment_order", "_primary_segment")
+    __slots__ = ("_mapping", "_primary_segment", "_segment_order", "_segments")
+    __hash__ = None  # type: ignore[assignment]
 
     if TYPE_CHECKING:
         _mapping: TypingChainMap[KeyPath, V]
@@ -80,36 +80,42 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
 
     def __new__(cls, *args, **kwargs):
         del args, kwargs  # unused
-        raise TypeError(
-            "'FlatState' should never be directly instantiated, use 'FlatState.from_pytree' instead"
+        message = (
+            "'FlatState' should never be directly instantiated, use "
+            "'FlatState.from_pytree' instead"
         )
+        raise TypeError(message)
 
     @classmethod
     def _new(
         cls: type[FlatState[V]],
-        mapping: tp.Mapping[KeyPath, V],
+        mapping: tp.Mapping[KeyPath, V] | tp.Any,
         /,
         *,
         treedef: jtu.PyTreeDef | None = None,
         key_paths: tp.Mapping[KeyPath, KeyPath] | None = None,
     ) -> FlatState[V]:
         if not isinstance(mapping, Mapping):
-            raise ValueError(
+            message = (
                 f"{mapping!r} is not a mapping. Convert your pytree using "
                 "FlatState.from_pytree or pass a mapping directly."
             )
+            raise ValueError(message)
 
-        if not all(isinstance(k, tuple) for k in mapping.keys()):
-            raise ValueError(
+        typed_mapping = tp.cast(Mapping[KeyPath, V], mapping)
+
+        if not all(isinstance(k, tuple) for k in typed_mapping):
+            message = (
                 "FlatState keys must be tuples. Use FlatState.from_pytree or "
                 "ensure your mapping uses tuple paths."
             )
+            raise ValueError(message)
 
         self = super().__new__(cls)
         segment_id = object()
-        slice_map = dict(mapping)
+        slice_map = dict(typed_mapping)
         if key_paths is None:
-            path_map = {key: derive_key_path(key) for key in slice_map.keys()}
+            path_map = {key: derive_key_path(key) for key in slice_map}
         else:
             path_map = {key: tuple(path) for key, path in key_paths.items()}
         segment = SegmentRecord(
@@ -172,7 +178,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             KeyError: If ``segment_id`` is not present in the state.
         """
         if segment_id not in self._segments:
-            raise KeyError(f"Tag {segment_id!r} not found in FlatState")
+            message = f"Tag {segment_id!r} not found in FlatState"
+            raise KeyError(message)
         record = self._segments[segment_id]
         flat_state = object.__new__(type(self))
         flat_state._primary_segment = segment_id
@@ -196,16 +203,18 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return new
 
     def __getitem__(self, key: KeyPath) -> V:
-        normalized_key = ensure_public_key(key)
+        normalized_key: KeyPath = ensure_public_key(key)
         return self._mapping[normalized_key]
 
     def __setitem__(self, key: KeyPath, value: V) -> None:
         del key, value  # unused
-        raise NotImplementedError("FlatState is immutable")
+        message = "FlatState is immutable"
+        raise NotImplementedError(message)
 
     def __delitem__(self, key: KeyPath) -> None:
         del key  # unused
-        raise NotImplementedError("FlatState is immutable")
+        message = "FlatState is immutable"
+        raise NotImplementedError(message)
 
     def __iter__(self) -> tp.Iterator[KeyPath]:
         return iter(self._mapping)
@@ -221,7 +230,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             return False
         return self._mapping == other._mapping
 
-    def to_dict(self, sep: str | None = None) -> dict[tp.Any, V]:
+    def to_dict(self, sep: object | None = None) -> dict[tp.Any, V]:
         """Convert the flattened mapping to a dictionary.
 
         Args:
@@ -238,7 +247,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             return {sep.join(map(str, k)): v for k, v in self._mapping.items()}
         if sep is None:
             return dict(self._mapping.items())
-        raise ValueError("sep must be a string or None (use '.' or '/' etc).")
+        message = "sep must be a string or None (use '.' or '/' etc)."
+        raise ValueError(message)
 
     @classmethod
     def from_pytree(
@@ -282,16 +292,19 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         if treedef is not None:
             return jtu.tree_unflatten(treedef, self._mapping.values())
         if self.n_internal_states != 1:
-            raise ValueError(
-                f"Cannot convert to pytree with {self.n_internal_states} internal states. Use 'split_state' first."
+            message = (
+                f"Cannot convert to pytree with {self.n_internal_states} internal "
+                "states. Use 'split_state' first."
             )
+            raise ValueError(message)
         # get the only treedef
         treedef = self._segments[self._primary_segment].treedef
         if treedef is None:
-            raise ValueError(
+            message = (
                 "Cannot convert to pytree without treedef. Ensure the state was "
                 "created via FlatState.from_pytree or carries a treedef."
             )
+            raise ValueError(message)
         return jtu.tree_unflatten(treedef, self._mapping.values())
 
     def tree_flatten(self) -> TreeFlattenResult:
@@ -347,10 +360,9 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         keys, primary_segment, treedefs, own_keys, key_paths = metadata
         value_list = list(children)
         if len(value_list) != len(keys):
-            raise ValueError("Tree flatten metadata has mismatched lengths")
-        flat_mapping: dict[KeyPath, V] = {
-            key: value for key, value in zip(keys, value_list, strict=True)
-        }
+            message = "Tree flatten metadata has mismatched lengths"
+            raise ValueError(message)
+        flat_mapping: dict[KeyPath, V] = dict(zip(keys, value_list, strict=True))
         flat_state = object.__new__(cls)
         flat_state._primary_segment = primary_segment
         flat_state._segment_order = list(own_keys.keys())
@@ -427,25 +439,29 @@ def merge_states(*states: FlatState[V]) -> FlatState[V]:
         [('a',), ('b',)]
     """
 
-    def _imerge(this: FlatState[V], other: FlatState[V]) -> FlatState[V]:
+    def _imerge(this: FlatState[V], other: tp.Any) -> FlatState[V]:
         if not isinstance(other, FlatState):
-            raise ValueError(
+            message = (
                 "Can only merge FlatState instances. Convert inputs using "
                 "FlatState.from_pytree first."
             )
-        for segment_id in other._segment_order:
+            raise TypeError(message)
+        other_state = tp.cast(FlatState[V], other)
+        for segment_id in other_state._segment_order:
             if segment_id in this._segments:
-                raise ValueError(
+                message = (
                     "One of the segments has already been merged into this FlatState. "
                     "Did you merge the same state twice?"
                 )
-            this._segments[segment_id] = other._segments[segment_id].copy()
-        this._segment_order.extend(other._segment_order)
+                raise ValueError(message)
+            this._segments[segment_id] = other_state._segments[segment_id].copy()
+        this._segment_order.extend(other_state._segment_order)
         this._rebuild_mapping()
         return this
 
     if len(states) == 0:
-        raise ValueError("merge_states() requires at least one FlatState.")
+        message = "merge_states() requires at least one FlatState."
+        raise ValueError(message)
     state, *rest = states
     out = state.copy()
     for state in rest:
@@ -499,7 +515,7 @@ def update_state(
     """
     new_state = state.copy()
     for raw_key, value in updates.items():
-        key = ensure_public_key(raw_key)
+        key: KeyPath = ensure_public_key(raw_key)
         found = False
         for segment_id in new_state._segment_order:
             segment = new_state._segments[segment_id]
@@ -507,10 +523,11 @@ def update_state(
                 segment.values[key] = value
                 found = True
         if not found:
-            raise KeyError(
+            message = (
                 f"Key {key!r} not present in FlatState. Check the flattened "
                 "path before attempting to update."
             )
+            raise KeyError(message)
 
     new_state._rebuild_mapping()
     _validate_state(new_state)
@@ -526,54 +543,55 @@ def _validate_state(state: FlatState[V]) -> None:
     Raises:
         ValueError: If any structural invariants are violated.
     """
-    segment_ids = set(state._segments.keys())
+    segment_ids = set(state._segments)
     if set(state._segment_order) != segment_ids:
-        raise ValueError(
+        message = (
             "Segment order metadata is inconsistent. This indicates the state "
             "was modified outside the supported APIs."
         )
+        raise ValueError(message)
     if len(state._segment_order) != len(segment_ids):
-        raise ValueError(
+        message = (
             "Duplicate segment identifiers detected. This often means the same "
             "state was merged multiple times."
         )
-    mapping_keys = set(state._mapping.keys())
+        raise ValueError(message)
+    mapping_keys = set(state._mapping)
     union_keys: set[KeyPath] = set()
     for segment_id in state._segment_order:
         record = state._segments[segment_id]
         tag_keys = set(record.keys)
         missing_in_mapping = tag_keys - mapping_keys
         if missing_in_mapping:
-            raise ValueError(
+            message = (
                 f"Segment {segment_id!r} references keys missing from the mapping: "
-                f"{sorted(missing_in_mapping)!r}. Ensure updates only target existing keys."
+                f"{sorted(missing_in_mapping)!r}. Ensure updates only target "
+                "existing keys."
             )
+            raise ValueError(message)
         union_keys.update(tag_keys)
         slice_keys = set(record.values.keys())
         if slice_keys != tag_keys:
-            raise ValueError(
+            message = (
                 f"Segment {segment_id!r} has mismatched slice keys: "
                 f"{sorted(slice_keys ^ tag_keys)!r}. Avoid manual mutation of "
                 "FlatState internals."
             )
+            raise ValueError(message)
         path_keys = set(record.key_paths.keys())
         if path_keys != tag_keys:
-            raise ValueError(
+            message = (
                 f"Segment {segment_id!r} has mismatched key path metadata. "
                 "Ensure key renames also update associated key paths."
             )
-        for key_path in record.key_paths.values():
-            if not isinstance(key_path, tuple):
-                raise ValueError(
-                    f"Segment {segment_id!r} contains invalid key path data for "
-                    f"{key_path!r}. Key paths must be tuples of JAX path entries."
-                )
+            raise ValueError(message)
     missing_from_tags = mapping_keys - union_keys
     if missing_from_tags:
-        raise ValueError(
+        message = (
             "State mapping contains keys not owned by any segment. This usually "
             "means values were added without updating segment metadata."
         )
+        raise ValueError(message)
 
 
 def _key_path_for(state: FlatState[V], key: KeyPath) -> KeyPath:
@@ -587,7 +605,7 @@ def _key_path_for(state: FlatState[V], key: KeyPath) -> KeyPath:
 
 def _gather_leaf_key_paths(state: FlatState[V]) -> dict[KeyPath, KeyPath]:
     """Collect the internal key-path mapping for all leaves."""
-    return {key: _key_path_for(state, key) for key in state._mapping.keys()}
+    return {key: _key_path_for(state, key) for key in state._mapping}
 
 
 def _flatstate_flatten(state: FlatState[V]) -> tuple[list[V], TreeFlattenMetadata]:

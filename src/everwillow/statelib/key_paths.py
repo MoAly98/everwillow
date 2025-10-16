@@ -5,7 +5,6 @@ import typing as tp
 import jax.tree_util as jtu
 
 KeyPath = tuple[tp.Any, ...]
-KeyTuple = tp.TypeVar("KeyTuple", bound=tuple[tp.Any, ...])
 
 
 def canonical_key(path: KeyPath) -> KeyPath:
@@ -32,11 +31,12 @@ def canonical_key(path: KeyPath) -> KeyPath:
         elif isinstance(entry, (jtu.SequenceKey, jtu.FlattenedIndexKey)):
             result.append(entry.idx)
         else:
-            raise ValueError(f"Unrecognised key path entry: {entry}")
+            message = f"Unrecognised key path entry: {entry}"
+            raise ValueError(message)
     return tuple(result)
 
 
-def ensure_public_key(key: KeyTuple) -> KeyTuple:
+def ensure_public_key(key: tp.Any) -> KeyPath:
     """Validate and normalise an external key path.
 
     Args:
@@ -50,8 +50,9 @@ def ensure_public_key(key: KeyTuple) -> KeyTuple:
         KeyError: If ``key`` is not already a tuple.
     """
     if not isinstance(key, tuple):
-        raise KeyError("FlatState keys must be tuples")
-    return key
+        message = "FlatState keys must be tuples"
+        raise KeyError(message)
+    return tp.cast(KeyPath, key)
 
 
 def _make_key_entry(value: tp.Any, template: tp.Any | None) -> tp.Any:
@@ -106,4 +107,4 @@ def derive_key_path(
     return tuple(entries)
 
 
-__all__ = ["canonical_key", "derive_key_path", "ensure_public_key", "KeyPath"]
+__all__ = ["KeyPath", "canonical_key", "derive_key_path", "ensure_public_key"]

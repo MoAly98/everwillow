@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import typing as tp
-
 import pytest
 
 import statelib as sl
@@ -17,8 +15,8 @@ def test_apply_transformations_renames_keys_and_updates_values() -> None:
     transformed: sl.FlatState[int] = sl.apply_transformations(state, transforms)
 
     assert set(transformed.raw_mapping) == {("alpha",), ("beta",)}
-    assert transformed[("alpha",)] == 2
-    assert transformed[("beta",)] == 4
+    assert transformed["alpha",] == 2
+    assert transformed["beta",] == 4
 
     tag = next(iter(transformed.own_keys))
     assert transformed.own_keys[tag] == frozenset({("alpha",), ("beta",)})
@@ -31,7 +29,7 @@ def test_apply_transformations_rejects_duplicate_new_keys() -> None:
         ("b",): sl.Transform(new_key=("shared",)),
     }
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="duplicate target key"):
         sl.apply_transformations(state, transforms)
 
 
@@ -50,7 +48,7 @@ def test_apply_transformations_on_merged_state() -> None:
 
     transformed: sl.FlatState[int] = sl.apply_transformations(merged, transforms)
 
-    assert {key for key in transformed.raw_mapping} == {
+    assert set(transformed.raw_mapping) == {
         ("x_shared",),
         ("y_only",),
         ("z",),

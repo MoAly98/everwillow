@@ -36,5 +36,5 @@ def test_combined_model_requires_matching_state_count() -> None:
 
     combined = sl.CombinedModel.combine(model1, model2)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Expected 2 states"):
         combined(state)

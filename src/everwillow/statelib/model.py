@@ -63,7 +63,7 @@ class CombinedModel:
     def combine(
         cls,
         *models: Model,
-    ) -> "CombinedModel":
+    ) -> CombinedModel:
         """Create a ``CombinedModel`` from individual model components.
 
         Args:
@@ -76,7 +76,7 @@ class CombinedModel:
 
     def __call__(
         self,
-        parameters: FlatState,
+        parameters: FlatState | tp.Any,
     ) -> float:
         """Evaluate all models on the provided merged state.
 
@@ -95,7 +95,7 @@ class CombinedModel:
 
     def _normalize_states(
         self,
-        parameters: FlatState,
+        parameters: FlatState | tp.Any,
     ) -> tuple[FlatState, ...]:
         """Split and validate the merged state before evaluation.
 
@@ -111,10 +111,13 @@ class CombinedModel:
             ValueError: If the number of segments does not match the number of models.
         """
         if not isinstance(parameters, FlatState):
-            raise TypeError("parameters must be a FlatState")
-        states = split_state(parameters)
+            message = "parameters must be a FlatState"
+            raise TypeError(message)
+        parameters_state = tp.cast(FlatState, parameters)
+        states = split_state(parameters_state)
         if len(states) != len(self.models):
-            raise ValueError(
-                f"Expected {len(self.models)} states, received {len(states)}"
-            )
+            expected = len(self.models)
+            received = len(states)
+            message = f"Expected {expected} states, received {received}"
+            raise ValueError(message)
         return states

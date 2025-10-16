@@ -6,7 +6,7 @@ This example demonstrates a basic statistical model with:
 - Background normalization with uncertainty
 
 The model structure:
-    likelihood = Poisson(n_obs | n_expected) × Gaussian(a_beta | nu, sigma=1)
+    likelihood = Poisson(n_obs | n_expected) * Gaussian(a_beta | nu, sigma=1)
 
 where n_expected = mu * signal + bkg_norm * background * (1 + nu)
 
@@ -88,7 +88,7 @@ beta_constraint = GaussianDist(
     sigma=1.0,  # Constraint width
 )
 
-# Combined likelihood = main × constraint
+# Combined likelihood = main * constraint
 config = {
     "type": "product_dist",
     "name": "model",
@@ -224,7 +224,7 @@ def neg_loglikelihood(free_params, fixed_params):
 # STEP 7: Fit with optimistix
 # ============================================================================
 
-import optimistix as optx
+import optimistix as optx  # noqa: E402
 
 print("\n" + "=" * 60)
 print("Fitting with optimistix...")

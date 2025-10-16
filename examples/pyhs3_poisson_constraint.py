@@ -90,7 +90,7 @@ beta_constraint = GaussianDist(
     sigma=1.0,  # Constraint width
 )
 
-# Combined likelihood = main × constraint
+# Combined likelihood = main * constraint
 combined = ProductDist(
     type="product_dist", name="model", factors=["main_poisson", "beta_constraint"]
 )

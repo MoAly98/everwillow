@@ -115,7 +115,7 @@ shape1_constraint = GaussianDist(
     name="shape1_constraint", x="a_shape1", mean="shape1", sigma=1.0
 )
 
-# Combined likelihood = main × all constraints
+# Combined likelihood = main * all constraints
 combined_config = {
     "type": "product_dist",
     "name": "model",
@@ -170,7 +170,7 @@ bkg1_shape_interp_config = {
 }
 bkg1_shape_interp_func = GenericFunction(**bkg1_shape_interp_config)
 
-# Bkg1 total: log-normal modifier × shape interpolation
+# Bkg1 total: log-normal modifier * shape interpolation
 bkg1_expected_config = {
     "type": "generic_function",
     "name": "bkg1_expected",
@@ -419,13 +419,13 @@ rich.print("Test 3: Fit evermore model directly with everwillow")
 rich.print("=" * 60)
 
 # Import evermore example model
-import sys
+import sys  # noqa: E402
 
 sys.path.insert(0, "/Users/moaly/Work/iris-hep/evermore/examples")
-from model import hists as evm_hists
-from model import loss as evm_loss
-from model import observation as evm_observation
-from model import params as evm_params
+from model import hists as evm_hists  # noqa: E402
+from model import loss as evm_loss  # noqa: E402
+from model import observation as evm_observation  # noqa: E402
+from model import params as evm_params  # noqa: E402
 
 # Partition evermore params into dynamic (free) and static (frozen)
 evm_dynamic, evm_static = evm.tree.partition(evm_params)
@@ -461,7 +461,7 @@ initial_evm_values = {
 }
 
 # Wrapper to reconstruct Params structure for evermore loss
-from model import Params
+from model import Params  # noqa: E402
 
 
 def evm_nll_wrapper(params_dict, static, hists, observation):
@@ -504,7 +504,7 @@ rich.print("\n" + "=" * 60)
 rich.print("Test 4: Fit evermore model with evermore's native optimizer")
 rich.print("=" * 60)
 
-from nll_fit_optimistix import fit as evm_fit
+from nll_fit_optimistix import fit as evm_fit  # noqa: E402
 
 # Run evermore fit
 evm_bestfit = evm_fit(evm_params, evm_hists, evm_observation)

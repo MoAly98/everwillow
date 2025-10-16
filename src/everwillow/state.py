@@ -28,21 +28,21 @@ class ParamState(Mapping[K, V]):
 
     __slots__ = ("_mapping", "_treedef")
 
+    _mapping: dict[K, V]
+    _treedef: PyTreeDef | None
+
     TREE_PATH_ENTRY_TYPE = optree.MappingEntry
 
     def __new__(cls, *args, **kwargs):
         del args, kwargs
-        raise TypeError(
-            "'ParamState' should never be directly instantiated, use 'ParamState.from_pytree' instead"
-        )
+        msg = "'ParamState' should never be directly instantiated, use 'ParamState.from_pytree' instead"
+        raise TypeError(msg)
 
     @classmethod
     def _new(cls, mapping: tp.Mapping[K, V], /, *, treedef: PyTreeDef | None = None):
-        if not isinstance(mapping, Mapping):
-            raise ValueError(f"{mapping!r} must be a Mapping")
-
-        if not all(isinstance(k, tuple) for k in mapping.keys()):
-            raise ValueError("All keys in mapping must be tuples")
+        if not all(isinstance(k, tuple) for k in mapping):
+            msg = "All keys in mapping must be tuples"
+            raise ValueError(msg)
 
         self = super().__new__(cls)
         self._mapping = dict(mapping)
@@ -60,10 +60,12 @@ class ParamState(Mapping[K, V]):
         return self._mapping[key]
 
     def __setitem__(self, key: K, value: V) -> None:
-        raise NotImplementedError("ParamState is immutable")
+        msg = "ParamState is immutable"
+        raise NotImplementedError(msg)
 
     def __delitem__(self, key: K) -> None:
-        raise NotImplementedError("ParamState is immutable")
+        msg = "ParamState is immutable"
+        raise NotImplementedError(msg)
 
     def __iter__(self) -> tp.Iterator[K]:
         return iter(self._mapping)
@@ -79,13 +81,14 @@ class ParamState(Mapping[K, V]):
             return False
         return self._mapping == other._mapping
 
+    def __hash__(self) -> int:
+        return hash(tuple(sorted(self._mapping.items())))
+
     def to_dict(self, sep: str | None = None) -> dict:
         """Convert to dict, optionally with joined keys."""
         if isinstance(sep, str):
             return {sep.join(map(str, k)): v for k, v in self._mapping.items()}
-        if sep is None:
-            return {k: v for k, v in self._mapping.items()}
-        raise ValueError("sep must be a string or None")
+        return dict(self._mapping.items())
 
     @classmethod
     def from_pytree(cls, pytree: PyTree):
@@ -96,7 +99,8 @@ class ParamState(Mapping[K, V]):
     def to_pytree(self) -> PyTree:
         """Convert back to original pytree structure."""
         if self._treedef is None:
-            raise ValueError("Cannot convert to pytree with 'None' treedef")
+            msg = "Cannot convert to pytree with 'None' treedef"
+            raise ValueError(msg)
         # Extract values in the same order as original flattening
         # The treedef knows the correct key order via paths()
         keys_order = self._treedef.paths()

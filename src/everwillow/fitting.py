@@ -73,12 +73,10 @@ def fit(
     param_state = ParamState.from_pytree(params)
 
     # Determine fixed keys
-    if fixed is None:
-        fixed_keys = set()
-    else:
-        fixed_keys = set()
+    fixed_keys: set[tp.Any] = set()
+    if fixed is not None:
         for name in fixed:
-            for key in param_state.keys():
+            for key in param_state:
                 if key[-1] == name or (len(key) == 1 and key[0] == name):
                     fixed_keys.add(key)
 
@@ -203,7 +201,7 @@ def fixed_param_fit(
     updates = {}
     for name, value in param_values.items():
         # Find matching key
-        for key in param_state.keys():
+        for key in param_state:
             if key[-1] == name or (len(key) == 1 and key[0] == name):
                 updates[key] = value
                 break

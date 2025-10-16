@@ -12,3 +12,4 @@ __copyright__ = f"Copyright {datetime.datetime.now().year}, everwillow developer
 __credits__ = ["Mohamed Aly", "Peter Fackeldey", "Massimiliano Galli"]
 __contact__ = "https://github.com/MoAly98/everwillow"
 __version__ = "0.0.1"
+__all__: list[str] = []

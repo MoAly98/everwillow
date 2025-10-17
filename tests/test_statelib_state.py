@@ -4,7 +4,7 @@ import typing as tp
 
 import pytest
 
-import statelib as sl
+import everwillow.statelib as sl
 
 
 def test_flat_state_roundtrip_to_pytree() -> None:
@@ -41,6 +41,17 @@ def test_merge_and_split_roundtrip_allows_overlapping_keys() -> None:
     assert merged.n_internal_states == 2
     assert first == state1
     assert second == state2
+
+
+def test_merge_states_overlapping_keys_last_segment_wins() -> None:
+    state1: sl.FlatState[int] = sl.FlatState.from_pytree({"shared": 1})
+    state2: sl.FlatState[int] = sl.FlatState.from_pytree({"shared": 2})
+
+    merged = sl.merge_states(state1, state2)
+    assert merged["shared",] == 2
+    first, second = sl.split_state(merged)
+    assert first["shared",] == 1
+    assert second["shared",] == 2
 
 
 def test_map_state_applies_function_without_mutating_original() -> None:
@@ -94,7 +105,7 @@ def test_update_state_missing_key_raises() -> None:
 
 def test_update_state_on_merged_state() -> None:
     s1: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2})
-    s2: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 3, "c": 4})
+    s2: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "c": 4})
     merged: sl.FlatState[int] = sl.merge_states(s1, s2)
 
     updated: sl.FlatState[int] = sl.update_state(merged, {("a",): 10})
@@ -102,3 +113,107 @@ def test_update_state_on_merged_state() -> None:
 
     assert dict(seg1.raw_mapping) == {("a",): 10, ("b",): 2}
     assert dict(seg2.raw_mapping) == {("a",): 10, ("c",): 4}
+
+
+def test_partition_state_by_keys_roundtrip() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree(
+        {"user": {"name": 1, "email": 2}, "prefs": {"theme": 3, "lang": 4}}
+    )
+    assert state.is_partitioned is False
+    selected, remainder = sl.partition_state(
+        state,
+        keys={("user", "email"), ("prefs", "theme")},
+    )
+
+    assert dict(selected.raw_mapping) == {
+        ("user", "email"): 2,
+        ("prefs", "theme"): 3,
+    }
+    assert dict(remainder.raw_mapping) == {
+        ("user", "name"): 1,
+        ("prefs", "lang"): 4,
+    }
+
+    with pytest.raises(ValueError, match="Combine the partitions first"):
+        selected.to_pytree()
+    with pytest.raises(ValueError, match="Combine the partitions first"):
+        remainder.to_pytree()
+    assert selected.is_partitioned is True
+    assert remainder.is_partitioned is True
+
+    restored = sl.combine_partitions(selected, remainder)
+    assert restored == state
+    assert restored.to_pytree() == state.to_pytree()
+    assert restored.is_partitioned is False
+
+
+def test_partition_state_by_predicate_roundtrip_without_template() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree(
+        {
+            "user": {"name": 1, "email": 2},
+            "flags": {"beta": 3, "notifications": 4},
+        }
+    )
+
+    def is_flag(key: tuple[object, ...], _value: int) -> bool:
+        return key[0] == "flags"
+
+    flags, rest = sl.partition_state(state, predicate=is_flag)
+    merged = sl.combine_partitions(flags, rest)
+
+    assert dict(flags.raw_mapping) == {
+        ("flags", "beta"): 3,
+        ("flags", "notifications"): 4,
+    }
+    assert dict(rest.raw_mapping) == {
+        ("user", "name"): 1,
+        ("user", "email"): 2,
+    }
+    assert dict(merged.raw_mapping) == dict(state.raw_mapping)
+    assert merged.to_pytree() == state.to_pytree()
+    with pytest.raises(ValueError, match="Combine the partitions first"):
+        flags.to_pytree()
+    assert flags.is_partitioned is True
+    assert rest.is_partitioned is True
+    assert merged.is_partitioned is False
+
+
+def test_partitioning_partition_roundtrip() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2, "c": 3})
+
+    first, remainder = sl.partition_state(state, keys={("a",)})
+    sub_first, sub_rest = sl.partition_state(first, keys={("a",)})
+
+    restored_first = sl.combine_partitions(sub_first, sub_rest)
+    assert dict(restored_first.raw_mapping) == {("a",): 1}
+    assert restored_first.is_partitioned is True
+
+    recombined = sl.combine_partitions(restored_first, remainder)
+    assert recombined == state
+    assert recombined.to_pytree() == state.to_pytree()
+
+
+def test_partition_state_unknown_key_raises() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1})
+
+    with pytest.raises(KeyError):
+        sl.partition_state(state, keys={("missing",)})
+
+
+def test_combine_partitions_overlap_raises() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2})
+    first, second = sl.partition_state(state, keys={("a",)})
+
+    with pytest.raises(ValueError):
+        sl.combine_partitions(first, first)
+
+
+def test_combine_partitions_mismatched_sources_raises() -> None:
+    state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2})
+    first, second = sl.partition_state(state, keys={("a",)})
+
+    other_state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2, "c": 3})
+    _, other_remainder = sl.partition_state(other_state, keys={("a",)})
+
+    with pytest.raises(ValueError, match="same FlatState"):
+        sl.combine_partitions(first, other_remainder)

@@ -122,6 +122,7 @@ def apply_transformations(
             frozenset(updated_keys),
             new_values,
             new_key_paths,
+            tuple(new_values.keys()),
         )
 
     flat_state._segments = new_records

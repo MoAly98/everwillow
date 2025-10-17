@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import statelib as sl
+import everwillow.statelib as sl
 
 
 def test_apply_transformations_renames_keys_and_updates_values() -> None:

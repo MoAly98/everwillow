@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import statelib as sl
+import everwillow.statelib as sl
 
 
 def test_model_call_accepts_flat_state_and_pytree() -> None:

@@ -5,6 +5,7 @@ import types
 import typing as tp
 from collections import ChainMap as TypingChainMap
 from collections.abc import Iterable, Mapping
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 import jax.tree_util as jtu
@@ -38,13 +39,15 @@ class SegmentRecord(tp.Generic[V]):
     keys: frozenset[KeyPath]
     values: dict[KeyPath, V]
     key_paths: dict[KeyPath, KeyPath]
+    full_key_order: tuple[KeyPath, ...] | None
 
     def copy(self) -> SegmentRecord[V]:
         return SegmentRecord(
             self.treedef,
-            self.keys,
-            self.values.copy(),
-            self.key_paths.copy(),
+            frozenset(self.keys),
+            dict(self.values),
+            {key: value for key, value in self.key_paths.items()},
+            self.full_key_order,
         )
 
 
@@ -69,7 +72,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         {'a': 1, 'b': 2}
     """
 
-    __slots__ = ("_mapping", "_primary_segment", "_segment_order", "_segments")
+    __slots__ = ("__dict__", "_mapping", "_primary_segment", "_segment_order", "_segments")
     __hash__ = None  # type: ignore[assignment]
 
     if TYPE_CHECKING:
@@ -118,11 +121,13 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             path_map = {key: derive_key_path(key) for key in slice_map}
         else:
             path_map = {key: tuple(path) for key, path in key_paths.items()}
+        key_order = tuple(slice_map.keys())
         segment = SegmentRecord(
             treedef,
             frozenset(slice_map.keys()),
             slice_map,
             path_map,
+            key_order,
         )
 
         self._primary_segment = segment_id
@@ -138,6 +143,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             for segment_id in reversed(self._segment_order)
         ]
         self._mapping = TypingChainMap(*sources)
+        if "is_partitioned" in self.__dict__:
+            self.__dict__.pop("is_partitioned", None)
 
     @property
     def n_internal_states(self) -> int:
@@ -163,6 +170,14 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             for segment_id in self._segment_order
         }
         return types.MappingProxyType(data)
+
+    @cached_property
+    def is_partitioned(self) -> bool:
+        """Return True when any segment is missing keys from its original order."""
+        return any(
+            len(record.values) != len(_segment_key_order(record))
+            for record in self._segments.values()
+        )
 
     def get_state(self, segment_id: object) -> FlatState[V]:
         """Return the sub-state registered under a segment identifier.
@@ -305,6 +320,12 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
                 "created via FlatState.from_pytree or carries a treedef."
             )
             raise ValueError(message)
+        if self.is_partitioned:
+            message = (
+                "Cannot convert a partitioned FlatState to a pytree. Combine "
+                "the partitions first using 'combine_partitions'."
+            )
+            raise ValueError(message)
         return jtu.tree_unflatten(treedef, self._mapping.values())
 
     def tree_flatten(self) -> TreeFlattenResult:
@@ -380,11 +401,13 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
                 }
                 for key in key_set:
                     segment_key_paths.setdefault(key, derive_key_path(key))
+            segment_order = tuple(key for key in keys if key in key_set)
             flat_state._segments[segment_id] = SegmentRecord(
                 record_treedef,
                 key_set,
                 values,
                 segment_key_paths,
+                segment_order,
             )
         flat_state._rebuild_mapping()
         _validate_state(flat_state)
@@ -424,6 +447,11 @@ def merge_states(*states: FlatState[V]) -> FlatState[V]:
 
     Returns:
         ``FlatState`` whose segments equal the concatenation of the inputs.
+
+    Warning:
+        Later segments overwrite earlier ones for overlapping keys. Normalize
+        values first (e.g. via ``apply_transformations``) when shadowing is not
+        desired.
 
     Raises:
         ValueError: If no states are provided or the merge would duplicate a
@@ -532,6 +560,193 @@ def update_state(
     new_state._rebuild_mapping()
     _validate_state(new_state)
     return new_state
+
+
+def _segment_key_order(record: SegmentRecord[V]) -> tuple[KeyPath, ...]:
+    order = record.full_key_order
+    if order is not None:
+        return order
+    return tuple(record.values.keys())
+
+
+def _subset_segment(
+    record: SegmentRecord[V],
+    keys: tp.AbstractSet[KeyPath],
+) -> SegmentRecord[V]:
+    order = _segment_key_order(record)
+    values: dict[KeyPath, V] = {
+        key: record.values[key]
+        for key in order
+        if key in record.values and key in keys
+    }
+    key_paths = {key: record.key_paths[key] for key in values}
+    return SegmentRecord(
+        record.treedef,
+        frozenset(values),
+        values,
+        key_paths,
+        order,
+    )
+
+
+def _merge_partition_records(
+    first: SegmentRecord[V],
+    second: SegmentRecord[V],
+) -> SegmentRecord[V]:
+    if first.treedef != second.treedef:
+        message = (
+            "Partitions carry different treedef metadata. Combine matching pairs "
+            "produced from the same source state."
+        )
+        raise ValueError(message)
+
+    order_first = _segment_key_order(first)
+    order_second = _segment_key_order(second)
+    if order_first != order_second:
+        message = (
+            "Partitions carry mismatched key-order metadata. Recreate them from "
+            "the same FlatState instance."
+        )
+        raise ValueError(message)
+
+    overlap = first.keys & second.keys
+    if overlap:
+        overlap_str = ", ".join(sorted(map(str, overlap)))
+        message = f"Partitions share duplicate keys: {overlap_str}"
+        raise ValueError(message)
+
+    union_keys = first.keys | second.keys
+    extra = union_keys - set(order_first)
+    if extra:
+        extra_str = ", ".join(sorted(map(str, extra)))
+        message = (
+            "Partitions reference keys absent from the original order: "
+            f"{extra_str}. Re-create the partitions from the same FlatState."
+        )
+        raise ValueError(message)
+
+    values: dict[KeyPath, V] = {}
+    key_paths: dict[KeyPath, KeyPath] = {}
+    for key in order_first:
+        if key in first.values:
+            values[key] = first.values[key]
+            key_paths[key] = first.key_paths[key]
+        elif key in second.values:
+            values[key] = second.values[key]
+            key_paths[key] = second.key_paths[key]
+        else:
+            continue
+
+    return SegmentRecord(
+        first.treedef,
+        frozenset(values),
+        values,
+        key_paths,
+        order_first,
+    )
+
+
+def partition_state(
+    state: FlatState[V],
+    /,
+    *,
+    keys: Iterable[KeyPath] | None = None,
+    predicate: tp.Callable[[KeyPath, V], bool] | None = None,
+) -> tuple[FlatState[V], FlatState[V]]:
+    """Split a state into two orthogonal ``FlatState`` instances.
+
+    Exactly one of ``keys`` or ``predicate`` must be provided. When ``keys`` is
+    supplied the matching keys will populate the first partition. When
+    ``predicate`` is supplied it is evaluated for every ``(key, value)`` pair and
+    the matching entries will populate the first partition.
+
+    The resulting partitions retain the original segment metadata (including
+    treedefs and key ordering) but do not contain all values. Operations such as
+    ``to_pytree`` will raise guidance errors until the partitions are combined
+    again.
+
+    Examples:
+        >>> state = FlatState.from_pytree({"a": 1, "b": 2, "c": 3})
+        >>> evens, odds = partition_state(state, predicate=lambda key, _v: key[0] in {"a", "c"})
+        >>> dict(evens.raw_mapping)
+        {('a',): 1, ('c',): 3}
+        >>> dict(odds.raw_mapping)
+        {('b',): 2}
+    """
+    if (keys is None) == (predicate is None):
+        message = "Provide exactly one of 'keys' or 'predicate'."
+        raise ValueError(message)
+
+    raw = state.raw_mapping
+    all_keys = set(raw.keys())
+
+    if keys is not None:
+        selected_set = {ensure_public_key(key) for key in keys}
+        missing = selected_set - all_keys
+        if missing:
+            missing_keys = ", ".join(sorted(map(str, missing)))
+            message = f"Keys {missing_keys} are not present in the FlatState."
+            raise KeyError(message)
+    else:
+        assert predicate is not None
+        selected_set = {key for key in all_keys if predicate(key, raw[key])}
+
+    remaining_set = all_keys - selected_set
+
+    def _build_partition(target_keys: set[KeyPath]) -> FlatState[V]:
+        partition = object.__new__(type(state))
+        partition._primary_segment = state._primary_segment
+        partition._segment_order = list(state._segment_order)
+        partition._segments = {
+            segment_id: _subset_segment(state._segments[segment_id], target_keys)
+            for segment_id in state._segment_order
+        }
+        partition._rebuild_mapping()
+        return partition
+
+    selected_state = _build_partition(selected_set)
+    remainder_state = _build_partition(remaining_set)
+    return selected_state, remainder_state
+
+
+def combine_partitions(
+    first: FlatState[V],
+    second: FlatState[V],
+    /,
+) -> FlatState[V]:
+    """Combine two orthogonal ``FlatState`` partitions into a single state.
+
+    Partitions must originate from the same source state. Their stored segment
+    metadata is used to restore the original structure and ordering.
+
+    Examples:
+        >>> state = FlatState.from_pytree({"a": 1, "b": 2})
+        >>> favs, rest = partition_state(state, keys=[("a",)])
+        >>> restored = combine_partitions(favs, rest)
+        >>> restored.to_pytree()
+        {'a': 1, 'b': 2}
+    """
+    if first._segment_order != second._segment_order:
+        message = (
+            "Cannot combine partitions with different segment ordering. Ensure "
+            "both partitions were produced from the same FlatState."
+        )
+        raise ValueError(message)
+
+    combined = object.__new__(type(first))
+    combined._primary_segment = first._primary_segment
+    combined._segment_order = list(first._segment_order)
+    combined._segments = {
+        segment_id: _merge_partition_records(
+            first._segments[segment_id],
+            second._segments[segment_id],
+        )
+        for segment_id in combined._segment_order
+    }
+
+    combined._rebuild_mapping()
+    _validate_state(combined)
+    return combined
 
 
 def _validate_state(state: FlatState[V]) -> None:

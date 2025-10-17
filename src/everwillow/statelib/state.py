@@ -880,6 +880,7 @@ def _flatstate_unflatten(
     """Inverse of :func:`_flatstate_flatten` for JAX pytree support."""
     return FlatState.tree_unflatten(metadata, children)
 
+
 # Register FlatState as a JAX pytree node
 jtu.register_pytree_node(  # type: ignore[arg-type]
     FlatState,

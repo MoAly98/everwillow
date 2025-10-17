@@ -26,11 +26,8 @@ This showcases:
 
 from collections.abc import Callable
 
-import jax
-# JAX float64
-jax.config.update("jax_enable_x64", True)
-
 import evermore as evm
+import jax
 import jax.numpy as jnp
 import pyhs3
 import rich
@@ -47,6 +44,8 @@ from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
 
+# JAX float64
+jax.config.update("jax_enable_x64", True)
 
 # ============================================================================
 # UTILITY: Convert PyTensor graph to JAX function

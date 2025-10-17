@@ -19,6 +19,7 @@ from everwillow.state import ParamState
 
 __all__ = [
     "FitResult",
+    "ParamState",
     "fit",
     "fixed_param_fit",
 ]

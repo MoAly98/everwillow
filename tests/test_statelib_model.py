@@ -39,6 +39,7 @@ def test_combined_model_requires_matching_state_count() -> None:
     with pytest.raises(ValueError, match="Expected 2 states"):
         combined(state)
 
+
 def test_combined_model_rejects_non_flat_state() -> None:
     model1 = sl.Model(logpdf=lambda tree: tree["x"])
     model2 = sl.Model(logpdf=lambda tree: tree["y"][0])

@@ -18,11 +18,23 @@ This showcases:
 4. Comparing results across all approaches
 """
 
+from collections.abc import Callable
+
 import evermore as evm
 import jax
 import jax.numpy as jnp
+import optimistix as optx
+import pyhs3
 import rich
 from jaxtyping import Array
+from pyhs3.distributions import GaussianDist
+from pyhs3.metadata import Metadata
+from pyhs3.parameter_points import ParameterPoint, ParameterSet
+from pyhs3.typing.aliases import TensorVar
+from pytensor.compile import mode
+from pytensor.graph.basic import graph_inputs
+from pytensor.graph.fg import FunctionGraph
+from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
 
@@ -61,18 +73,6 @@ rich.print(f"Data range: [{data.min():.2f}, {data.max():.2f}]")
 rich.print("\n" + "=" * 60)
 rich.print("Test 1: PyHS3 unbinned model with everwillow")
 rich.print("=" * 60)
-
-from collections.abc import Callable
-
-import pyhs3
-from pyhs3.distributions import GaussianDist
-from pyhs3.metadata import Metadata
-from pyhs3.parameter_points import ParameterPoint, ParameterSet
-from pyhs3.typing.aliases import TensorVar
-from pytensor.compile import mode
-from pytensor.graph.basic import graph_inputs
-from pytensor.graph.fg import FunctionGraph
-from pytensor.link.jax.dispatch import jax_funcify
 
 
 def get_jaxified_graph(
@@ -186,8 +186,7 @@ def pyhs3_nll(params):
         pdf2 = jax_gauss2(*gauss2_vals)[0]
 
         # Mixture: a * gauss1 + b * gauss2
-        mixture = params["a"] * pdf1 + params["b"] * pdf2
-        return mixture
+        return params["a"] * pdf1 + params["b"] * pdf2
 
     # Evaluate at all data points using vmap
     pdf_values = jax.vmap(eval_pdf)(data)
@@ -309,7 +308,6 @@ initial_nll_evm = evm_nll(evm_params, data)
 rich.print(f"\nInitial NLL: {initial_nll_evm:.2f}")
 
 # Fit with evermore's native optimizer (optimistix)
-import optimistix as optx
 
 # Partition parameters into dynamic (free) and static (frozen)
 dynamic, static = evm.tree.partition(

@@ -10,6 +10,7 @@ import optimistix as optx
 
 import everwillow.statelib as sl
 
+
 @dataclass(frozen=True)
 class FitResult:
     """
@@ -31,15 +32,15 @@ class FitResult:
 def _canonical_fixed_keys(
     state: sl.FlatState[tp.Any],
     fixed: list[str] | None,
-) -> set[sl.KeyPath]:
+) -> set[tuple[tp.Any, ...]]:
     """Resolve user-supplied parameter names to canonical FlatState keys."""
 
     if not fixed:
         return set()
 
     requested = set(fixed)
-    resolved: dict[str, list[sl.KeyPath]] = {}
-    for key in state.raw_mapping.keys():
+    resolved: dict[str, list[tuple[tp.Any, ...]]] = {}
+    for key in state.raw_mapping:
         if not key:
             continue
         name = key[-1]
@@ -49,10 +50,11 @@ def _canonical_fixed_keys(
     missing = requested - resolved.keys()
     if missing:
         missing_list = ", ".join(sorted(missing))
-        raise KeyError(f"Fixed parameter(s) not found in parameter state: {missing_list}")
+        message = f"Fixed parameter(s) not found in parameter state: {missing_list}"
+        raise KeyError(message)
 
-    canonical_keys: set[sl.KeyPath] = set()
-    for name, keys in resolved.items():
+    canonical_keys: set[tuple[tp.Any, ...]] = set()
+    for _name, keys in resolved.items():
         canonical_keys.update(keys)
 
     return canonical_keys

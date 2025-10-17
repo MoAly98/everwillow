@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import jax.tree_util as jtu
 import pytest
 
-import statelib as sl
 import everwillow.statelib.key_paths as kps
-import jax.tree_util as jtu
 
 
 def test_canonical_keys_from_jax_key_paths() -> None:
     """Canonical JAX key objects convert to tuple form."""
     assert kps.canonical_key((jtu.DictKey("a"), jtu.SequenceKey(0))) == ("a", 0)
-    assert kps.canonical_key((jtu.GetAttrKey("b"), jtu.FlattenedIndexKey(2))) == ("b", 2)
+    assert kps.canonical_key((jtu.GetAttrKey("b"), jtu.FlattenedIndexKey(2))) == (
+        "b",
+        2,
+    )
 
 
 def test_canonical_keys_from_unrecognised_entry_raises() -> None:
@@ -35,7 +37,7 @@ def test__ensure_public_key_non_tuple_raises() -> None:
 def test___make_key_entry_no_template() -> None:
     """Factory chooses key types from values when no template is provided."""
     key = ("a", "b", 0)
-    for index, value in enumerate(key):
+    for _index, value in enumerate(key):
         entry = kps._make_key_entry(value, None)
         if isinstance(value, int):
             assert isinstance(entry, jtu.SequenceKey)
@@ -55,13 +57,15 @@ def test___make_key_entry_with_template() -> None:
     )
     values = ("x", "y", 1, 2)
     expected_types = (
-                        jtu.DictKey,
-                        jtu.GetAttrKey,
-                        jtu.FlattenedIndexKey,
-                        jtu.SequenceKey
-                    )
+        jtu.DictKey,
+        jtu.GetAttrKey,
+        jtu.FlattenedIndexKey,
+        jtu.SequenceKey,
+    )
 
-    for value, template, expected_type in zip(values, templates, expected_types):
+    for value, template, expected_type in zip(
+        values, templates, expected_types, strict=False
+    ):
         entry = kps._make_key_entry(value, template)
         assert isinstance(entry, expected_type)
         if isinstance(entry, jtu.DictKey):
@@ -81,7 +85,7 @@ def test_derive_key_path_from_canonical_key() -> None:
 
     derived_path = tuple(
         kps._make_key_entry(value, template)
-        for value, template in zip(canonical_key, template_path)
+        for value, template in zip(canonical_key, template_path, strict=False)
     )
 
     assert derived_path == template_path

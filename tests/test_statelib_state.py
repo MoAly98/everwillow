@@ -202,15 +202,15 @@ def test_partition_state_unknown_key_raises() -> None:
 
 def test_combine_partitions_overlap_raises() -> None:
     state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2})
-    first, second = sl.partition_state(state, keys={("a",)})
+    first, _rest = sl.partition_state(state, keys={("a",)})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="duplicate keys"):
         sl.combine_partitions(first, first)
 
 
 def test_combine_partitions_mismatched_sources_raises() -> None:
     state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2})
-    first, second = sl.partition_state(state, keys={("a",)})
+    first, _rest = sl.partition_state(state, keys={("a",)})
 
     other_state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": 2, "c": 3})
     _, other_remainder = sl.partition_state(other_state, keys={("a",)})

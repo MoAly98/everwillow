@@ -46,7 +46,7 @@ class SegmentRecord(tp.Generic[V]):
             self.treedef,
             frozenset(self.keys),
             dict(self.values),
-            {key: value for key, value in self.key_paths.items()},
+            dict(self.key_paths),
             self.full_key_order,
         )
 
@@ -72,7 +72,13 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         {'a': 1, 'b': 2}
     """
 
-    __slots__ = ("__dict__", "_mapping", "_primary_segment", "_segment_order", "_segments")
+    __slots__ = (
+        "__dict__",
+        "_mapping",
+        "_primary_segment",
+        "_segment_order",
+        "_segments",
+    )
     __hash__ = None  # type: ignore[assignment]
 
     if TYPE_CHECKING:
@@ -575,9 +581,7 @@ def _subset_segment(
 ) -> SegmentRecord[V]:
     order = _segment_key_order(record)
     values: dict[KeyPath, V] = {
-        key: record.values[key]
-        for key in order
-        if key in record.values and key in keys
+        key: record.values[key] for key in order if key in record.values and key in keys
     }
     key_paths = {key: record.key_paths[key] for key in values}
     return SegmentRecord(

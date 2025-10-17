@@ -16,37 +16,34 @@ state_a = sl.FlatState.from_pytree(tree_a)
 state_b = sl.FlatState.from_pytree(tree_b)
 state_c = sl.FlatState.from_pytree(tree_c)
 
-print(state_a.raw_mapping)  # -> {('a', 'b'): 1.0}
-print(state_b.raw_mapping)  # -> {('c', 'd'): 5.0, ('e', 'f'): 3.0}
-print(state_c.raw_mapping)  # -> {('c', 'd'): 7.0, ('g', 'h'): 4.0}
+print(state_a.raw_mapping)  # -> ChainMap({('a', 'b'): 1.0})
+print(state_b.raw_mapping)  # -> ChainMap({('c', 'd'): 5.0, ('e', 'f'): 3.0})
+print(state_c.raw_mapping)  # -> ChainMap({('c', 'd'): 7.0, ('g', 'h'): 4.0})
 
 # 2. Transform keys so overlapping entries align (same name) -> we're correlating `("c", "d")` with `("g", "h")` here.
 aligned_b = sl.apply_transformations(
     state_b,
-    {
-        ("c", "d"): sl.Transform(new_key=("correlated",))
-    },
+    {("c", "d"): sl.Transform(new_key=("correlated",))},
 )
 aligned_c = sl.apply_transformations(
     state_c,
-    {
-        ("g", "h"): sl.Transform(new_key=("correlated",))
-    },
+    {("g", "h"): sl.Transform(new_key=("correlated",))},
 )
 
 # Both transformed states now expose the shared key/value pair.
 assert ("correlated",) in aligned_b.raw_mapping
+assert ("correlated",) in aligned_c.raw_mapping
 
 print(aligned_b.raw_mapping)
-# -> {('correlated',): 0.0, ('e', 'f'): 3.0}
+# -> ChainMap({('correlated',): 5.0, ('e', 'f'): 3.0})
 print(aligned_c.raw_mapping)
-# -> {('c', 'd'): 7.0, ('correlated',): 0.0}
+# -> ChainMap({('c', 'd'): 7.0, ('correlated',): 4.0})
 
 # 3. Merge the aligned states into a single combined FlatState.
 merged = sl.merge_states(state_a, aligned_b, aligned_c)
 
 print(dict(merged.raw_mapping))
-# -> {('a', 'b'): 1.0, ('correlated',): 0.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
+# -> {('a', 'b'): 1.0, ('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
 
 # 4. Partition the merged state into two orthogonal partitions.
 first_partition, second_partition = sl.partition_state(
@@ -54,8 +51,10 @@ first_partition, second_partition = sl.partition_state(
     predicate=lambda key, _: "a" in key,
 )
 
-print(dict(first_partition.raw_mapping))   # -> {('a', 'b'): 1.0}
-print(dict(second_partition.raw_mapping))  # -> {('correlated',): 0.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
+print(dict(first_partition.raw_mapping))  # -> {('a', 'b'): 1.0}
+print(
+    dict(second_partition.raw_mapping)
+)  # -> {('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
 
 # 5. Combine the partitions back into a single state.
 recombined = sl.combine_partitions(first_partition, second_partition)
@@ -64,7 +63,7 @@ recombined = sl.combine_partitions(first_partition, second_partition)
 seg_a, seg_b, seg_c = sl.split_state(recombined)
 
 print(tuple(seg.to_pytree() for seg in (seg_a, seg_b, seg_c)))
-# -> ({'a': {'b': 1.0}}, {'c': {'d': 0.0}, 'e': {'f': 3.0}}, {'c': {'d': 7.0}, 'g': {'h': 0.0}})
+# -> ({'a': {'b': 1.0}}, {'c': {'d': 5.0}, 'e': {'f': 3.0}}, {'c': {'d': 7.0}, 'g': {'h': 4.0}})
 
 # 7. Convert segments back to pytrees and verify they match the originals.
 assert seg_a.to_pytree() == tree_a

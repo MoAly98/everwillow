@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import statelib as sl
-import everwillow.statelib. key_paths as kps
+import everwillow.statelib.key_paths as kps
 import jax.tree_util as jtu
 
 

@@ -8,8 +8,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import optimistix as optx
 
-from everwillow.state import ParamState, partition_state, update_state
-
+import everwillow.statelib as sl
 
 @dataclass(frozen=True)
 class FitResult:
@@ -27,6 +26,36 @@ class FitResult:
     nll: float
     success: bool
     solver_result: tp.Any = None
+
+
+def _canonical_fixed_keys(
+    state: sl.FlatState[tp.Any],
+    fixed: list[str] | None,
+) -> set[sl.KeyPath]:
+    """Resolve user-supplied parameter names to canonical FlatState keys."""
+
+    if not fixed:
+        return set()
+
+    requested = set(fixed)
+    resolved: dict[str, list[sl.KeyPath]] = {}
+    for key in state.raw_mapping.keys():
+        if not key:
+            continue
+        name = key[-1]
+        if name in requested:
+            resolved.setdefault(name, []).append(key)
+
+    missing = requested - resolved.keys()
+    if missing:
+        missing_list = ", ".join(sorted(missing))
+        raise KeyError(f"Fixed parameter(s) not found in parameter state: {missing_list}")
+
+    canonical_keys: set[sl.KeyPath] = set()
+    for name, keys in resolved.items():
+        canonical_keys.update(keys)
+
+    return canonical_keys
 
 
 def fit(
@@ -69,44 +98,35 @@ def fit(
         ...     return compute_loss(params, data, templates, config)
         >>> result = fit(my_nll, initial_params, args=(data, templates), kwargs={"config": cfg})
     """
-    # Convert to ParamState for manipulation
-    param_state = ParamState.from_pytree(params)
+    # Convert to FlatState for manipulation
+    param_state = sl.FlatState.from_pytree(params)
 
-    # Determine fixed keys
-    fixed_keys: set[tp.Any] = set()
-    if fixed is not None:
-        for name in fixed:
-            for key in param_state:
-                if key[-1] == name or (len(key) == 1 and key[0] == name):
-                    fixed_keys.add(key)
+    fixed_keys = _canonical_fixed_keys(param_state, fixed)
 
-    # Partition into free and fixed
-    free_state, fixed_state, original_treedef = partition_state(param_state, fixed_keys)
+    if fixed_keys:
+        fixed_state, free_state = sl.partition_state(param_state, keys=fixed_keys)
+    else:
+        fixed_state = None
+        free_state = param_state
 
-    # Store the original key order for reconstruction
-    original_keys = list(param_state.keys())
-    free_keys = list(free_state.keys())
+    # Get keys for free parameters in consistent order
+    free_keys = list(free_state.raw_mapping.keys())
 
     # Handle kwargs default
-    if kwargs is None:
-        kwargs = {}
+    kwargs = kwargs or {}
 
     # Wrap nll to only take free parameters (as flat array)
     def wrapped_nll(free_values, _args):
-        # Reconstruct free_state from flat array
-        free_mapping = dict(zip(free_keys, free_values, strict=True))
-        free_state_updated = ParamState._new(free_mapping)
+        # Update free state with new values
+        updates = dict(zip(free_keys, free_values, strict=True))
+        updated_free = sl.update_state(free_state, updates)
 
-        # Merge back in original order
-        full_mapping = {}
-        for key in original_keys:
-            if key in free_state_updated._mapping:
-                full_mapping[key] = free_state_updated._mapping[key]
-            else:
-                full_mapping[key] = fixed_state._mapping[key]
-
-        # Create full state with original treedef
-        full_state = ParamState._new(full_mapping, treedef=original_treedef)
+        # Combine partitions back together
+        full_state = (
+            updated_free
+            if fixed_state is None
+            else sl.combine_partitions(fixed_state, updated_free)
+        )
 
         # Convert to pytree for user's nll_fn
         full_pytree = full_state.to_pytree()
@@ -124,17 +144,16 @@ def fit(
     # Minimize
     solution = optx.minimise(wrapped_nll, solver, y0=y0, **solver_kwargs)
 
-    # Reconstruct fitted parameters in original order
-    fitted_free_mapping = dict(zip(free_keys, solution.value, strict=True))
+    # Reconstruct fitted parameters
+    fitted_updates = dict(zip(free_keys, solution.value, strict=True))
+    fitted_free = sl.update_state(free_state, fitted_updates)
 
-    full_mapping = {}
-    for key in original_keys:
-        if key in fitted_free_mapping:
-            full_mapping[key] = fitted_free_mapping[key]
-        else:
-            full_mapping[key] = fixed_state[key]
-
-    fitted_full_state = ParamState._new(full_mapping, treedef=original_treedef)
+    # Combine with fixed partition if one existed
+    fitted_full_state = (
+        fitted_free
+        if fixed_state is None
+        else sl.combine_partitions(fixed_state, fitted_free)
+    )
 
     # Convert back to original pytree structure
     fitted_pytree = fitted_full_state.to_pytree()
@@ -194,23 +213,22 @@ def fixed_param_fit(
         >>> result = fixed_param_fit({"mu": 1.5}, my_nll, initial_params,
         ...                          args=(data,), kwargs={"verbose": True})
     """
-    # Convert to ParamState
-    param_state = ParamState.from_pytree(params)
+    # Convert to FlatState for manipulation
+    param_state = sl.FlatState.from_pytree(params)
 
-    # Update state with fixed values
+    # Resolve canonical keys and apply the fixed values
+    fixed_keys = _canonical_fixed_keys(param_state, list(param_values.keys()))
+
     updates = {}
-    for name, value in param_values.items():
-        # Find matching key
-        for key in param_state:
-            if key[-1] == name or (len(key) == 1 and key[0] == name):
-                updates[key] = value
-                break
+    for key in fixed_keys:
+        name = key[-1]
+        # param_values contains the desired fixed value for each trailing name
+        updates[key] = param_values[name]
 
-    updated_state = update_state(param_state, updates)
+    updated_state = sl.update_state(param_state, updates)
 
     # Combine fixed lists
-    if fixed is None:
-        fixed = []
+    fixed = fixed or []
     fixed_combined = fixed + list(param_values.keys())
 
     # Convert back to pytree and call regular fit

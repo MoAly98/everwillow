@@ -104,6 +104,25 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         treedef: jtu.PyTreeDef | None = None,
         key_paths: tp.Mapping[KeyPath, KeyPath] | None = None,
     ) -> FlatState[V]:
+        """Construct a ``FlatState`` from a mapping of canonical key tuples.
+
+        Args:
+            mapping: Dictionary-like object mapping canonical key tuples (the
+                same shape produced by ``ensure_public_key`` /
+                ``canonical_key``) to leaf values.
+            treedef: Optional ``jax.tree_util.PyTreeDef`` describing the
+                original structure of the state slice. Stored so
+                ``FlatState.to_pytree`` can reconstruct the source pytree.
+            key_paths: Optional mapping from canonical key tuples to the
+                original JAX key-path objects emitted by
+                ``tree_flatten_with_path``. If omitted, key paths are
+                regenerated with ``derive_key_path``.
+
+        Returns:
+            ``FlatState`` instance that owns a single internal slice populated
+            with ``mapping``.
+        """
+
         if not isinstance(mapping, Mapping):
             message = (
                 f"{mapping!r} is not a mapping. Convert your pytree using "

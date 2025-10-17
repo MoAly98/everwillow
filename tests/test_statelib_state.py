@@ -7,6 +7,14 @@ import pytest
 import everwillow.statelib as sl
 
 
+def test_flat_state_direct_init_raises() -> None:
+    with pytest.raises(
+        TypeError,
+        match="'FlatState' should never be directly instantiated, use 'FlatState.from_pytree' instead",
+    ):
+        sl.FlatState(raw_mapping={}, own_keys={}, n_internal_states=1)  # type: ignore[arg-type]
+
+
 def test_flat_state_roundtrip_to_pytree() -> None:
     tree = {"a": 1, "b": {"c": 2, "d": (3, 4)}}
     state: sl.FlatState[tp.Any] = sl.FlatState.from_pytree(tree)

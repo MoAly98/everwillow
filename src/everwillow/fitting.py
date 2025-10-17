@@ -29,41 +29,71 @@ class FitResult:
     solver_result: tp.Any = None
 
 
-def _canonical_fixed_keys(
+def _resolve_fixed_keys(
     state: sl.FlatState[tp.Any],
-    fixed: list[str] | None,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
+    predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
 ) -> set[tuple[tp.Any, ...]]:
-    """Resolve user-supplied parameter names to canonical FlatState keys."""
+    keys: set[tuple[tp.Any, ...]] = set()
 
-    if not fixed:
-        return set()
+    if fixed:
+        for entry in fixed:
+            if isinstance(entry, tuple):
+                key = tuple(entry)
+                if key not in state.raw_mapping:
+                    message = f"Fixed parameter not found in state: {key}"
+                    raise KeyError(message)
+                keys.add(key)
+            else:
+                matched = False
+                for key in state.raw_mapping:
+                    if key and key[-1] == entry:
+                        keys.add(key)
+                        matched = True
+                if not matched:
+                    message = f"Fixed parameter not found in state: {entry}"
+                    raise KeyError(message)
 
-    requested = set(fixed)
-    resolved: dict[str, list[tuple[tp.Any, ...]]] = {}
-    for key in state.raw_mapping:
-        if not key:
-            continue
-        name = key[-1]
-        if name in requested:
-            resolved.setdefault(name, []).append(key)
+    if predicate is not None:
+        for key, value in state.raw_mapping.items():
+            if predicate(key, value):
+                keys.add(key)
 
-    missing = requested - resolved.keys()
+    return keys
+
+
+def _resolve_name_keys(
+    state: sl.FlatState[tp.Any],
+    param_values: dict[str, tp.Any],
+) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
+    updates: dict[tuple[tp.Any, ...], tp.Any] = {}
+    keys: set[tuple[tp.Any, ...]] = set()
+    missing: list[str] = []
+
+    for name, value in param_values.items():
+        matched = False
+        for key in state.raw_mapping:
+            if key and key[-1] == name:
+                keys.add(key)
+                updates[key] = value
+                matched = True
+        if not matched:
+            missing.append(name)
+
     if missing:
         missing_list = ", ".join(sorted(missing))
-        message = f"Fixed parameter(s) not found in parameter state: {missing_list}"
+        message = f"Fixed parameter values not found in state: {missing_list}"
         raise KeyError(message)
 
-    canonical_keys: set[tuple[tp.Any, ...]] = set()
-    for _name, keys in resolved.items():
-        canonical_keys.update(keys)
-
-    return canonical_keys
+    return keys, updates
 
 
 def fit(
     nll_fn: tp.Callable[..., float],
-    params: tp.Any,  # pytree
-    fixed: list[str] | None = None,
+    params: tp.Any,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    *,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),
     kwargs: dict | None = None,
@@ -79,11 +109,15 @@ def fit(
         nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
                 followed by any additional positional/keyword arguments.
         params: Initial parameter values (pytree, e.g. dict, nested dict, etc.)
-        fixed: List of parameter names to hold fixed during fit
+        fixed: Optional sequence of leaf names or canonical key tuples to hold fixed
         solver: Optimistix solver (default: BFGS)
         args: Additional positional arguments to pass to nll_fn after params
         kwargs: Additional keyword arguments to pass to nll_fn
         **solver_kwargs: Additional kwargs for solver
+        fixed_predicate: Optional callable applied to each leaf (after applying
+            ``param_values``) to freeze additional parameters.
+        fixed_predicate: Optional callable applied to each leaf; return True to
+            freeze the parameter. Evaluated in addition to ``fixed`` when provided.
 
     Returns:
         FitResult with fitted parameters and diagnostics
@@ -99,11 +133,22 @@ def fit(
         >>> def my_nll(params, data, templates, *, config):
         ...     return compute_loss(params, data, templates, config)
         >>> result = fit(my_nll, initial_params, args=(data, templates), kwargs={"config": cfg})
+
+        >>> # Fix background while fitting mu and sigma
+        >>> def my_nll(params):
+        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
+        >>> result = fit(
+        ...     my_nll,
+        ...     {"mu": 0.0, "sigma": 0.5, "background": 50.0},
+        ...     fixed=["background"],
+        ... )
+        >>> result.params["background"]  # Remains fixed
+        50.0
     """
     # Convert to FlatState for manipulation
     param_state = sl.FlatState.from_pytree(params)
 
-    fixed_keys = _canonical_fixed_keys(param_state, fixed)
+    fixed_keys = _resolve_fixed_keys(param_state, fixed, fixed_predicate)
 
     if fixed_keys:
         fixed_state, free_state = sl.partition_state(param_state, keys=fixed_keys)
@@ -174,8 +219,10 @@ def fit(
 def fixed_param_fit(
     param_values: dict[str, float],
     nll_fn: tp.Callable[..., float],
-    params: tp.Any,  # pytree
-    fixed: list[str] | None = None,
+    params: tp.Any,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    *,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),
     kwargs: dict | None = None,
@@ -192,11 +239,14 @@ def fixed_param_fit(
         nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
                 followed by any additional positional/keyword arguments.
         params: Initial parameter values (pytree)
-        fixed: Additional parameters to hold fixed (beyond param_values)
+        fixed: Additional parameters to hold fixed (beyond ``param_values``),
+            given as names or canonical key tuples
         solver: Optimistix solver (default: BFGS)
         args: Additional positional arguments to pass to nll_fn after params
         kwargs: Additional keyword arguments to pass to nll_fn
         **solver_kwargs: Additional kwargs for solver
+        fixed_predicate: Optional callable applied to each leaf (after applying
+            ``param_values``) to freeze additional parameters.
 
     Returns:
         FitResult with fitted parameters
@@ -206,7 +256,12 @@ def fixed_param_fit(
         >>> def my_nll(params):
         ...     return (params["mu"] - 2)**2
         >>> # Fix mu=1.5 and fit everything else
-        >>> result = fixed_param_fit({"mu": 1.5}, my_nll, {"mu": 0.0, "data": 100}, fixed=["data"])
+        >>> result = fixed_param_fit(
+        ...     {"mu": 1.5},
+        ...     my_nll,
+        ...     {"mu": 0.0, "data": 100},
+        ...     fixed=["data"],
+        ... )
         >>> result.params["mu"]  # Will be 1.5 (fixed)
 
         >>> # With additional arguments
@@ -219,19 +274,13 @@ def fixed_param_fit(
     param_state = sl.FlatState.from_pytree(params)
 
     # Resolve canonical keys and apply the fixed values
-    fixed_keys = _canonical_fixed_keys(param_state, list(param_values.keys()))
-
-    updates = {}
-    for key in fixed_keys:
-        name = key[-1]
-        # param_values contains the desired fixed value for each trailing name
-        updates[key] = param_values[name]
+    name_keys, updates = _resolve_name_keys(param_state, param_values)
 
     updated_state = sl.update_state(param_state, updates)
 
-    # Combine fixed lists
-    fixed = fixed or []
-    fixed_combined = fixed + list(param_values.keys())
+    user_fixed_keys = _resolve_fixed_keys(updated_state, fixed, fixed_predicate)
+    combined_keys = user_fixed_keys | name_keys
+    fixed_sequence = [tuple(key) for key in combined_keys]
 
     # Convert back to pytree and call regular fit
     updated_pytree = updated_state.to_pytree()
@@ -239,7 +288,8 @@ def fixed_param_fit(
     return fit(
         nll_fn,
         updated_pytree,
-        fixed=fixed_combined,
+        fixed=fixed_sequence,
+        fixed_predicate=fixed_predicate,
         solver=solver,
         args=args,
         kwargs=kwargs,

@@ -15,11 +15,9 @@ __version__ = "0.0.1"
 
 # Core API
 from everwillow.fitting import FitResult, fit, fixed_param_fit
-from everwillow.state import ParamState
 
 __all__ = [
     "FitResult",
-    "ParamState",
     "fit",
     "fixed_param_fit",
 ]

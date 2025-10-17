@@ -215,7 +215,7 @@ rich.print(f"\nInitial NLL: {initial_nll:.2f}")
 result_pyhs3 = ew.fit(
     pyhs3_nll,
     pyhs3_initial,
-    fixed=["a", "x_data"],  # Fix 'a' at 1.0, x_data is just a placeholder
+    fixed=["a"],  # Fix 'a' at 1.0
     max_steps=100,
 )
 

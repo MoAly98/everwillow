@@ -160,7 +160,9 @@ class TestFitFixedParameters:
             )
 
         result = ew.fit(
-            nll, {"mu": 0.0, "sigma": 0.5, "background": 50.0}, fixed=["background"]
+            nll,
+            {"mu": 0.0, "sigma": 0.5, "background": 50.0},
+            fixed=["background"],
         )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
@@ -179,7 +181,11 @@ class TestFitFixedParameters:
                 + (params["c"] - 3.0) ** 2
             )
 
-        result = ew.fit(nll, {"a": 0.0, "b": 10.0, "c": 20.0}, fixed=["b", "c"])
+        result = ew.fit(
+            nll,
+            {"a": 0.0, "b": 10.0, "c": 20.0},
+            fixed=["b", "c"],
+        )
 
         assert abs(result.params["a"] - 1.0) < 1e-4
         assert abs(result.params["b"] - 10.0) < 1e-10
@@ -205,7 +211,7 @@ class TestFitFixedParameters:
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
-    def test_fixed_empty_list(self):
+    def test_fixed_empty_mapping(self):
         """Test that fixed=[] works (no fixed parameters)."""
 
         def nll(params):
@@ -224,10 +230,34 @@ class TestFitFixedParameters:
             ) ** 2
 
         initial = {"level1": {"mu": 0.0, "sigma": 5.0}}
-        result = ew.fit(nll, initial, fixed=["sigma"])
+        result = ew.fit(
+            nll,
+            initial,
+            fixed=[('level1', 'sigma')],
+        )
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
         assert abs(result.params["level1"]["sigma"] - 5.0) < 1e-10
+
+    def test_fixed_predicate(self) -> None:
+        """Test fixing parameters via predicate."""
+
+        def nll(params):
+            return (
+                (params["a"] - 1.0) ** 2
+                + (params["b"] - 2.0) ** 2
+                + (params["c"] - 3.0) ** 2
+            )
+
+        result = ew.fit(
+            nll,
+            {"a": 0.0, "b": 10.0, "c": 20.0},
+            fixed_predicate=lambda key, _value: key[-1] in {"b", "c"},
+        )
+
+        assert abs(result.params["a"] - 1.0) < 1e-4
+        assert abs(result.params["b"] - 10.0) < 1e-10
+        assert abs(result.params["c"] - 20.0) < 1e-10
 
 
 # ============================================================================
@@ -284,7 +314,12 @@ class TestFitAdditionalArguments:
         def nll(params, scale):
             return (params["a"] - scale) ** 2 + (params["b"] - 10.0) ** 2
 
-        result = ew.fit(nll, {"a": 0.0, "b": 5.0}, fixed=["b"], args=(7.0,))
+        result = ew.fit(
+            nll,
+            {"a": 0.0, "b": 5.0},
+            fixed=["b"],
+            args=(7.0,),
+        )
 
         assert abs(result.params["a"] - 7.0) < 1e-4
         assert abs(result.params["b"] - 5.0) < 1e-10
@@ -439,7 +474,10 @@ class TestFixedParamFit:
             )
 
         result = ew.fixed_param_fit(
-            {"a": 5.0}, nll, {"a": 0.0, "b": 10.0, "c": 0.0}, fixed=["b"]
+            {"a": 5.0},
+            nll,
+            {"a": 0.0, "b": 10.0, "c": 0.0},
+            fixed=["b"],
         )
 
         assert abs(result.params["a"] - 5.0) < 1e-10

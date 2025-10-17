@@ -344,7 +344,6 @@ rich.print("=" * 60)
 result = ew.fit(
     nll_fn,
     all_params,
-    fixed=[],  # All parameters free
     max_steps=100,
 )
 
@@ -400,7 +399,7 @@ result_fixed = ew.fixed_param_fit(
     {"mu": 1.5},  # Fix mu to this value
     nll_fn,
     all_params,
-    fixed=[],  # No additional fixed parameters beyond mu
+    # No additional fixed parameters beyond mu
 )
 
 rich.print("\nFitted parameters:")
@@ -443,7 +442,6 @@ try:
         evm_loss,
         evm_dynamic,  # This contains evm.Parameter objects, not just values
         args=(evm_static, evm_hists, evm_observation),
-        fixed=[],
         max_steps=100,
     )
     rich.print("✓ Success with direct Parameter objects!")
@@ -487,7 +485,6 @@ result_evm = ew.fit(
     evm_nll_wrapper,
     initial_evm_values,
     args=(evm_static, evm_hists, evm_observation),
-    fixed=[],
     max_steps=100,
 )
 

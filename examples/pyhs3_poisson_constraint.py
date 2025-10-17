@@ -208,7 +208,6 @@ rich.print("=" * 60)
 result = ew.fit(
     nll_fn,
     all_params,
-    fixed=[],  # No fixed parameters - all three are free
     max_steps=100,
 )
 
@@ -230,8 +229,7 @@ rich.print("=" * 60)
 result_fixed = ew.fixed_param_fit(
     {"mu": 1.5},  # Fix mu to this value
     nll_fn,
-    all_params,
-    fixed=[],  # No additional fixed parameters beyond mu
+    all_params,  # No additional fixed parameters beyond mu
 )
 
 rich.print("\nFitted parameters:", result_fixed.params)

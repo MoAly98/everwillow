@@ -38,3 +38,6 @@ def test_combined_model_requires_matching_state_count() -> None:
 
     with pytest.raises(ValueError, match="Expected 2 states"):
         combined(state)
+
+    with pytest.raises(TypeError, match="parameters must be a FlatState"):
+        combined({"x": 1})

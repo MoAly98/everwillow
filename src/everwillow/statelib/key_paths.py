@@ -1,3 +1,9 @@
+"""Utilities for working with pytree key paths.
+
+The functions in this module translate between JAX's opaque key objects and the
+canonical tuple representation used throughout :mod:`everwillow.statelib.state`.
+"""
+
 from __future__ import annotations
 
 import typing as tp

@@ -240,7 +240,7 @@ class TestFitFixedParameters:
         assert abs(result.params["level1"]["sigma"] - 5.0) < 1e-10
 
     def test_fixed_predicate(self) -> None:
-        """Test fixing parameters via predicate."""
+        """Fix parameters using the ``fixed_predicate`` hook."""
 
         def nll(params):
             return (

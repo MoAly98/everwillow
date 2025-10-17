@@ -1,3 +1,5 @@
+"""State transformation helpers for :mod:`everwillow.statelib.state`."""
+
 from __future__ import annotations
 
 import dataclasses

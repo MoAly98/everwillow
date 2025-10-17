@@ -1,3 +1,5 @@
+"""Core state container used by :mod:`everwillow` fitting utilities."""
+
 from __future__ import annotations
 
 import dataclasses

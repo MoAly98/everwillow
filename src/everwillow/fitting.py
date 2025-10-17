@@ -34,6 +34,22 @@ def _resolve_fixed_keys(
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
     predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
 ) -> set[tuple[tp.Any, ...]]:
+    """Normalise user-provided fixed-parameter hints.
+
+    Args:
+        state: ``FlatState`` generated from the caller's parameter pytree.
+        fixed: Optional collection of leaf names (``str``) or canonical key
+            tuples identifying leaves that should remain unchanged.
+        predicate: Optional callable evaluated for every ``(key, value)`` pair in
+            ``state``. Returning ``True`` marks the parameter as fixed.
+
+    Returns:
+        Set of canonical key tuples describing the leaves that should be frozen.
+
+    Raises:
+        KeyError: If a supplied name or tuple does not correspond to a leaf in
+            ``state``.
+    """
     keys: set[tuple[tp.Any, ...]] = set()
 
     if fixed:
@@ -66,6 +82,22 @@ def _resolve_name_keys(
     state: sl.FlatState[tp.Any],
     param_values: dict[str, tp.Any],
 ) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
+    """Map ``param_values`` into canonical key/value updates.
+
+    Args:
+        state: ``FlatState`` derived from the caller's parameter pytree.
+        param_values: Mapping of parameter names to the values that should be
+            injected into the state.
+
+    Returns:
+        A tuple ``(keys, updates)`` where ``keys`` contains the resolved
+        canonical tuples and ``updates`` may be fed directly to
+        :func:`everwillow.statelib.state.update_state`.
+
+    Raises:
+        KeyError: If any name in ``param_values`` cannot be located in
+            ``state``.
+    """
     updates: dict[tuple[tp.Any, ...], tp.Any] = {}
     keys: set[tuple[tp.Any, ...]] = set()
     missing: list[str] = []
@@ -99,28 +131,35 @@ def fit(
     kwargs: dict | None = None,
     **solver_kwargs,
 ) -> FitResult:
-    """
-    Unconditional maximum likelihood fit.
+    """Perform an unconditional maximum-likelihood fit.
 
-    Minimizes negative log-likelihood with respect to all parameters
-    except those specified as fixed.
+    The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
+    respect to all parameters except those explicitly marked as fixed. Internally
+    the parameter pytree is converted into a :class:`~everwillow.statelib.state.FlatState`
+    so that subsets of the state can be frozen using
+    :func:`everwillow.statelib.state.partition_state`.
 
     Args:
-        nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
-                followed by any additional positional/keyword arguments.
-        params: Initial parameter values (pytree, e.g. dict, nested dict, etc.)
-        fixed: Optional sequence of leaf names or canonical key tuples to hold fixed
-        solver: Optimistix solver (default: BFGS)
-        args: Additional positional arguments to pass to nll_fn after params
-        kwargs: Additional keyword arguments to pass to nll_fn
-        **solver_kwargs: Additional kwargs for solver
-        fixed_predicate: Optional callable applied to each leaf (after applying
-            ``param_values``) to freeze additional parameters.
-        fixed_predicate: Optional callable applied to each leaf; return True to
-            freeze the parameter. Evaluated in addition to ``fixed`` when provided.
+        nll_fn: Callable returning the scalar NLL. It must accept the parameter
+            pytree as its first argument, followed by any positional or keyword
+            arguments supplied via ``args``/``kwargs``.
+        params: Initial parameter values organised as a pytree (e.g. mapping or
+            nested containers).
+        fixed: Optional sequence of leaf names (``str``) or canonical key tuples
+            identifying parameters that should remain unchanged during the fit.
+        fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
+            in the flattened state. Returning ``True`` marks the parameter as
+            fixed. This is evaluated in addition to ``fixed`` when provided.
+        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+            :class:`optimistix.BFGS`.
+        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+            pytree.
+        kwargs: Keyword arguments forwarded to ``nll_fn``.
+        **solver_kwargs: Additional keyword arguments forwarded to
+            :func:`optimistix.minimise`.
 
     Returns:
-        FitResult with fitted parameters and diagnostics
+        :class:`FitResult` containing the fitted parameters and diagnostics.
 
     Examples:
         >>> # Simple case: nll_fn takes only params
@@ -229,27 +268,37 @@ def fixed_param_fit(
     **solver_kwargs,
 ) -> FitResult:
     """
-    Maximum likelihood fit with specific parameters fixed to given values.
+    Perform a profile-likelihood style fit with selected parameters frozen.
 
-    This is the building block for profile likelihood scans. It performs
-    a fit with one or more parameters held fixed at specified values.
+    ``param_values`` supplies concrete values for one or more leaves in the
+    parameter pytree. These leaves remain fixed while the remaining parameters
+    are optimised. Additional parameters can be frozen via ``fixed`` or
+    ``fixed_predicate``. Internally this routine relies on
+    :func:`everwillow.statelib.state.partition_state` to separate the fixed and
+    free portions of the state.
 
     Args:
-        param_values: Dict of {param_name: value} to fix
-        nll_fn: Negative log-likelihood function. First argument must be parameter pytree,
-                followed by any additional positional/keyword arguments.
-        params: Initial parameter values (pytree)
-        fixed: Additional parameters to hold fixed (beyond ``param_values``),
-            given as names or canonical key tuples
-        solver: Optimistix solver (default: BFGS)
-        args: Additional positional arguments to pass to nll_fn after params
-        kwargs: Additional keyword arguments to pass to nll_fn
-        **solver_kwargs: Additional kwargs for solver
-        fixed_predicate: Optional callable applied to each leaf (after applying
-            ``param_values``) to freeze additional parameters.
+        param_values: Mapping from parameter names to the values that should be
+            injected prior to optimisation.
+        nll_fn: Callable returning the scalar NLL. It must accept the parameter
+            pytree as its first argument, followed by any positional or keyword
+            arguments supplied via ``args``/``kwargs``.
+        params: Initial parameter values organised as a pytree.
+        fixed: Additional parameters to hold fixed, expressed as leaf names or
+            canonical key tuples.
+        fixed_predicate: Optional callable evaluated for each leaf after
+            ``param_values`` have been applied. Returning ``True`` marks the leaf
+            as fixed.
+        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+            :class:`optimistix.BFGS`.
+        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+            pytree.
+        kwargs: Keyword arguments forwarded to ``nll_fn``.
+        **solver_kwargs: Additional keyword arguments forwarded to
+            :func:`optimistix.minimise`.
 
     Returns:
-        FitResult with fitted parameters
+        :class:`FitResult` containing the fitted parameters and diagnostics.
 
     Examples:
         >>> # Simple case

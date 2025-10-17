@@ -233,7 +233,7 @@ class TestFitFixedParameters:
         result = ew.fit(
             nll,
             initial,
-            fixed=[('level1', 'sigma')],
+            fixed=[("level1", "sigma")],
         )
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4

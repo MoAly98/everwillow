@@ -163,6 +163,9 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return self
 
     def _rebuild_mapping(self) -> None:
+        """
+        Reconstruct the internal ChainMap from the segment records.
+        """
         sources = [
             self._segments[segment_id].values
             for segment_id in reversed(self._segment_order)
@@ -481,6 +484,7 @@ def merge_states(*states: FlatState[V]) -> FlatState[V]:
     Raises:
         ValueError: If no states are provided or the merge would duplicate a
             segment identifier.
+        ValueError: If a segment is merged more than once.
 
     Examples:
         >>> s1 = FlatState.from_pytree({"a": 1})
@@ -490,6 +494,11 @@ def merge_states(*states: FlatState[V]) -> FlatState[V]:
         2
         >>> list(merged.raw_mapping.keys())
         [('a',), ('b',)]
+
+    Note:
+        If multiple states contain the same key, the value from the last state
+        in ``*states`` takes precedence. Ensure duplicates carry the same value
+        unless you explicitly want later states to override earlier ones.
     """
 
     def _imerge(this: FlatState[V], other: tp.Any) -> FlatState[V]:
@@ -871,7 +880,7 @@ def _flatstate_unflatten(
     """Inverse of :func:`_flatstate_flatten` for JAX pytree support."""
     return FlatState.tree_unflatten(metadata, children)
 
-
+# Register FlatState as a JAX pytree node
 jtu.register_pytree_node(  # type: ignore[arg-type]
     FlatState,
     _flatstate_flatten,

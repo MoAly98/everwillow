@@ -39,5 +39,14 @@ def test_combined_model_requires_matching_state_count() -> None:
     with pytest.raises(ValueError, match="Expected 2 states"):
         combined(state)
 
+def test_combined_model_rejects_non_flat_state() -> None:
+    model1 = sl.Model(logpdf=lambda tree: tree["x"])
+    model2 = sl.Model(logpdf=lambda tree: tree["y"][0])
+
+    state1: sl.FlatState[int] = sl.FlatState.from_pytree({"x": 1})
+    state2: sl.FlatState[int] = sl.FlatState.from_pytree({"y": (2, 3)})
+
+    merged = sl.merge_states(state1, state2)
+    combined = sl.CombinedModel.combine(model1, model2)
     with pytest.raises(TypeError, match="parameters must be a FlatState"):
-        combined({"x": 1})
+        combined(merged.to_dict())  # type: ignore[arg-type]

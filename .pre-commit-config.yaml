@@ -73,7 +73,7 @@ repos:
     hooks:
       - id: coverage
         name: coverage
-        entry: bash -c "uv run coverage erase && uv run coverage run -m pytest && uv run coverage report --fail-under=85"
+        entry: bash -c 'if command -v uv >/dev/null 2>&1; then uv run coverage erase && uv run coverage run -m pytest && uv run coverage report --fail-under=85; else coverage erase && coverage run -m pytest && coverage report --fail-under=85; fi'
         language: system
         types: [python]
         pass_filenames: false

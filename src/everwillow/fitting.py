@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import optimistix as optx
 
+import everwillow.bounds as bounds_module
 import everwillow.statelib as sl
 
 
@@ -125,6 +126,7 @@ def fit(
     params: tp.Any,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.BoundSpec] | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),
@@ -139,6 +141,8 @@ def fit(
     so that subsets of the state can be frozen using
     :func:`everwillow.statelib.state.partition_state`.
 
+    Parameter bounds are supported through automatic transformation to unbounded space.
+
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
@@ -147,6 +151,15 @@ def fit(
             nested containers).
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
             identifying parameters that should remain unchanged during the fit.
+        bounds: Optional mapping from parameter names (``str``) or canonical key
+            tuples to ``(lower, upper)`` bound specifications. Each bound can be:
+
+            - ``(lower, upper)``: bounded on both sides
+            - ``(lower, None)``: lower bound only
+            - ``(None, upper)``: upper bound only
+            - ``None`` or ``(None, None)``: no bounds
+
+            Parameters are transformed to unbounded space for optimization.
         fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
             in the flattened state. Returning ``True`` marks the parameter as
             fixed. This is evaluated in addition to ``fixed`` when provided.
@@ -183,17 +196,42 @@ def fit(
         ... )
         >>> result.params["background"]  # Remains fixed
         50.0
+
+        >>> # With parameter bounds
+        >>> def my_nll(params):
+        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
+        >>> result = fit(
+        ...     my_nll,
+        ...     {"mu": 0.5, "sigma": 0.1},
+        ...     bounds={"mu": (0.0, 5.0), "sigma": (0.0, None)},
+        ... )
+        >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
+        True
     """
     # Convert to FlatState for manipulation
     param_state = sl.FlatState.from_pytree(params)
 
-    fixed_keys = _resolve_fixed_keys(param_state, fixed, fixed_predicate)
+    # Create bounds transformations if specified
+    if bounds:
+        forward_transforms, inverse_transforms = bounds_module.create_bounds_transforms(
+            param_state, bounds
+        )
+        # Transform initial params to unbounded space for optimization
+        unbounded_param_state = sl.apply_transformations(param_state, forward_transforms)
+    else:
+        forward_transforms = {}
+        inverse_transforms = {}
+        unbounded_param_state = param_state
+
+    fixed_keys = _resolve_fixed_keys(unbounded_param_state, fixed, fixed_predicate)
 
     if fixed_keys:
-        fixed_state, free_state = sl.partition_state(param_state, keys=fixed_keys)
+        fixed_state, free_state = sl.partition_state(
+            unbounded_param_state, keys=fixed_keys
+        )
     else:
         fixed_state = None
-        free_state = param_state
+        free_state = unbounded_param_state
 
     # Get keys for free parameters in consistent order
     free_keys = list(free_state.raw_mapping.keys())
@@ -203,19 +241,27 @@ def fit(
 
     # Wrap nll to only take free parameters (as flat array)
     def wrapped_nll(free_values, _args):
-        # Update free state with new values
+        # Update free state with new values (in unbounded space)
         updates = dict(zip(free_keys, free_values, strict=True))
         updated_free = sl.update_state(free_state, updates)
 
-        # Combine partitions back together
-        full_state = (
+        # Combine partitions back together (still in unbounded space)
+        full_unbounded_state = (
             updated_free
             if fixed_state is None
             else sl.combine_partitions(fixed_state, updated_free)
         )
 
+        # Transform back to bounded space for NLL evaluation
+        if inverse_transforms:
+            full_bounded_state = sl.apply_transformations(
+                full_unbounded_state, inverse_transforms
+            )
+        else:
+            full_bounded_state = full_unbounded_state
+
         # Convert to pytree for user's nll_fn
-        full_pytree = full_state.to_pytree()
+        full_pytree = full_bounded_state.to_pytree()
 
         # Call user's nll_fn with params + additional args/kwargs
         return nll_fn(full_pytree, *args, **kwargs)
@@ -230,21 +276,30 @@ def fit(
     # Minimize
     solution = optx.minimise(wrapped_nll, solver, y0=y0, **solver_kwargs)
 
-    # Reconstruct fitted parameters
+    # Reconstruct fitted parameters (in unbounded space)
     fitted_updates = dict(zip(free_keys, solution.value, strict=True))
     fitted_free = sl.update_state(free_state, fitted_updates)
 
-    # Combine with fixed partition if one existed
-    fitted_full_state = (
+    # Combine with fixed partition if one existed (still in unbounded space)
+    fitted_full_unbounded_state = (
         fitted_free
         if fixed_state is None
         else sl.combine_partitions(fixed_state, fitted_free)
     )
 
+    # Transform back to bounded space for final result
+    if inverse_transforms:
+        fitted_full_state = sl.apply_transformations(
+            fitted_full_unbounded_state, inverse_transforms
+        )
+    else:
+        fitted_full_state = fitted_full_unbounded_state
+
     # Convert back to original pytree structure
     fitted_pytree = fitted_full_state.to_pytree()
 
     # Get the final NLL value by evaluating wrapped_nll at the solution
+    # (wrapped_nll already handles transformation internally)
     final_nll = wrapped_nll(solution.value, None)
 
     return FitResult(
@@ -261,6 +316,7 @@ def fixed_param_fit(
     params: tp.Any,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.BoundSpec] | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),
@@ -286,6 +342,7 @@ def fixed_param_fit(
         params: Initial parameter values organised as a pytree.
         fixed: Additional parameters to hold fixed, expressed as leaf names or
             canonical key tuples.
+        bounds: Optional parameter bounds specification (same format as :func:`fit`).
         fixed_predicate: Optional callable evaluated for each leaf after
             ``param_values`` have been applied. Returning ``True`` marks the leaf
             as fixed.
@@ -338,6 +395,7 @@ def fixed_param_fit(
         nll_fn,
         updated_pytree,
         fixed=fixed_sequence,
+        bounds=bounds,
         fixed_predicate=fixed_predicate,
         solver=solver,
         args=args,

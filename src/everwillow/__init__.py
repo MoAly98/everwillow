@@ -14,10 +14,12 @@ __contact__ = "https://github.com/MoAly98/everwillow"
 __version__ = "0.0.1"
 
 # Core API
+from everwillow.bounds import validate_bounds
 from everwillow.fitting import FitResult, fit, fixed_param_fit
 
 __all__ = [
     "FitResult",
     "fit",
     "fixed_param_fit",
+    "validate_bounds",
 ]

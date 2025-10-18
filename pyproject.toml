@@ -49,6 +49,12 @@ docs = [
     "myst-nb",
     "sphinxcontrib-mermaid",
 ]
+examples = [
+    "pyhs3",
+    "evermore",
+    "pyhf",
+    "rich",
+]
 dev = [
     { include-group = "test" },
     { include-group = "docs" },

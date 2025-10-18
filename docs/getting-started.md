@@ -19,18 +19,11 @@ If you prefer `pip`, simply run:
 python -m pip install everwillow
 ```
 
-Many of the examples in this documentation make use of optional dependencies,
-notably:
-
-- [`pyhs3`](https://github.com/pyhf/pyhs3) for declarative statistical models.
-- [`evermore`](https://github.com/atlas-outreach-data-tools/evermore) for ATLAS
-  and CMS style fitting utilities.
-- [`pyhf`](https://pyhf.github.io) for histogram-based statistical models.
-
-Install them alongside everwillow when needed:
+To run the runnable examples from the documentation, install the optional
+dependencies via the `examples` group:
 
 ```bash
-uv pip install everwillow pyhs3 evermore pyhf
+uv pip install '.[examples]'
 ```
 
 ## Verifying the Installation

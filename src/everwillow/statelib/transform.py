@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["Transform", "apply_transformations"]
+
 import dataclasses
 import typing as tp
 from typing import TYPE_CHECKING
@@ -33,22 +35,16 @@ def _identity(key: KeyPath, value: ValueT) -> ValueT:
 class Transform(tp.Generic[ValueT]):
     """Describe how a single key/value pair should be rewritten.
 
-    Attributes:
-        new_key: Replacement key tuple used in the transformed state.
-        value_fn: Callable that receives the original key and value and returns
-            the updated value to store under ``new_key``. Defaults to the
-            identity function.
-
     Examples:
         >>> transform = Transform(new_key=("scale",), value_fn=lambda _k, v: 2 * v)
         >>> transform.new_key
         ('scale',)
     """
 
-    new_key: KeyPath
+    new_key: KeyPath  #: Replacement key tuple used in the transformed state.
     value_fn: tp.Callable[[KeyPath, ValueT], ValueT] = dataclasses.field(
         default=_identity
-    )
+    )  #: Callable applied to derive the transformed value.
 
 
 def apply_transformations(

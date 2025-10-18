@@ -68,3 +68,12 @@ repos:
     hooks:
       - id: check-readthedocs
       - id: check-github-workflows
+
+  - repo: local
+    hooks:
+      - id: coverage
+        name: coverage
+        entry: bash -c "uv run coverage erase && uv run coverage run -m pytest && uv run coverage report --fail-under=85"
+        language: system
+        types: [python]
+        pass_filenames: false

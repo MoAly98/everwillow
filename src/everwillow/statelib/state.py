@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "FlatState",
+    "combine_partitions",
+    "map_state",
+    "merge_states",
+    "partition_state",
+    "split_state",
+    "update_state",
+]
+
 import dataclasses
 import types
 import typing as tp
@@ -34,7 +44,7 @@ TreeFlattenResult: tp.TypeAlias = tuple[
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
-class SegmentRecord(tp.Generic[V]):
+class _SegmentRecord(tp.Generic[V]):
     """Internal bookkeeping for a single segment of the flat state."""
 
     treedef: jtu.PyTreeDef | None
@@ -43,8 +53,8 @@ class SegmentRecord(tp.Generic[V]):
     key_paths: dict[KeyPath, KeyPath]
     full_key_order: tuple[KeyPath, ...] | None
 
-    def copy(self) -> SegmentRecord[V]:
-        return SegmentRecord(
+    def copy(self) -> _SegmentRecord[V]:
+        return _SegmentRecord(
             self.treedef,
             frozenset(self.keys),
             dict(self.values),
@@ -59,12 +69,6 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
     The state tracks ordered segment records that store the original treedef,
     the owned keys, and the associated values. A read-only ``ChainMap`` provides
     the public mapping interface while preserving per-segment isolation.
-
-    Attributes:
-        n_internal_states: Number of registered segments.
-        raw_mapping: Read-only view over the flattened mapping.
-        treedefs: Mapping from segment identifiers to ``jax.tree_util.PyTreeDef``.
-        own_keys: Mapping from segment identifiers to the keys they own.
 
     Examples:
         >>> state = FlatState.from_pytree({"a": 1, "b": 2})
@@ -85,7 +89,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
 
     if TYPE_CHECKING:
         _mapping: TypingChainMap[KeyPath, V]
-        _segments: dict[object, SegmentRecord[V]]
+        _segments: dict[object, _SegmentRecord[V]]
         _segment_order: list[object]
         _primary_segment: object
 
@@ -149,7 +153,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         else:
             path_map = {key: tuple(path) for key, path in key_paths.items()}
         key_order = tuple(slice_map.keys())
-        segment = SegmentRecord(
+        segment = _SegmentRecord(
             treedef,
             frozenset(slice_map.keys()),
             slice_map,
@@ -432,7 +436,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
                 for key in key_set:
                     segment_key_paths.setdefault(key, derive_key_path(key))
             segment_order = tuple(key for key in keys if key in key_set)
-            flat_state._segments[segment_id] = SegmentRecord(
+            flat_state._segments[segment_id] = _SegmentRecord(
                 record_treedef,
                 key_set,
                 values,
@@ -598,7 +602,7 @@ def update_state(
     return new_state
 
 
-def _segment_key_order(record: SegmentRecord[V]) -> tuple[KeyPath, ...]:
+def _segment_key_order(record: _SegmentRecord[V]) -> tuple[KeyPath, ...]:
     order = record.full_key_order
     if order is not None:
         return order
@@ -614,7 +618,7 @@ def _subset_segment(
         key: record.values[key] for key in order if key in record.values and key in keys
     }
     key_paths = {key: record.key_paths[key] for key in values}
-    return SegmentRecord(
+    return _SegmentRecord(
         record.treedef,
         frozenset(values),
         values,
@@ -624,9 +628,9 @@ def _subset_segment(
 
 
 def _merge_partition_records(
-    first: SegmentRecord[V],
-    second: SegmentRecord[V],
-) -> SegmentRecord[V]:
+    first: _SegmentRecord[V],
+    second: _SegmentRecord[V],
+) -> _SegmentRecord[V]:
     if first.treedef != second.treedef:
         message = (
             "Partitions carry different treedef metadata. Combine matching pairs "
@@ -671,7 +675,7 @@ def _merge_partition_records(
         else:
             continue
 
-    return SegmentRecord(
+    return _SegmentRecord(
         first.treedef,
         frozenset(values),
         values,

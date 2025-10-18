@@ -1,0 +1,104 @@
+digraph "user_workflow" {
+    rankdir=TB;
+    splines=ortho;
+    graph [
+        fontsize=12,
+        labelloc="t",
+        label="everwillow fitting workflow",
+        fontname="Helvetica"
+    ];
+    node [
+        shape=plaintext,
+        fontname="Helvetica",
+        fontsize=11
+    ];
+    edge [
+        color="#5465b0",
+        penwidth=1.5,
+        arrowsize=1.0,
+        fontname="Helvetica",
+        fontsize=10
+    ];
+
+    UserInput [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>1. Your Input</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    <B>params: </B> {"mu": 1.0, "sigma": 0.5, ...}<BR ALIGN="LEFT"/>
+                    <B>nll_fn: </B> your loss function<BR ALIGN="LEFT"/>
+                    <B>fixed: </B> ["background"] (optional)
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    ToFlatState [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>2. Convert to FlatState</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    Flatten pytree → canonical keys<BR ALIGN="LEFT"/>
+                    ("mu", ): 1.0,  ("sigma", ): 0.5<BR ALIGN="LEFT"/>
+                    Store treedef for reconstruction
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Partition [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>3. Partition (if fixed params)</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    <B>Free: </B> {"mu": 1.0, "sigma": 0.5}<BR ALIGN="LEFT"/>
+                    <B>Fixed: </B> {"background": 100}<BR ALIGN="LEFT"/>
+                    Both retain segment metadata
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Optimize [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#b08054">
+                <TR><TD BGCOLOR="#ffebd4"><B>4. Optimization Loop</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    Update free params → combine with fixed<BR ALIGN="LEFT"/>
+                    Reconstruct pytree → call your NLL<BR ALIGN="LEFT"/>
+                    Gradient step → repeat until convergence
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Result [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#54b080">
+                <TR><TD BGCOLOR="#d4ffe7"><B>5. FitResult</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    <B>params: </B> fitted pytree (same structure)<BR ALIGN="LEFT"/>
+                    <B>nll: </B> minimum value<BR ALIGN="LEFT"/>
+                    <B>success: </B> convergence status
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    UserInput -> ToFlatState [label=" fit()"];
+    ToFlatState -> Partition [label=" partition_state() "];
+    Partition -> Optimize [label=" wrapped_nll "];
+    Optimize -> Result [label=" to_pytree() "];
+
+    NoteBox [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#e0e0e0">
+                <TR><TD BGCOLOR="#f5f5f5" ALIGN="LEFT" BALIGN="LEFT">
+                    <I>Your NLL function always receives the complete pytree!</I>
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Optimize -> NoteBox [style="dashed", dir="none", color="#999999"];
+}

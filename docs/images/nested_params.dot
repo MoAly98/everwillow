@@ -1,0 +1,118 @@
+digraph "nested_params" {
+    rankdir=LR;
+    graph [
+        fontsize=12,
+        label="handling nested parameter pytrees",
+        labelloc="t",
+        fontname="Helvetica"
+    ];
+    node [
+        shape=plaintext,
+        fontname="Helvetica",
+        fontsize=11
+    ];
+    edge [
+        color="#4f6ebd",
+        penwidth=1.3,
+        arrowsize=0.9,
+        fontname="Helvetica",
+        fontsize=10
+    ];
+
+    NestedTree [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>Nested Pytree</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    {<BR ALIGN="LEFT"/>
+                      "model": {<BR ALIGN="LEFT"/>
+                        "physics": {"mu": 1.0},<BR ALIGN="LEFT"/>
+                        "nuisance": {"alpha": 0.5}<BR ALIGN="LEFT"/>
+                      }<BR ALIGN="LEFT"/>
+                    }
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Flattened [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>Flattened Keys</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    ("model", "physics", "mu"): 1.0<BR ALIGN="LEFT"/>
+                    ("model", "nuisance", "alpha"): 0.5
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Partition [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#b08054">
+                <TR><TD BGCOLOR="#ffebd4"><B>Partition by Predicate</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    lambda k, v: "nuisance" in k
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Physics [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#54b080">
+                <TR><TD BGCOLOR="#d4ffe7"><B>Physics Parameters</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    ("model", "physics", "mu"): 1.0
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Nuisance [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#54b080">
+                <TR><TD BGCOLOR="#d4ffe7"><B>Nuisance Parameters</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    ("model", "nuisance", "alpha"): 0.5
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Optimized [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>After Optimization</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    ("model", "physics", "mu"): 2.5<BR ALIGN="LEFT"/>
+                    ("model", "nuisance", "alpha"): 0.1
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Reconstructed [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#54b080">
+                <TR><TD BGCOLOR="#d4ffe7"><B>Reconstructed Pytree</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    {<BR ALIGN="LEFT"/>
+                      "model": {<BR ALIGN="LEFT"/>
+                        "physics": {"mu": 2.5},<BR ALIGN="LEFT"/>
+                        "nuisance": {"alpha": 0.1}<BR ALIGN="LEFT"/>
+                      }<BR ALIGN="LEFT"/>
+                    }
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    NestedTree -> Flattened [label=" FlatState.from_pytree() "];
+    Flattened -> Partition [label=" partition_state() "];
+    Partition -> Physics [label=" fixed partition "];
+    Partition -> Nuisance [label=" free partition "];
+    Physics -> Optimized [label=" combine_partitions() ", color="#54b080"];
+    Nuisance -> Optimized [label="  ", color="#54b080"];
+    Optimized -> Reconstructed [label=" to_pytree() "];
+}

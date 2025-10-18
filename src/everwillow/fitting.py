@@ -14,20 +14,12 @@ import everwillow.statelib as sl
 
 @dataclass(frozen=True)
 class FitResult:
-    """
-    Result of a fit operation.
+    """Result of a fit operation."""
 
-    Attributes:
-        params: Fitted parameter pytree (same structure as input)
-        nll: Negative log-likelihood at minimum
-        success: Whether optimization converged
-        solver_result: Raw solver result (optional)
-    """
-
-    params: tp.Any  # pytree
-    nll: float
-    success: bool
-    solver_result: tp.Any = None
+    params: tp.Any  #: Fitted parameter pytree (same structure as input).
+    nll: float  #: Negative log-likelihood at the optimum.
+    success: bool  #: Whether the optimisation converged.
+    solver_result: tp.Any = None  #: Raw solver result (optional).
 
 
 def _resolve_fixed_keys(
@@ -168,7 +160,7 @@ def fit(
         args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         kwargs: Keyword arguments forwarded to ``nll_fn``.
-        **solver_kwargs: Additional keyword arguments forwarded to
+        ``**solver_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:
@@ -353,7 +345,7 @@ def fixed_param_fit(
         args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         kwargs: Keyword arguments forwarded to ``nll_fn``.
-        **solver_kwargs: Additional keyword arguments forwarded to
+        ``**solver_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:

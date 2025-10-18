@@ -37,21 +37,49 @@ dependencies = [
 
 
 [dependency-groups]
-test = ["pytest >=7", "pytest-cov >=3"]
+test = ["pytest >=7", "pytest-cov >=3", "coverage[toml]"]
 docs = [
-    "sphinx",
-    "myst-parser",
-    "myst-nb",
-    "sphinx_copybutton",
-    "sphinx_autodoc_typehints",
-    "sphinx-book-theme",
+    "sphinx>=7",
+    "furo",
+    "myst-parser<4",
     "sphinx-design",
     "sphinx-togglebutton",
+    "sphinx-copybutton",
+    "sphinx-autodoc-typehints",
+    "myst-nb",
+    "sphinxcontrib-mermaid",
 ]
 dev = [
     { include-group = "test" },
     { include-group = "docs" },
     "ipython",
+    "ruff",
+    "pre_commit",
+    "mypy",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7",
+    "furo",
+    "myst-parser<4",
+    "sphinx-design",
+    "sphinx-togglebutton",
+    "sphinx-copybutton",
+    "sphinx-autodoc-typehints",
+    "myst-nb",
+    "sphinxcontrib-mermaid",
+]
+test = [
+    "pytest >=7",
+    "pytest-cov >=3",
+    "coverage[toml]",
+]
+dev = [
+    "everwillow[docs]",
+    "pytest >=7",
+    "pytest-cov >=3",
+    "coverage[toml]",
     "ruff",
     "pre_commit",
     "mypy",

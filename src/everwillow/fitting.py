@@ -217,7 +217,9 @@ def fit(
             param_state, bounds
         )
         # Transform initial params to unbounded space for optimization
-        unbounded_param_state = sl.apply_transformations(param_state, forward_transforms)
+        unbounded_param_state = sl.apply_transformations(
+            param_state, forward_transforms
+        )
     else:
         forward_transforms = {}
         inverse_transforms = {}

@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import cast
+
 import jax
 import jax.numpy as jnp
+import pytest
 
 import everwillow.bounds as bounds
 import everwillow.statelib as sl
 
-
 jax.config.update("jax_enable_x64", True)
+
+
+def _bounds(
+    mapping: dict[str, tuple[float | None, float | None] | None],
+) -> dict[str | tuple[object, ...], bounds.BoundSpec]:
+    """Helper to express bound specifications with precise typing."""
+    return cast(dict[str | tuple[object, ...], bounds.BoundSpec], mapping)
 
 
 class TestTransformations:
@@ -142,42 +150,42 @@ class TestValidateBounds:
     def test_validate_valid_params(self):
         """Test validation with valid parameters."""
         params = {"mu": 1.0, "sigma": 0.5}
-        bounds_spec = {"mu": (0.0, 5.0), "sigma": (0.0, None)}
+        bounds_spec = _bounds({"mu": (0.0, 5.0), "sigma": (0.0, None)})
         # Should not raise
         bounds.validate_bounds(params, bounds_spec)
 
     def test_validate_violates_lower_bound(self):
         """Test validation catches lower bound violation."""
         params = {"mu": -1.0, "sigma": 0.5}
-        bounds_spec = {"mu": (0.0, 5.0), "sigma": (0.0, None)}
+        bounds_spec = _bounds({"mu": (0.0, 5.0), "sigma": (0.0, None)})
         with pytest.raises(ValueError, match="violates lower bound"):
             bounds.validate_bounds(params, bounds_spec)
 
     def test_validate_violates_upper_bound(self):
         """Test validation catches upper bound violation."""
         params = {"mu": 6.0, "sigma": 0.5}
-        bounds_spec = {"mu": (0.0, 5.0), "sigma": (0.0, None)}
+        bounds_spec = _bounds({"mu": (0.0, 5.0), "sigma": (0.0, None)})
         with pytest.raises(ValueError, match="violates upper bound"):
             bounds.validate_bounds(params, bounds_spec)
 
     def test_validate_invalid_bounds_spec(self):
         """Test validation catches malformed bounds."""
         params = {"mu": 1.0}
-        bounds_spec = {"mu": (5.0, 0.0)}  # lower > upper
+        bounds_spec = _bounds({"mu": (5.0, 0.0)})  # lower > upper
         with pytest.raises(ValueError, match="must be < upper bound"):
             bounds.validate_bounds(params, bounds_spec)
 
     def test_validate_missing_parameter(self):
         """Test validation catches missing parameters."""
         params = {"mu": 1.0}
-        bounds_spec = {"sigma": (0.0, None)}
+        bounds_spec = _bounds({"sigma": (0.0, None)})
         with pytest.raises(KeyError, match="not found"):
             bounds.validate_bounds(params, bounds_spec)
 
     def test_validate_none_bounds(self):
         """Test validation ignores None bounds."""
         params = {"mu": 1.0, "sigma": -10.0}  # sigma is out of typical range
-        bounds_spec = {"mu": (0.0, 5.0), "sigma": None}  # No bounds on sigma
+        bounds_spec = _bounds({"mu": (0.0, 5.0), "sigma": None})
         # Should not raise
         bounds.validate_bounds(params, bounds_spec)
 
@@ -187,8 +195,8 @@ class TestCreateBoundsTransforms:
 
     def test_create_transforms_both_bounds(self):
         """Test creating transforms for parameters with both bounds."""
-        state = sl.FlatState.from_pytree({"mu": 1.0, "sigma": 0.5})
-        bounds_spec = {"mu": (0.0, 5.0)}
+        state: sl.FlatState[float] = sl.FlatState.from_pytree({"mu": 1.0, "sigma": 0.5})
+        bounds_spec = _bounds({"mu": (0.0, 5.0)})
 
         fwd, inv = bounds.create_bounds_transforms(state, bounds_spec)
 
@@ -200,14 +208,20 @@ class TestCreateBoundsTransforms:
 
     def test_create_transforms_mixed_bounds(self):
         """Test creating transforms with mixed bound types."""
-        state = sl.FlatState.from_pytree({"mu": 1.0, "sigma": 0.5, "offset": 0.0})
-        bounds_spec = {
-            "mu": (0.0, 5.0),  # Both bounds
-            "sigma": (0.0, None),  # Lower only
-            "offset": (None, 10.0),  # Upper only
-        }
+        state: sl.FlatState[float] = sl.FlatState.from_pytree(
+            {"mu": 1.0, "sigma": 0.5, "offset": 0.0}
+        )
+        bounds_spec = _bounds(
+            {
+                "mu": (0.0, 5.0),  # Both bounds
+                "sigma": (0.0, None),  # Lower only
+                "offset": (None, 10.0),  # Upper only
+            }
+        )
 
-        fwd, inv = bounds.create_bounds_transforms(state, bounds_spec)
+        fwd, inv = bounds.create_bounds_transforms(
+            cast(sl.FlatState[float], state), bounds_spec
+        )
 
         # Should have transforms for all three
         assert len(fwd) == 3
@@ -215,10 +229,12 @@ class TestCreateBoundsTransforms:
 
     def test_create_transforms_skips_none(self):
         """Test that None bounds are skipped."""
-        state = sl.FlatState.from_pytree({"mu": 1.0, "sigma": 0.5})
-        bounds_spec = {"mu": (0.0, 5.0), "sigma": None}
+        state: sl.FlatState[float] = sl.FlatState.from_pytree({"mu": 1.0, "sigma": 0.5})
+        bounds_spec = _bounds({"mu": (0.0, 5.0), "sigma": None})
 
-        fwd, inv = bounds.create_bounds_transforms(state, bounds_spec)
+        fwd, _inv = bounds.create_bounds_transforms(
+            cast(sl.FlatState[float], state), bounds_spec
+        )
 
         # Should only have transforms for mu
         assert len(fwd) == 1
@@ -226,17 +242,19 @@ class TestCreateBoundsTransforms:
 
     def test_transforms_work_with_apply_transformations(self):
         """Test that created transforms work with apply_transformations."""
-        state = sl.FlatState.from_pytree({"mu": 2.5})
-        bounds_spec = {"mu": (0.0, 5.0)}
+        state: sl.FlatState[float] = sl.FlatState.from_pytree({"mu": 2.5})
+        bounds_spec = _bounds({"mu": (0.0, 5.0)})
 
-        fwd, inv = bounds.create_bounds_transforms(state, bounds_spec)
+        fwd, _inv = bounds.create_bounds_transforms(
+            cast(sl.FlatState[float], state), bounds_spec
+        )
 
         # Transform to unbounded
         unbounded_state = sl.apply_transformations(state, fwd)
         # Midpoint should map to 0
-        assert jnp.isclose(unbounded_state[("mu",)], 0.0, atol=1e-6)
+        assert jnp.isclose(unbounded_state["mu",], 0.0, atol=1e-6)
 
         # Transform back to bounded
-        bounded_state = sl.apply_transformations(unbounded_state, inv)
+        bounded_state = sl.apply_transformations(unbounded_state, _inv)
         # Should recover original value
-        assert jnp.isclose(bounded_state[("mu",)], 2.5, atol=1e-6)
+        assert jnp.isclose(bounded_state["mu",], 2.5, atol=1e-6)

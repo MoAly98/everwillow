@@ -9,9 +9,9 @@ All transformations are JIT-safe and use clipping to handle edge cases gracefull
 from __future__ import annotations
 
 __all__ = [
-    "transform_to_unbounded",
-    "transform_to_bounded",
     "create_bounds_transforms",
+    "transform_to_bounded",
+    "transform_to_unbounded",
     "validate_bounds",
 ]
 
@@ -82,19 +82,18 @@ def transform_to_unbounded(
         scaled = (value - lower) / (upper - lower)
         scaled = jnp.clip(scaled, 1e-10, 1.0 - 1e-10)
         return _logit(scaled)
-    elif lower is not None:
+    if lower is not None:
         # Lower bound only: use log
         # Ensure positive argument for log
         safe_diff = jnp.maximum(value - lower, 1e-10)
         return jnp.log(safe_diff)
-    elif upper is not None:
+    if upper is not None:
         # Upper bound only: use log of distance from upper
         # Ensure positive argument for log
         safe_diff = jnp.maximum(upper - value, 1e-10)
         return jnp.log(safe_diff)
-    else:
-        # No bounds: identity
-        return value
+    # No bounds: identity
+    return value
 
 
 def transform_to_bounded(
@@ -131,15 +130,14 @@ def transform_to_bounded(
         # Both bounds: use sigmoid to scale to [lower, upper]
         scaled = _sigmoid(value)
         return lower + (upper - lower) * scaled
-    elif lower is not None:
+    if lower is not None:
         # Lower bound only: use exp
         return lower + jnp.exp(value)
-    elif upper is not None:
+    if upper is not None:
         # Upper bound only: use exp of negative
         return upper - jnp.exp(value)
-    else:
-        # No bounds: identity
-        return value
+    # No bounds: identity
+    return value
 
 
 def validate_bounds(
@@ -175,10 +173,6 @@ def validate_bounds(
     for param_spec, bound_spec in bounds.items():
         if bound_spec is None or bound_spec == (None, None):
             continue
-
-        if not isinstance(bound_spec, tuple) or len(bound_spec) != 2:
-            msg = f"Bound specification must be (lower, upper) tuple, got {bound_spec}"
-            raise TypeError(msg)
 
         lower, upper = bound_spec
 

@@ -610,9 +610,9 @@ def _segment_key_order(record: _SegmentRecord[V]) -> tuple[KeyPath, ...]:
 
 
 def _subset_segment(
-    record: SegmentRecord[V],
+    record: _SegmentRecord[V],
     keys: tp.AbstractSet[KeyPath],
-) -> SegmentRecord[V]:
+) -> _SegmentRecord[V]:
     order = _segment_key_order(record)
     values: dict[KeyPath, V] = {
         key: record.values[key] for key in order if key in record.values and key in keys

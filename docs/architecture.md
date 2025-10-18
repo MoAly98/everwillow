@@ -59,10 +59,7 @@ When you call `partition_state`, everwillow:
 ```python
 state = FlatState.from_pytree({"a": 1, "b": 2, "c": 3})
 
-selected, remainder = partition_state(
-    state,
-    predicate=lambda k, v: k[0] in {"a", "c"}
-)
+selected, remainder = partition_state(state, predicate=lambda k, v: k[0] in {"a", "c"})
 
 # selected: {"a": 1, "c": 3}
 # remainder: {"b": 2}
@@ -97,10 +94,9 @@ state = FlatState.from_pytree({"mu_signal": 5.0, "bkg": 10.0})
 # Rename keys and scale values
 transforms = {
     ("mu_signal",): Transform(
-        new_key=("mu",),
-        value_fn=lambda k, v: v * 2  # Scale by 2
+        new_key=("mu",), value_fn=lambda k, v: v * 2  # Scale by 2
     ),
-    ("bkg",): Transform(new_key=("background",))
+    ("bkg",): Transform(new_key=("background",)),
 }
 
 transformed = apply_transformations(state, transforms)
@@ -130,17 +126,14 @@ Perfect for multi-region fits or conditional models:
 from everwillow.statelib import Model, CombinedModel
 
 # Define models for different regions
-region_a_model = Model(logpdf=lambda params: -params["a"]**2)
-region_b_model = Model(logpdf=lambda params: -params["b"]**2)
+region_a_model = Model(logpdf=lambda params: -params["a"] ** 2)
+region_b_model = Model(logpdf=lambda params: -params["b"] ** 2)
 
 # Combine them
 combined = CombinedModel.combine(region_a_model, region_b_model)
 
 # Expects merged FlatState with one segment per model
-state = merge_states(
-    FlatState.from_pytree({"a": 1}),
-    FlatState.from_pytree({"b": 2})
-)
+state = merge_states(FlatState.from_pytree({"a": 1}), FlatState.from_pytree({"b": 2}))
 
 total_logpdf = combined(state)  # Sum of both models
 ```
@@ -234,6 +227,7 @@ def nll(params):
     # Call model's loss
     return model.compute_nll(model_state)
 
+
 # 3. Fit!
 result = ew.fit(nll, params, fixed=[...])
 ```
@@ -279,6 +273,7 @@ def my_function(params: PyTree) -> PyTree:
     state = FlatState.from_pytree(params)
     # ... work with state ...
     return state.to_pytree()
+
 
 # Bad
 def my_function(state: FlatState) -> FlatState:

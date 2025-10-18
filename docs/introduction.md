@@ -32,8 +32,10 @@ You provide:
 ```python
 params = {"mu": 1.0, "sigma": 0.5, "background": 100}
 
+
 def nll(params):
     return compute_loss(params)
+
 
 result = ew.fit(nll, params, fixed=["background"])
 ```
@@ -126,8 +128,10 @@ Fit all parameters to minimize the NLL:
 ```python
 import everwillow as ew
 
+
 def my_nll(params):
-    return (params["mu"] - 2.0)**2 + (params["sigma"] - 1.0)**2
+    return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
 
 result = ew.fit(my_nll, {"mu": 0.0, "sigma": 0.5})
 print(result.params)  # {"mu": ~2.0, "sigma": ~1.0}
@@ -141,7 +145,7 @@ Hold specific parameters constant:
 result = ew.fit(
     my_nll,
     {"mu": 0.0, "sigma": 0.5, "background": 100},
-    fixed=["background"]  # Background stays at 100
+    fixed=["background"],  # Background stays at 100
 )
 ```
 
@@ -171,10 +175,9 @@ def nll_with_data(params, observed_data, templates):
     expected = params["mu"] * templates["signal"] + templates["background"]
     return poisson_nll(observed_data, expected)
 
+
 result = ew.fit(
-    nll_with_data,
-    initial_params,
-    args=(data, templates)  # Forwarded to NLL function
+    nll_with_data, initial_params, args=(data, templates)  # Forwarded to NLL function
 )
 ```
 

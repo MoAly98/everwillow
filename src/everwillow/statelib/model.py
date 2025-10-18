@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["Model", "CombinedModel"]
+__all__ = ["CombinedModel", "Model"]
 
 import dataclasses
 import typing as tp

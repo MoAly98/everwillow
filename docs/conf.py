@@ -79,5 +79,5 @@ intersphinx_mapping = {
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
-html_title = " " #everwillow documentation""
+html_title = " "  # everwillow documentation""
 html_baseurl = "https://everwillow.readthedocs.io/"

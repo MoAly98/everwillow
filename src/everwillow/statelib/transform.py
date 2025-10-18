@@ -12,7 +12,7 @@ from .key_paths import KeyPath, derive_key_path, ensure_public_key
 from .state import FlatState, _validate_state
 
 if TYPE_CHECKING:
-    from .state import SegmentRecord
+    from .state import _SegmentRecord
 
 ValueT = tp.TypeVar("ValueT")
 
@@ -86,7 +86,7 @@ def apply_transformations(
 
     flat_state = state_instance.copy()
 
-    new_records: dict[object, SegmentRecord[ValueT]] = {}
+    new_records: dict[object, _SegmentRecord[ValueT]] = {}
     for segment_id in flat_state._segment_order:
         record = flat_state._segments[segment_id]
         updated_keys: set[KeyPath] = set()

@@ -1,9 +1,7 @@
 """Shared configuration for the 1sig_2bkg_1nf_1ss_1ns example."""
 
-from __future__ import annotations
-
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 import jax.numpy as jnp
 

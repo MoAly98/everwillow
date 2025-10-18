@@ -1,8 +1,6 @@
 """Minimal helpers for building the pyhs3 model used in the comparison."""
 
-from __future__ import annotations
-
-from typing import Mapping
+from collections.abc import Mapping
 
 import jax.numpy as jnp
 import pyhs3

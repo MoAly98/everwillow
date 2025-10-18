@@ -1,7 +1,5 @@
 """Compact pyhf example helpers."""
 
-from __future__ import annotations
-
 import jax.numpy as jnp
 import pyhf
 
@@ -31,7 +29,10 @@ def _workspace(data: ModelData) -> pyhf.Workspace:
                                 {
                                     "name": "norm1",
                                     "type": "normsys",
-                                    "data": {"hi": data.norm1_up, "lo": data.norm1_down},
+                                    "data": {
+                                        "hi": data.norm1_up,
+                                        "lo": data.norm1_down,
+                                    },
                                 },
                                 {
                                     "name": "shape1",
@@ -50,7 +51,10 @@ def _workspace(data: ModelData) -> pyhf.Workspace:
                                 {
                                     "name": "norm2",
                                     "type": "normsys",
-                                    "data": {"hi": data.norm2_up, "lo": data.norm2_down},
+                                    "data": {
+                                        "hi": data.norm2_up,
+                                        "lo": data.norm2_down,
+                                    },
                                 },
                                 {
                                     "name": "shape1",
@@ -100,7 +104,9 @@ def vector_to_dict(theta: jnp.ndarray, slices: dict[str, slice]) -> dict[str, fl
     return {name: float(theta[slice_][0]) for name, slice_ in slices.items()}
 
 
-def dict_to_vector(params: dict[str, float], theta: jnp.ndarray, slices: dict[str, slice]):
+def dict_to_vector(
+    params: dict[str, float], theta: jnp.ndarray, slices: dict[str, slice]
+):
     vector = theta.copy()
     for name, value in params.items():
         vector = vector.at[slices[name]].set(value)
@@ -150,5 +156,7 @@ def fit_with_everwillow(
     return jnp.asarray(result.params, dtype=jnp.float64), float(result.nll)
 
 
-def summarise_pyhf(theta: jnp.ndarray, slices: dict[str, slice], data: ModelData = DEFAULT_DATA):
+def summarise_pyhf(
+    theta: jnp.ndarray, slices: dict[str, slice], data: ModelData = DEFAULT_DATA
+):
     return expected_components(vector_to_dict(theta, slices), data=data)

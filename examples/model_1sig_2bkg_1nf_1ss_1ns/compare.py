@@ -1,42 +1,41 @@
 """Compare fits across libraries for the 1sig_2bkg_1nf_1ss_1ns example."""
 
-from __future__ import annotations
-
 import jax
-import everwillow as ew
 from rich.console import Console
 from rich.table import Table
 
+import everwillow as ew
+
 try:  # Package import for -m execution
-    from .evermore_model import (
-        build_components,
-        fit_with_everwillow as fit_evermore_with_everwillow,
-        fit_with_optimistix,
-        summarise_evermore_fit,
-    )
+    from .evermore_model import fit_with_everwillow as fit_evermore_with_everwillow
+    from .evermore_model import fit_with_optimistix, summarise_evermore_fit
     from .pyhf_model import (
         build_pyhf,
-        fit_with_everwillow as fit_pyhf_with_everwillow,
         fit_with_pyhf_native,
-        nll_fn as pyhf_nll,
         summarise_pyhf,
         vector_to_dict,
+    )
+    from .pyhf_model import (
+        fit_with_everwillow as fit_pyhf_with_everwillow,
+    )
+    from .pyhf_model import (
+        nll_fn as pyhf_nll,
     )
     from .pyhs3_model import build_pyhs3, summarise_pyhs3_fit
 except ImportError:  # Script execution fallback
-    from evermore_model import (
-        build_components,
-        fit_with_everwillow as fit_evermore_with_everwillow,
-        fit_with_optimistix,
-        summarise_evermore_fit,
-    )
+    from evermore_model import fit_with_everwillow as fit_evermore_with_everwillow
+    from evermore_model import fit_with_optimistix, summarise_evermore_fit
     from pyhf_model import (
         build_pyhf,
-        fit_with_everwillow as fit_pyhf_with_everwillow,
         fit_with_pyhf_native,
-        nll_fn as pyhf_nll,
         summarise_pyhf,
         vector_to_dict,
+    )
+    from pyhf_model import (
+        fit_with_everwillow as fit_pyhf_with_everwillow,
+    )
+    from pyhf_model import (
+        nll_fn as pyhf_nll,
     )
     from pyhs3_model import build_pyhs3, summarise_pyhs3_fit
 

@@ -1,12 +1,10 @@
 """Utility helpers shared by the example implementations."""
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 
 import jax.numpy as jnp
-from jax.scipy.special import gammaln
 import pyhs3
+from jax.scipy.special import gammaln
 from pyhs3.typing.aliases import TensorVar
 from pytensor.compile import mode
 from pytensor.graph.basic import graph_inputs
@@ -52,11 +50,10 @@ def poisson_logpdf(observed: float, mean: float) -> jnp.ndarray:
 
     observed_array = jnp.asarray(observed)
     mean_array = jnp.asarray(mean)
-    result = jnp.where(
+    return jnp.where(
         mean_array > 0.0,
         observed_array * jnp.log(jnp.maximum(mean_array, 1e-12))
         - mean_array
         - gammaln(observed_array + 1.0),
         -jnp.inf,
     )
-    return result

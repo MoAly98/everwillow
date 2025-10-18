@@ -1,15 +1,12 @@
 """Minimal wrapper around the evermore reference example."""
 
-from __future__ import annotations
-
-from typing import Mapping
+from collections.abc import Mapping
 
 import equinox as eqx
+import evermore as evm
 import jax
 import jax.numpy as jnp
 import optimistix as optx
-
-import evermore as evm
 
 from .model_config import DEFAULT_DATA, ModelData, expected_components
 

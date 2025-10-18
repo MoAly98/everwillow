@@ -1,3 +1,9 @@
+"""Utilities for working with pytree key paths.
+
+The functions in this module translate between JAX's opaque key objects and the
+canonical tuple representation used throughout :mod:`everwillow.statelib.state`.
+"""
+
 from __future__ import annotations
 
 import typing as tp
@@ -28,8 +34,10 @@ def canonical_key(path: KeyPath) -> KeyPath:
             result.append(entry.key)
         elif isinstance(entry, jtu.GetAttrKey):
             result.append(entry.name)
-        elif isinstance(entry, (jtu.SequenceKey, jtu.FlattenedIndexKey)):
+        elif isinstance(entry, jtu.SequenceKey):
             result.append(entry.idx)
+        elif isinstance(entry, jtu.FlattenedIndexKey):
+            result.append(entry.key)
         else:
             message = f"Unrecognised key path entry: {entry}"
             raise ValueError(message)
@@ -97,6 +105,18 @@ def derive_key_path(
     Examples:
         >>> derive_key_path(("a", 0))
         (DictKey(key='a'), SequenceKey(idx=0))
+        >>> template = (jtu.DictKey("x"), jtu.SequenceKey(1))
+        >>> derive_key_path(("a", 0), template=template)
+        (DictKey(key='a'), SequenceKey(idx=0))
+        >>> # Without a template, attribute keys downgrade to DictKey
+        >>> class Holder:
+        ...     def __init__(self):
+        ...         self.value = 1.0
+        >>> template = (jtu.GetAttrKey("value"),)
+        >>> derive_key_path(("log_value",), template=template)
+        (GetAttrKey(name='log_value'),)
+        >>> derive_key_path(("log_value",))
+        (DictKey(key='log_value'),)
     """
     if template is None or len(template) != len(key):
         template = None

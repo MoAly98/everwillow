@@ -1,3 +1,5 @@
+"""Model abstractions built on :class:`~everwillow.statelib.state.FlatState`."""
+
 from __future__ import annotations
 
 import dataclasses

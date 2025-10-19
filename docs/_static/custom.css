@@ -1,0 +1,31 @@
+/* Force left alignment for autosummary tables in API reference */
+table.autosummary {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+}
+
+/* Force left alignment for all docutils tables */
+table.docutils {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+}
+
+/* Force left alignment for longtable */
+table.longtable {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+}
+
+/* Ensure function/class signature blocks are left-aligned */
+dl.py,
+dl.function,
+dl.class,
+dl.method,
+dl.attribute {
+    text-align: left !important;
+}
+
+/* Force left alignment for definition lists */
+dl {
+    margin-left: 0 !important;
+}

@@ -1,0 +1,85 @@
+digraph "fit_data_flow" {
+    rankdir=LR;
+    graph [
+        fontsize=12,
+        label="fit() data flow",
+        labelloc="t",
+        fontname="Helvetica"
+    ];
+    node [
+        shape=plaintext,
+        fontname="Helvetica",
+        fontsize=11
+    ];
+    edge [
+        color="#4f6ebd",
+        penwidth=1.3,
+        arrowsize=0.9,
+        fontname="Helvetica",
+        fontsize=9
+    ];
+
+    User [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>User</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    fit(nll_fn, params,<BR ALIGN="LEFT"/>
+                    fixed=["background"])
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Flatten [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>FlatState</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    from_pytree()
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    PartitionState [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>Partition</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    (fixed, free)
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    OptLoop [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#b08054">
+                <TR><TD BGCOLOR="#ffebd4"><B>Optimization Loop</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    update → combine →<BR ALIGN="LEFT"/>
+                    to_pytree() → nll_fn() →<BR ALIGN="LEFT"/>
+                    gradient step
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Result [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#54b080">
+                <TR><TD BGCOLOR="#d4ffe7"><B>FitResult</B></TD></TR>
+                <TR><TD ALIGN="LEFT" BALIGN="LEFT">
+                    params, nll,<BR ALIGN="LEFT"/>
+                    success
+                </TD></TR>
+            </TABLE>
+        >
+    ];
+
+    User -> Flatten [label=" "];
+    Flatten -> PartitionState [label=" "];
+    PartitionState -> OptLoop [label=" "];
+    OptLoop -> Result [label=" "];
+}

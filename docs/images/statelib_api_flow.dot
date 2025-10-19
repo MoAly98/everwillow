@@ -1,0 +1,46 @@
+digraph "statelib_api_flow" {
+    rankdir=LR;
+    graph [fontsize=12, label="everwillow.statelib — API inputs & exploration", labelloc="t", fontname="Helvetica"];
+    node [shape=plaintext, fontname="Helvetica", fontsize=11];
+    edge [color="#4f6ebd", penwidth=1.2, arrowsize=0.85, fontname="Helvetica", fontsize=10];
+
+    from_pytree [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>FlatState.from_pytree</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> pytree<br/><B>Out:</B> FlatState (single segment)<br/><B>Internal:</B> tree_flatten → _new → _rebuild_mapping → _validate_state</TD></TR></TABLE>>];
+
+    tree_flatten [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#eef3ff"><B>FlatState.tree_flatten</B></TD></TR><TR><TD ALIGN="LEFT"><B>Out:</B> (leaves, metadata, keys)</TD></TR></TABLE>>];
+
+    tree_unflatten [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#eef3ff"><B>FlatState.tree_unflatten</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> metadata, leaves<br/><B>Out:</B> FlatState</TD></TR></TABLE>>];
+
+    map_state [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>map_state</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> fn(key, value), FlatState<br/><B>Out:</B> FlatState with mapped values</TD></TR></TABLE>>];
+
+    update_state [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>update_state</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> FlatState, key → new value<br/><B>Out:</B> FlatState with updates</TD></TR></TABLE>>];
+
+    partition_state [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>partition_state / combine_partitions</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> FlatState, keys/predicate<br/><B>Out:</B> partitioned slices (marked via is_partitioned)</TD></TR></TABLE>>];
+
+    merge_states [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>merge_states</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> multiple FlatState slices<br/><B>Out:</B> FlatState with ordered segments</TD></TR></TABLE>>];
+
+    split_state [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>split_state</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> merged FlatState<br/><B>Out:</B> tuple of single-segment states</TD></TR></TABLE>>];
+
+    apply_transformations [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>apply_transformations</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> FlatState, key → Transform<br/><B>Out:</B> FlatState with rewritten keys/values</TD></TR></TABLE>>];
+
+    model_call [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>Model.__call__</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> pytree or single-segment FlatState<br/><B>Out:</B> float (log-density)</TD></TR></TABLE>>];
+
+    combined_call [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0"><TR><TD BGCOLOR="#dfe7ff"><B>CombinedModel.__call__</B></TD></TR><TR><TD ALIGN="LEFT"><B>In:</B> merged FlatState<br/><B>Out:</B> float (sum of model outputs)</TD></TR></TABLE>>];
+
+    # dotted usage relationships
+    from_pytree -> map_state [style="dotted", label="mutate values"];
+    from_pytree -> update_state [style="dotted", label="replace entries"];
+    from_pytree -> merge_states [style="dotted", label="collect slices"];
+    map_state -> merge_states [style="dotted", label="optional"];
+    update_state -> merge_states [style="dotted", label="optional"];
+    merge_states -> split_state [style="dotted", label="recover slices"];
+    merge_states -> combined_call [style="dotted", label="feed models"];
+    split_state -> model_call [style="dotted", label="per-slice"];
+    from_pytree -> model_call [style="dotted", label="single slice"];
+    from_pytree -> apply_transformations [style="dotted", label="preprocess"];
+    apply_transformations -> merge_states [style="dotted", label="combine"];
+    from_pytree -> partition_state [style="dotted", label="slice by key"];
+    partition_state -> merge_states [style="dotted", label="recombine"];
+    partition_state -> model_call [style="dotted", label="feed subset"];
+    from_pytree -> tree_flatten [style="dotted", label="inspect"];
+    tree_flatten -> tree_unflatten [style="dotted", label="rebuild"];
+}

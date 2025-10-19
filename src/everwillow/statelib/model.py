@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["CombinedModel", "Model"]
+
 import dataclasses
 import typing as tp
 
@@ -14,10 +16,6 @@ P = tp.ParamSpec("P")
 class Model:
     """Callable wrapper around a log-density function.
 
-    Attributes:
-        logpdf: Callable that evaluates the log-density for a pytree-shaped
-            parameter container.
-
     Examples:
         >>> scale = 0.5
         >>> model = Model(logpdf=lambda tree: -(tree["a"] ** 2 + tree["b"] ** 2) * scale)
@@ -26,7 +24,7 @@ class Model:
         -2.5
     """
 
-    logpdf: tp.Callable[[PyTree], float]
+    logpdf: tp.Callable[[PyTree], float]  #: Evaluates the log-density for the pytree.
 
     def __call__(
         self,
@@ -52,14 +50,9 @@ class Model:
 
 @dataclasses.dataclass(frozen=True)
 class CombinedModel:
-    """Sum multiple model evaluations over a shared merged state.
+    """Sum multiple model evaluations over a shared merged state."""
 
-    Attributes:
-        models: Ordered collection of ``Model`` instances that each consume one
-            segment of a merged ``FlatState``.
-    """
-
-    models: tuple[Model, ...]
+    models: tuple[Model, ...]  #: Ordered ``Model`` instances consumed per segment.
 
     @classmethod
     def combine(

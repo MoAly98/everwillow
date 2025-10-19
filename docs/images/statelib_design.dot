@@ -1,0 +1,108 @@
+digraph "statelib_design" {
+    rankdir=TB;
+    splines=true;
+    graph [
+        fontsize=12,
+        labelloc="t",
+        label="everwillow.statelib — architectural relationships",
+        fontname="Helvetica"
+    ];
+    node [
+        shape=plaintext,
+        fontname="Helvetica",
+        fontsize=11
+    ];
+    edge [
+        color="#5465b0",
+        penwidth=1.3,
+        arrowsize=0.9,
+        fontname="Helvetica",
+        fontsize=10
+    ];
+
+    FlatState [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>FlatState</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- wraps flattened pytree values<br/>- immutable Mapping view<br/>- registered as JAX pytree</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    SegmentRecord [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>SegmentRecord</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- stores per-slice treedef &amp; values<br/>- remembers original key paths<br/>- cloned when state mutates</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    KeyPaths [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>key_paths.py</B></TD></TR>
+                <TR><TD ALIGN="LEFT">canonical_key / derive_key_path / ensure_public_key</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Transform [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>Transform + apply_transformations</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- rename keys, reshape values<br/>- rebuild slice metadata<br/>- validates unique targets</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    StateHelpers [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>State helpers</B></TD></TR>
+                <TR><TD ALIGN="LEFT">map_state · update_state · merge_states · split_state · partition/combine</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Partitioning [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>partition_state / combine_partitions</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- slice FlatState by key/predicate<br/>- mark partitions (is_partitioned)<br/>- recombine disjoint slices</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    Model [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>Model</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- wraps log-density callable<br/>- accepts pytree or FlatState<br/>- converts FlatState back to pytree</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    CombinedModel [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#8aa0e0">
+                <TR><TD BGCOLOR="#dfe7ff"><B>CombinedModel</B></TD></TR>
+                <TR><TD ALIGN="LEFT">- tuple of Model components<br/>- splits merged FlatState slices<br/>- sums model outputs</TD></TR>
+            </TABLE>
+        >
+    ];
+
+    {rank=same; SegmentRecord; KeyPaths;}
+    {rank=same; Transform; StateHelpers; Partitioning;}
+    {rank=same; Model; CombinedModel;}
+
+    SegmentRecord -> FlatState [label=" provides slice metadata ", dir="back"];
+    KeyPaths -> FlatState [label=" normalises key tuples ", style="dashed"];
+    Transform -> FlatState [label=" produces updated FlatState ", color="#5465b0"];
+    StateHelpers -> FlatState [label=" compose / inspect slices ", dir="both", arrowtail="open"];
+    Partitioning -> FlatState [label=" repartition merged state ", dir="both", arrowtail="open", style="dashed"];
+    FlatState -> Model [label=" supplies parameters ", color="#1b5e20"];
+    Model -> CombinedModel [label=" aggregated by ", dir="back", color="#1b5e20"];
+    FlatState -> CombinedModel [label=" split_state() slices ", color="#1b5e20"];
+    Transform -> KeyPaths [label=" derive target key ", style="dotted"];
+}

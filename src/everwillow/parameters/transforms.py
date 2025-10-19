@@ -1,21 +1,23 @@
-'''
+"""
 Abstract base and implementations of parameter space transforms.
-'''
+"""
+
 import abc
 import math
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-import jax
 
 __all__ = [
     "AbstractParameterTransformation",
     "MinuitTransform",
-    "SigmoidTransform",
     "OneSidedLogTransform",
+    "SigmoidTransform",
     "SoftPlusTransform",
 ]
+
 
 def _logit(x: ArrayLike) -> ArrayLike:
     """Compute ``log(x / (1 - x))`` in a numerically stable way."""
@@ -29,6 +31,7 @@ def _sigmoid(x: ArrayLike) -> ArrayLike:
         1.0 / (1.0 + jnp.exp(-x)),
         jnp.exp(x) / (1.0 + jnp.exp(x)),
     )
+
 
 class AbstractParameterTransformation(eqx.Module):
     """
@@ -46,6 +49,7 @@ class AbstractParameterTransformation(eqx.Module):
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Transform a value from the real line back to its constrained space."""
 
+
 class MinuitTransform(AbstractParameterTransformation):
     """
     Minuit-style transform for parameters with finite lower and upper bounds.
@@ -61,8 +65,8 @@ class MinuitTransform(AbstractParameterTransformation):
     Reference: https://root.cern.ch/download/minuit.pdf (Sec. 1.2.1).
     """
 
-    lower: float = eqx.static_field()
-    upper: float = eqx.static_field()
+    lower: float = eqx.field(static=True)
+    upper: float = eqx.field(static=True)
 
     def __name__(self) -> str:
         return "MinuitTransform"
@@ -70,10 +74,14 @@ class MinuitTransform(AbstractParameterTransformation):
     # check for finite boundaries
     def __post_init__(self):
         if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            raise ValueError(f"{self.__name__} requires finite lower/upper bounds.")
+            message = f"{self.__name__} requires finite lower/upper bounds."
+            raise ValueError(message)
         if self.lower >= self.upper:
-            raise ValueError(f"{self.__name__} requires lower bound to be strictly less than upper bound.")
-
+            message = (
+                f"{self.__name__} requires lower bound to be strictly less than "
+                "upper bound."
+            )
+            raise ValueError(message)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
@@ -86,16 +94,12 @@ class MinuitTransform(AbstractParameterTransformation):
         value = eqx.error_if(value, value <= self.lower, error_msg)
         value = eqx.error_if(value, value >= self.upper, error_msg)
         # this formula turns user-provided "external" parameter values into "internal" values
-        return jnp.arcsin(
-            2.0 * (value - self.lower) / (self.upper - self.lower) - 1.0
-        )
-
+        return jnp.arcsin(2.0 * (value - self.lower) / (self.upper - self.lower) - 1.0)
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Convert an unconstrained value back into the bounded interval."""
-        return self.lower + (self.upper - self.lower) / 2 * (
-            jnp.sin(value) + 1
-        )
+        return self.lower + (self.upper - self.lower) / 2 * (jnp.sin(value) + 1)
+
 
 class SigmoidTransform(AbstractParameterTransformation):
     """
@@ -112,8 +116,8 @@ class SigmoidTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    lower: float = eqx.static_field()
-    upper: float = eqx.static_field()
+    lower: float = eqx.field(static=True)
+    upper: float = eqx.field(static=True)
 
     def __name__(self) -> str:
         return "SigmoidTransform"
@@ -121,10 +125,14 @@ class SigmoidTransform(AbstractParameterTransformation):
     # check for finite boundaries
     def __post_init__(self):
         if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            raise ValueError(f"{self.__name__} requires finite lower/upper bounds.")
+            message = f"{self.__name__} requires finite lower/upper bounds."
+            raise ValueError(message)
         if self.lower >= self.upper:
-            raise ValueError(f"{self.__name__} requires lower bound to be strictly less than upper bound.")
-
+            message = (
+                f"{self.__name__} requires lower bound to be strictly less than "
+                "upper bound."
+            )
+            raise ValueError(message)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
@@ -139,10 +147,10 @@ class SigmoidTransform(AbstractParameterTransformation):
         # this formula turns user-provided "external" parameter values into "internal" values
         return _logit((value - self.lower) / (self.upper - self.lower))
 
-
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Convert an unconstrained value back into the bounded interval."""
         return self.lower + (self.upper - self.lower) * _sigmoid(value)
+
 
 class OneSidedLogTransform(AbstractParameterTransformation):
     """
@@ -158,10 +166,8 @@ class OneSidedLogTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    bound: float = eqx.static_field()
-    direction: str = eqx.static_field()  # 'lower' or 'upper'
-
-
+    bound: float = eqx.field(static=True)
+    direction: str = eqx.field(static=True)  # 'lower' or 'upper'
 
     def __name__(self) -> str:
         return "OneSidedLogTransform"
@@ -169,10 +175,11 @@ class OneSidedLogTransform(AbstractParameterTransformation):
     # check for finite lower boundary
     def __post_init__(self):
         if self.direction not in ("lower", "upper"):
-            raise ValueError(f"Unsupported direction {self.direction!r} for {self.__name__}.")
+            message = f"Unsupported direction {self.direction!r} for {self.__name__}."
+            raise ValueError(message)
         if not math.isfinite(self.bound):
-            raise ValueError(f"{self.__name__} requires a finite bound.")
-
+            message = f"{self.__name__} requires a finite bound."
+            raise ValueError(message)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a single-sided bounded value into an unconstrained representation."""
@@ -186,9 +193,7 @@ class OneSidedLogTransform(AbstractParameterTransformation):
             value = eqx.error_if(value, value <= self.bound, error_msg)
             return jnp.log(value - self.bound)
 
-        error_msg = (
-            f"Value passed to {self.__name__} must be less than upper bound {self.bound}."
-        )
+        error_msg = f"Value passed to {self.__name__} must be less than upper bound {self.bound}."
         value = eqx.error_if(value, value >= self.bound, error_msg)
         return jnp.log(self.bound - value)
 
@@ -222,9 +227,10 @@ class SoftPlusTransform(AbstractParameterTransformation):
         """Apply the inverse softplus, validating positivity and finiteness."""
         value = jnp.asarray(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
-        value = eqx.error_if(value, value < 0, "Expected positive inputs to inv_softplus.")
-        value_t = jnp.log(-jnp.expm1(-value)) + value
-        return value_t
+        value = eqx.error_if(
+            value, value < 0, "Expected positive inputs to inv_softplus."
+        )
+        return jnp.log(-jnp.expm1(-value)) + value
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Apply the softplus function."""

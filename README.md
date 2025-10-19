@@ -7,7 +7,7 @@
 </tr>
 </div>
 
-
+##
 everwillow is a statistical inference library for high-energy physics built on JAX pytrees and optimistix optimizers. It provides tools for fitting, profiling, and hypothesis testing with flexible parameter handling and parameter bounds via transformations. It works with any JAX-based statistical model.
 
 ## Quick Example

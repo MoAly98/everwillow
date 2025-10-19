@@ -25,10 +25,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: Sync project dependencies
-        run: uv sync --group=test
+        run: uv sync --group=dev
       - uses: pre-commit/action@v3.0.1
         with:
-          extra_args: --hook-stage manual --all-files
+          extra_args: --all-files
 
   checks:
     name: Run tests for Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}

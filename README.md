@@ -1,14 +1,10 @@
 <div align="center">
-<table>
 <tr>
 <td width="200px">
 <img src="https://raw.githubusercontent.com/MoAly98/everwillow/main/images/logo.svg" alt="everwillow logo" width="180">
 </td>
-<td>
-<p><em>Statistical inference for high-energy physics with JAX</em></p>
-</td>
+
 </tr>
-</table>
 </div>
 
 ---

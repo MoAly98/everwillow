@@ -5,7 +5,7 @@ JAX-supporting modelling libraries: [`pyhs3`](https://github.com/scipp-atlas/pyh
 [`evermore`](https://github.com/pfackeldey/evermore), and
 [`pyhf`](https://github.com/scikit-hep/pyhf). To run the examples locally use
 `uv` with the `examples` dependency group, for instance
-`uv run --group examples python test_pyhs3_example.py`. Each script:
+`uv run --group examples python docs/python/test_pyhs3_example.py`. Each script:
 
 1. Builds the likelihood with the library’s native abstractions.
 2. Exposes a pytree of parameters that everwillow can optimise.
@@ -42,7 +42,7 @@ fits.
 
 ::::{tab-set}
 :::{tab-item} pyhs3
-```{literalinclude} ../test_pyhs3_example.py
+```{literalinclude} python/test_pyhs3_example.py
 :language: python
 ```
 ```python
@@ -51,7 +51,7 @@ fits.
 ```
 :::
 :::{tab-item} evermore
-```{literalinclude} ../test_evermore_example.py
+```{literalinclude} python/test_evermore_example.py
 :language: python
 ```
 ```python
@@ -60,7 +60,7 @@ fits.
 ```
 :::
 :::{tab-item} pyhf
-```{literalinclude} ../test_pyhf_example.py
+```{literalinclude} python/test_pyhf_example.py
 :language: python
 ```
 ```python

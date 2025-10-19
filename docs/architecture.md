@@ -338,6 +338,14 @@ seg1.to_pytree()  # ✅ Works!
 
 ::::
 
+## High-Level Design
+
+```{figure} images/statelib_design.svg
+:alt: Statelib architecture
+:align: center
+:width: 80%
+```
+
 ## Next Steps
 
 ::::{grid} 1
@@ -365,11 +373,3 @@ Full function and class documentation
 :::
 
 ::::
-
-## High-Level Design
-
-```{figure} images/statelib_design.svg
-:alt: Statelib architecture
-:align: center
-:width: 80%
-```

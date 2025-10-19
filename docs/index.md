@@ -1,8 +1,8 @@
 # Everwillow Documentation
 
-Everwillow provides a lightweight fitting layer for high-energy physics
-applications. It combines a clean Python API with JAX acceleration and a set of
-reusable utilities for managing optimisation state.
+Everwillow is a statistical inference library for high-energy physics built on JAX
+pytrees and optimistix optimizers. It provides tools for fitting, profiling, and
+hypothesis testing with reusable utilities for managing optimization state.
 
 ```{toctree}
 :maxdepth: 2

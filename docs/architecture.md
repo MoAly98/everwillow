@@ -373,5 +373,3 @@ Full function and class documentation
 :::
 
 ::::
-
-

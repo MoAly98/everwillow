@@ -15,9 +15,11 @@ everwillow is a statistical inference library for high-energy physics built on J
 ```python
 import everwillow as ew
 
+
 # Define your negative log-likelihood
 def nll(params):
     return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
 
 # Fit with bounds
 result = ew.fit(

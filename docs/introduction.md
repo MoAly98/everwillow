@@ -185,8 +185,10 @@ All transformations are differentiable and JAX-compatible.
 ```python
 import everwillow as ew
 
+
 def nll(params):
     return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
 
 # Specify bounds as a pytree matching your parameters
 result = ew.fit(

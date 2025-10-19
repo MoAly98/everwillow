@@ -41,6 +41,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from everwillow.parameters.transforms import AbstractParameterTransformation
 
+
 class SquareTransform(AbstractParameterTransformation):
     scale: float = eqx.field(static=True)
 
@@ -70,8 +71,10 @@ from everwillow.parameters.transforms import (
     SoftPlusTransform,
 )
 
+
 def nll(params):
     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2 + params["beta"] ** 2
+
 
 result = ew.fit(
     nll,
@@ -124,5 +127,3 @@ wrapped_state = sl.transform.apply_transformations(unwrapped_state, wrap_map)
 
 These helpers provide the same behaviour as `fit`, while giving you full
 control over when unwrapping and wrapping occur.
-
-

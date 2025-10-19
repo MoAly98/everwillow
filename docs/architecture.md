@@ -220,6 +220,7 @@ You can use everwillow! The {doc}`quickstart` shows adapters for `pyhs3`, `everm
 # 1. Extract parameters from your model as a pytree
 params = model.to_pytree()  # or build dict manually
 
+
 # 2. Define NLL that reconstructs model state
 def nll(params):
     # Rebuild your model's internal state

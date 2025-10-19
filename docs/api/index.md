@@ -8,7 +8,8 @@ listed roughly in the order you will encounter them when building fits.
    :toctree: generated
    :caption: Top-level Modules
 
-   everwillow.fitting
+   everwillow.inference
+   everwillow.parameters
    everwillow.statelib
    everwillow.statelib.state
    everwillow.statelib.transform

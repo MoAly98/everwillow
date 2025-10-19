@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-import everwillow.bounds as bounds
+import everwillow.parameters.bounds as bounds
 import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)

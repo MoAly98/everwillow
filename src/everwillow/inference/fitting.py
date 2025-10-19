@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import optimistix as optx
 
-import everwillow.bounds as bounds_module
+import everwillow.parameters.bounds as bounds_module
 import everwillow.statelib as sl
 
 

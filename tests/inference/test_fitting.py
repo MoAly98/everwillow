@@ -13,7 +13,7 @@ import optimistix as optx
 import pytest
 
 import everwillow as ew
-from everwillow.fitting import FitResult
+from everwillow.inference import FitResult
 
 # ============================================================================
 # FitResult dataclass tests

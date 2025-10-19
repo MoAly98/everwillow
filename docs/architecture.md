@@ -147,9 +147,9 @@ total_logpdf = combined(state)  # Sum of both models
 User-facing API for maximum likelihood fits.
 
 **Key Components:**
-- {func}`~everwillow.fitting.fit` - Unconditional MLE
-- {func}`~everwillow.fitting.fixed_param_fit` - Profile likelihood
-- {class}`~everwillow.fitting.FitResult` - Results container
+- {func}`~everwillow.inference.fit` - Unconditional MLE
+- {func}`~everwillow.inference.fixed_param_fit` - Profile likelihood
+- {class}`~everwillow.inference.FitResult` - Results container
 
 :::{dropdown} How fitting.fit() Works 🔍
 :color: warning

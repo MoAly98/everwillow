@@ -9,7 +9,7 @@ JAX-supporting modelling libraries: [`pyhs3`](https://github.com/scipp-atlas/pyh
 
 1. Builds the likelihood with the library’s native abstractions.
 2. Exposes a pytree of parameters that everwillow can optimise.
-3. Calls {func}`everwillow.fitting.fit` to obtain the best-fit values.
+3. Calls {func}`everwillow.inference.fit` to obtain the best-fit values.
 
 ## The counting model
 

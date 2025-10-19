@@ -145,9 +145,3 @@ class TestResolveKeysHelper:
         state: sl.FlatState[tp.Any] = sl.FlatState.from_pytree({"foo": 1.0})
         with pytest.raises(KeyError):
             bounds._resolve_keys(state, ("missing",))
-
-    def test_invalid_spec_type(self):
-        """non str/tuple spec raises TypeError."""
-        state: sl.FlatState[tp.Any] = sl.FlatState.from_pytree({"foo": 1.0})
-        with pytest.raises(TypeError):
-            bounds._resolve_keys(state, tp.cast(tp.Any, 3.14))

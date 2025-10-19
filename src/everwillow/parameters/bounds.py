@@ -22,14 +22,15 @@ Array(True, dtype=bool)
 from __future__ import annotations
 
 __all__ = [
-    "match_bounds_to_state",
     "apply_bounds_transform",
+    "match_bounds_to_state",
 ]
 
 import typing as tp
 
 import everwillow.statelib as sl
 from everwillow.parameters.transforms import AbstractParameterTransformation
+from everwillow.statelib.key_paths import KeyPath
 
 # Type alias for bounds specification
 TransformSpec = AbstractParameterTransformation | None
@@ -37,8 +38,8 @@ TransformSpec = AbstractParameterTransformation | None
 
 def _resolve_keys(
     state: sl.FlatState[tp.Any],
-    spec: str | sl.KeyPath,
-) -> list[sl.KeyPath]:
+    spec: str | KeyPath,
+) -> list[KeyPath]:
     """Resolve a parameter specifier to canonical keys in ``state``.
 
     Raises
@@ -48,26 +49,25 @@ def _resolve_keys(
     TypeError
         If ``spec`` is neither a ``str`` nor a tuple key.
     """
-    if isinstance(spec, str):
-        # Find all keys matching this name
-        matched_keys = [
-            key for key in state.raw_mapping if key and key[-1] == spec
-        ]
-    elif isinstance(spec, tuple):
-        # Direct key specification
-        key: sl.KeyPath = tuple(spec)
-        if key not in state.raw_mapping:
-            raise KeyError(f"Parameter key {key} not found in state")
-        matched_keys = [key]
+    spec_obj: str | KeyPath = spec
+    if isinstance(spec_obj, str):
+        matched_keys = [key for key in state.raw_mapping if key and key[-1] == spec_obj]
+        if not matched_keys:
+            message = f"Parameter '{spec_obj}' not found in state"
+            raise KeyError(message)
     else:
-        raise TypeError(f"Invalid parameter specification type: {type(spec)}")
+        candidate = tuple(spec_obj)
+        if candidate not in state.raw_mapping:
+            message = f"Parameter key {candidate} not found in state"
+            raise KeyError(message)
+        matched_keys = [tp.cast(KeyPath, candidate)]
     return matched_keys
 
 
 def match_bounds_to_state(
     state: sl.FlatState[tp.Any],
-    bounds: tp.Mapping[str | sl.KeyPath, TransformSpec],
-) -> dict[sl.KeyPath, AbstractParameterTransformation]:
+    bounds: tp.Mapping[str | KeyPath, TransformSpec],
+) -> dict[KeyPath, AbstractParameterTransformation]:
     """Return a mapping from canonical keys to user-supplied transforms.
 
     Parameters
@@ -77,22 +77,31 @@ def match_bounds_to_state(
     bounds
         Mapping from parameter names/keys to transform instances (or ``None`` to skip).
     """
-    transform_map: dict[sl.KeyPath, AbstractParameterTransformation] = {}
+    transform_map: dict[KeyPath, AbstractParameterTransformation] = {}
     for spec, transform in bounds.items():
-        if transform is None:   continue
-        if not isinstance(transform, AbstractParameterTransformation):
-            raise TypeError(f"Expected AbstractParameterTransformation, got {type(transform)}")
-        # resolve spec → canonical keys (similar to validate_bounds)
-        resolved_keys = _resolve_keys(state, spec)  # you can inline this logic
+        if transform is None:
+            continue
+        transform_obj: tp.Any = transform
+        if not isinstance(transform_obj, AbstractParameterTransformation):
+            message = (
+                f"Expected AbstractParameterTransformation, got {type(transform_obj)}"
+            )
+            raise TypeError(message)
+        resolved_keys = _resolve_keys(state, spec)
+        validated = tp.cast(AbstractParameterTransformation, transform_obj)
         for key in resolved_keys:
-            transform_map[key] = transform
+            transform_map[key] = validated
     return transform_map
 
 
 def apply_bounds_transform(
     state: sl.FlatState[tp.Any],
-    bounds: tp.Mapping[str | sl.KeyPath, TransformSpec],
-) -> tuple[sl.FlatState[tp.Any], dict[sl.KeyPath, sl.Transform[tp.Any]], dict[sl.KeyPath, sl.Transform[tp.Any]]]:
+    bounds: tp.Mapping[str | KeyPath, TransformSpec],
+) -> tuple[
+    sl.FlatState[tp.Any],
+    dict[KeyPath, sl.Transform[tp.Any]],
+    dict[KeyPath, sl.Transform[tp.Any]],
+]:
     """Apply ``bounds`` to ``state``, returning the unwrapped state and helper maps.
 
     Returns a tuple ``(unwrapped_state, unwrap_map, wrap_map)`` where:
@@ -108,11 +117,13 @@ def apply_bounds_transform(
     def make_unwrap(transform):
         def unwrap_fn(_key, value):
             return transform.unwrap(value)
+
         return unwrap_fn
 
     def make_wrap(transform):
         def wrap_fn(_key, value):
             return transform.wrap(value)
+
         return wrap_fn
 
     unwrap = {

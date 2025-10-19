@@ -15,11 +15,9 @@ __version__ = "0.0.1"
 
 # Core API
 from everwillow.inference import FitResult, fit, fixed_param_fit
-from everwillow.parameters import validate_bounds
 
 __all__ = [
     "FitResult",
     "fit",
     "fixed_param_fit",
-    "validate_bounds",
 ]

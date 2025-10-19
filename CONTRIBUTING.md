@@ -90,4 +90,3 @@ Bug reports should include:
 - Environment details (`uv pip list`, Python version, OS)
 
 For feature requests, explain the problem you're trying to solve.
-

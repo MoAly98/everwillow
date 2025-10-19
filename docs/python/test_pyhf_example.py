@@ -72,7 +72,7 @@ data = workspace.data(model, include_auxdata=True)
 
 # Get parameter order and initial values
 parameter_order = model.config.par_order
-initial_dict = dict(zip(parameter_order, model.config.suggested_init()))
+initial_dict = dict(zip(parameter_order, model.config.suggested_init(), strict=False))
 
 
 # Define NLL

@@ -23,6 +23,7 @@ def jaxify_distribution(model, distribution_name):
     mode.JAX.optimizer.rewrite(function_graph)
     return inputs, jax_funcify(function_graph)
 
+
 # Build the workspace
 workspace = pyhs3.Workspace(
     metadata=Metadata(hs3_version="0.2"),
@@ -34,7 +35,12 @@ workspace = pyhs3.Workspace(
         ProductDist(
             type="product_dist",
             name="model",
-            factors=["main_poisson", "norm1_constraint", "norm2_constraint", "shape1_constraint"],
+            factors=[
+                "main_poisson",
+                "norm1_constraint",
+                "norm2_constraint",
+                "shape1_constraint",
+            ],
         ),
     ],
     functions=[
@@ -47,7 +53,9 @@ workspace = pyhs3.Workspace(
             name="bkg1_shape_interp",
             expression="bkg1_nominal + shape1 * (bkg1_shape_up - bkg1_nominal)",
         ),
-        GenericFunction(name="bkg1_expected", expression="bkg1_lnN_factor * bkg1_shape_interp"),
+        GenericFunction(
+            name="bkg1_expected", expression="bkg1_lnN_factor * bkg1_shape_interp"
+        ),
         GenericFunction(
             name="bkg2_lnN_factor",
             expression="exp(norm2 * log(1.05))",
@@ -56,7 +64,9 @@ workspace = pyhs3.Workspace(
             name="bkg2_shape_interp",
             expression="bkg2_nominal + shape1 * (bkg2_shape_up - bkg2_nominal)",
         ),
-        GenericFunction(name="bkg2_expected", expression="bkg2_lnN_factor * bkg2_shape_interp"),
+        GenericFunction(
+            name="bkg2_expected", expression="bkg2_lnN_factor * bkg2_shape_interp"
+        ),
         GenericFunction(
             name="n_expected",
             expression="signal_expected + bkg1_expected + bkg2_expected",
@@ -91,7 +101,9 @@ model = workspace.model()
 inputs, jaxified = jaxify_distribution(model, "model")
 
 # Build initial parameters
-initial = {point.name: float(point.value) for point in workspace.parameter_points[0].parameters}
+initial = {
+    point.name: float(point.value) for point in workspace.parameter_points[0].parameters
+}
 fixed_values = {point.name: float(point.value) for point in workspace.data}
 
 

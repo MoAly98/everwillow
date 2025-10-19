@@ -76,6 +76,18 @@ The optimizer (default: BFGS) works only on free parameters:
 Your NLL function always receives the complete parameter pytree!
 :::
 
+:::{grid-item-card} Bounds Transform (Optional)
+:class-header: bg-light
+
+If you specified bounds on parameters, everwillow transparently manages transformations:
+- **Unwrap**: Initial bounded parameters → unbounded space for optimization
+- **Optimize**: Optimizer works in unbounded space (no constraint violations)
+- **Wrap**: Before each NLL call, transform back to bounded space
+- **Gradients**: Flow back through differentiable transformations
+
+Your NLL function always receives parameters in the **original bounded space**.
+:::
+
 ::::
 
 ## State Management with FlatState
@@ -120,6 +132,92 @@ updated = update_state(state, {("a",): 42})
 :::
 
 ::::
+
+## Parameter Bounds via Transformations
+
+When you specify bounds on parameters, everwillow uses a transformation strategy to keep the optimizer working in unbounded space while ensuring your NLL function receives parameters within the specified bounds.
+
+::::{grid} 1
+:gutter: 3
+
+:::{grid-item-card} 🎯 Why Transform to Unbounded Space?
+:class-header: bg-primary text-white
+
+Gradient-based optimizers (like BFGS) work best when they can explore the full parameter space without hitting hard boundaries. By transforming bounded parameters to an unbounded representation:
+
+- The optimizer never encounters constraint violations
+- Gradients remain well-behaved near boundaries
+- No special constraint-handling logic is needed
+
+Your NLL function always receives parameters in the **original bounded space**, so you never need to think about the transformations.
+:::
+
+:::{grid-item-card} 🔄 The Wrap/Unwrap Pattern
+:class-header: bg-info text-white
+
+Everwillow automatically manages the transformation lifecycle:
+
+1. **Unwrap**: Convert your bounded initial parameters to unbounded space
+2. **Optimize**: The optimizer works entirely in unbounded space
+3. **Wrap**: Before each NLL evaluation, transform back to bounded space
+4. **Repeat**: Gradients flow back through the transformations
+
+This happens transparently—you just pass `bounds` to the fit function.
+:::
+
+:::{grid-item-card} 📐 Transformation Types
+:class-header: bg-success text-white
+
+Different bound types use different transformations:
+
+- **Finite bounds** `(a, b)`: Logit/sigmoid family keeps values in `(a, b)`
+- **Lower bound** `(a, None)`: Logarithmic transform ensures values stay above `a`
+- **Upper bound** `(None, b)`: Negative logarithmic transform keeps values below `b`
+- **No bounds** `(None, None)`: Identity (no transformation)
+
+All transformations are differentiable and JAX-compatible.
+:::
+
+::::
+
+### Using Bounds in Practice
+
+```python
+import everwillow as ew
+
+def nll(params):
+    return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
+# Specify bounds as a pytree matching your parameters
+result = ew.fit(
+    nll,
+    params={"mu": 0.0, "sigma": 0.5},
+    bounds={"mu": (0.0, 5.0), "sigma": (0.0, None)},  # sigma must be positive
+)
+
+# Result parameters are in the original bounded space
+print(result.params)  # {'mu': 2.0, 'sigma': 1.0}
+```
+
+The transformation machinery ensures that:
+- The optimizer never proposes `mu < 0` or `mu > 5`
+- The optimizer never proposes `sigma ≤ 0`
+- Your NLL function always receives valid parameter values
+- Gradients account for the transformation Jacobian
+
+### Caveats
+
+:::{admonition} Important Considerations
+:class: warning
+
+**Initial values must satisfy bounds**: Your starting parameters must already lie within the specified bounds. The unwrap transformation will fail if initial values violate the constraints.
+
+**Steep gradients near boundaries**: Transformations like logit can produce very steep gradients when parameters approach bounds. This may slow convergence or cause numerical instability in some cases.
+
+**Hard bounds vs. soft constraints**: Bounds enforce hard limits, which is different from soft constraints like Gaussian priors. If the true parameter value naturally lies at or very near a boundary, bounds may not be the appropriate tool—consider penalty terms in your NLL instead.
+
+**Asymptotic approach to boundaries**: The transformations are asymptotic, meaning the optimizer can approach but never exactly reach a boundary. If you need a parameter to sit exactly at a bound, you should fix it to that value rather than using bounds.
+:::
 
 ## Common Patterns
 

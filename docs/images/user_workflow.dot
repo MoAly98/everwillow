@@ -4,8 +4,9 @@ digraph "user_workflow" {
     graph [
         fontsize=12,
         labelloc="t",
-        label="everwillow fitting workflow",
-        fontname="Helvetica"
+        label="",
+        fontname="Helvetica",
+        nodesep=1.5
     ];
     node [
         shape=plaintext,
@@ -27,7 +28,8 @@ digraph "user_workflow" {
                 <TR><TD ALIGN="LEFT" BALIGN="LEFT">
                     <B>params: </B> {"mu": 1.0, "sigma": 0.5, ...}<BR ALIGN="LEFT"/>
                     <B>nll_fn: </B> your loss function<BR ALIGN="LEFT"/>
-                    <B>fixed: </B> ["background"] (optional)
+                    <B>fixed: </B> ["background"] (optional)<BR ALIGN="LEFT"/>
+                    <B>bounds: </B> {"mu": (0, 5)} (optional)
                 </TD></TR>
             </TABLE>
         >
@@ -85,20 +87,44 @@ digraph "user_workflow" {
         >
     ];
 
-    UserInput -> ToFlatState [label=" fit()"];
-    ToFlatState -> Partition [label=" partition_state() "];
-    Partition -> Optimize [label=" wrapped_nll "];
-    Optimize -> Result [label=" to_pytree() "];
+    UserInput -> ToFlatState [xlabel=" fit()"];
+    ToFlatState -> Partition [xlabel=" partition_state() "];
+    Partition -> Optimize [xlabel=" wrapped_nll "];
+    Optimize -> Result [xlabel=" to_pytree() "];
+
+    Transform [
+        label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="8" COLOR="#b054b0">
+            <TR><TD BGCOLOR="#f4d4ff" ALIGN="CENTER"><B>Bounds Transform</B></TD></TR>
+            <TR><TD>
+                <!-- Inner table controls alignment & spacing reliably -->
+                <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" ALIGN="CENTER">
+                <TR><TD ALIGN="CENTER"><B>Unwrap: </B> bounded → unbounded</TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="#666666"><I>(optimizer works here)</I></FONT></TD></TR>
+
+                <!-- spacer row for vertical gap -->
+                <TR><TD HEIGHT="6"></TD></TR>
+
+                <TR><TD ALIGN="CENTER"><B>Wrap: </B> unbounded → bounded</TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="#666666"><I>(for NLL evaluation)</I></FONT></TD></TR>
+                </TABLE>
+            </TD></TR>
+            </TABLE>
+        >
+    ];
 
     NoteBox [
         label=<
-            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#e0e0e0">
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2" COLOR="#e0e0e0">
                 <TR><TD BGCOLOR="#f5f5f5" ALIGN="LEFT" BALIGN="LEFT">
-                    <I>Your NLL function always receives the complete pytree!</I>
+                    <I>Your NLL function always receives the complete pytree in bounded space!</I>
                 </TD></TR>
             </TABLE>
         >
     ];
 
+    { rank=same; Optimize; Transform; }
+
+    Optimize -> Transform [dir="both", color="#b054b0"];
     Optimize -> NoteBox [style="dashed", dir="none", color="#999999"];
 }

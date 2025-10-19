@@ -18,15 +18,12 @@ __all__ = [
 ]
 
 def _logit(x: ArrayLike) -> ArrayLike:
-    """Compute logit function: log(x / (1 - x))"""
+    """Compute ``log(x / (1 - x))`` in a numerically stable way."""
     return jnp.log(x) - jnp.log1p(-x)
 
 
 def _sigmoid(x: ArrayLike) -> ArrayLike:
-    """Compute sigmoid function: 1 / (1 + exp(-x)).
-
-    Numerically stable implementation that avoids overflow.
-    """
+    """Compute ``1 / (1 + exp(-x))`` without overflow."""
     return jnp.where(
         x >= 0,
         1.0 / (1.0 + jnp.exp(-x)),
@@ -35,52 +32,33 @@ def _sigmoid(x: ArrayLike) -> ArrayLike:
 
 class AbstractParameterTransformation(eqx.Module):
     """
-    Abstract base class for parameter transformations.
+    Abstract base for parameter transformations.
 
-    This class defines the interface for parameter transformations, which are used to map parameters
-    between different spaces (e.g., from constrained to unconstrained space). Subclasses must implement
-    the `unwrap` and `wrap` methods to define the specific transformation logic.
+    Subclasses implement ``unwrap`` (bounded → unconstrained) and ``wrap``
+    (unconstrained → bounded) using JAX-compatible array ops.
     """
 
     @abc.abstractmethod
     def unwrap(self, value: ArrayLike) -> ArrayLike:
-        """
-        Transform a parameter from its meaningful (e.g. bounded) space to the real unconstrained space.
-
-        Args:
-            parameter (AbstractParameter): The parameter to be transformed.
-
-        Returns:
-            AbstractParameter: The transformed parameter.
-        """
+        """Transform a value from its constrained space to the real line."""
 
     @abc.abstractmethod
     def wrap(self, value: ArrayLike) -> ArrayLike:
-        """
-        Transform a parameter from the real unconstrained space back to its meaningful (e.g. bounded) space. (Inverse of `unwrap`)
-
-        Args:
-            parameter (AbstractParameter): The parameter to be transformed.
-
-        Returns:
-            AbstractParameter: The parameter transformed back to its original space.
-        """
+        """Transform a value from the real line back to its constrained space."""
 
 class MinuitTransform(AbstractParameterTransformation):
     """
-    Transform parameters based on Minuit's conventions. This transformation is used to map parameters with finite
-    lower and upper boundaries to an unconstrained space. Both lower and upper boundaries
-    are required and must be finite.
+    Minuit-style transform for parameters with finite lower and upper bounds.
 
-    Use `unwrap` to transform parameters into the unconstrained space and `wrap` to transform them back into the bounded space.
-
-    Reference:
-    https://root.cern.ch/download/minuit.pdf (Sec. 1.2.1 The transformation for parameters with limits.)
-
+    ``unwrap`` converts a bounded value into an unconstrained internal representation,
+    while ``wrap`` inverts the mapping. Both bounds must be finite and ``lower < upper``.
     Example:
 
-        .. code-block:: python
-        # TODO:: add example usage
+        >>> transform = MinuitTransform(lower=0.0, upper=1.0)
+        >>> jnp.isclose(transform.wrap(transform.unwrap(0.3)), 0.3)
+        Array(True, dtype=bool)
+
+    Reference: https://root.cern.ch/download/minuit.pdf (Sec. 1.2.1).
     """
 
     lower: float = eqx.static_field()
@@ -98,7 +76,7 @@ class MinuitTransform(AbstractParameterTransformation):
 
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
-        """Unwrap the external (bounded) value to the internal (unconstrained) value."""
+        """Convert a bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
         error_msg = (
@@ -114,23 +92,24 @@ class MinuitTransform(AbstractParameterTransformation):
 
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
-        """Wrap the internal (unconstrained) value to the external (bounded) value."""
+        """Convert an unconstrained value back into the bounded interval."""
         return self.lower + (self.upper - self.lower) / 2 * (
             jnp.sin(value) + 1
         )
 
 class SigmoidTransform(AbstractParameterTransformation):
     """
-    Transform parameters based on the sigmoid function. This transformation is used to map parameters with finite
-    lower and upper boundaries to an unconstrained space. Both lower and upper boundaries
-    are required and must be finite.
+    Logit/sigmoid pair for parameters with finite lower and upper bounds.
 
-    Use `unwrap` to transform parameters into the unconstrained space and `wrap` to transform them back into the bounded space.
+    ``unwrap`` applies the logit of the affine-scaled value, ``wrap`` applies the sigmoid.
+    Bounds must be finite with ``lower < upper``.
 
     Example:
 
-        .. code-block:: python
-        # TODO:: add example usage
+        >>> transform = SigmoidTransform(lower=-2.0, upper=3.0)
+        >>> value = -1.1
+        >>> jnp.isclose(transform.wrap(transform.unwrap(value)), value)
+        Array(True, dtype=bool)
     """
 
     lower: float = eqx.static_field()
@@ -148,7 +127,7 @@ class SigmoidTransform(AbstractParameterTransformation):
 
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
-        """Unwrap the external (bounded) value to the internal (unconstrained) value."""
+        """Convert a bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
         error_msg = (
@@ -162,18 +141,21 @@ class SigmoidTransform(AbstractParameterTransformation):
 
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
-        """Wrap the internal (unconstrained) value to the external (bounded) value."""
+        """Convert an unconstrained value back into the bounded interval."""
         return self.lower + (self.upper - self.lower) * _sigmoid(value)
 
 class OneSidedLogTransform(AbstractParameterTransformation):
     """
     Log transform for parameters with exactly one finite bound.
 
-    Use `unwrap` to transform parameters into the unconstrained space and `wrap` to transform them back into the bounded space.
+    Direction ``"lower"`` enforces ``value > bound`` (via ``log(value - bound)``),
+    while direction ``"upper"`` enforces ``value < bound`` (via ``log(bound - value)``).
 
     Example:
 
-        .. code-block:: python
+        >>> transform = OneSidedLogTransform(bound=0.0, direction="lower")
+        >>> jnp.isclose(transform.wrap(transform.unwrap(2.0)), 2.0)
+        Array(True, dtype=bool)
     """
 
     bound: float = eqx.static_field()
@@ -193,7 +175,7 @@ class OneSidedLogTransform(AbstractParameterTransformation):
 
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
-        """Unwrap the external (bounded) value to the internal (unconstrained) value."""
+        """Convert a single-sided bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
         if self.direction == "lower":
@@ -211,7 +193,7 @@ class OneSidedLogTransform(AbstractParameterTransformation):
         return jnp.log(self.bound - value)
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
-        """Wrap the internal (unconstrained) value to the external (bounded) value."""
+        """Convert an unconstrained value back into the one-sided bounded space."""
         value = jnp.asarray(value)
         if self.direction == "lower":
             return self.bound + jnp.exp(value)
@@ -223,22 +205,21 @@ class SoftPlusTransform(AbstractParameterTransformation):
     Applies the softplus transformation to parameters, projecting them from real space (R) to positive space (R+).
     This transformation is useful for enforcing the positivity of parameters and does not require lower or upper boundaries.
 
-    Use `unwrap` to transform parameters into the unconstrained real space and `wrap` to transform them back into the positive real space.
-
-    Reference:
-    https://github.com/danielward27/paramax/blob/main/paramax/utils.py
+    ``unwrap`` computes the inverse softplus (with validation), while ``wrap`` applies
+    ``jax.nn.softplus``.
 
     Example:
 
-    .. code-block:: python
-    TODO:: add example
+        >>> transform = SoftPlusTransform()
+        >>> jnp.isclose(transform.wrap(transform.unwrap(0.8)), 0.8)
+        Array(True, dtype=bool)
     """
 
     def __name__(self) -> str:
         return "SoftPlusTransform"
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
-        """The inverse of the softplus function, checking for positive inputs."""
+        """Apply the inverse softplus, validating positivity and finiteness."""
         value = jnp.asarray(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
         value = eqx.error_if(value, value < 0, "Expected positive inputs to inv_softplus.")
@@ -246,4 +227,5 @@ class SoftPlusTransform(AbstractParameterTransformation):
         return value_t
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
+        """Apply the softplus function."""
         return jax.nn.softplus(value)

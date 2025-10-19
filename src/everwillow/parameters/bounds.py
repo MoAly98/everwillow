@@ -1,9 +1,22 @@
-"""Parameter bounds transformations for constrained optimization.
+"""Wire parameter transforms to flattened state representations.
 
-This module provides transformation functions to convert between bounded and unbounded
-parameter spaces, enabling optimization with box constraints using unconstrained solvers.
+The helpers here take user-provided transform instances (e.g. ``MinuitTransform``)
+and align them with canonical keys inside a :class:`~everwillow.statelib.state.FlatState`.
+Optimisation code can then call :func:`apply_bounds_transform` to obtain:
 
-All transformations are JIT-safe and use clipping to handle edge cases gracefully.
+1. an "unwrapped" state where all targeted values live in an unconstrained space
+2. two dictionaries of :class:`~everwillow.statelib.transform.Transform` objects
+   that apply ``unwrap``/``wrap`` on demand
+
+Example
+-------
+>>> state = sl.FlatState.from_pytree({"mu": 0.3})
+>>> transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
+>>> unwrapped, unwrap_map, wrap_map = apply_bounds_transform(state, {"mu": transform})
+>>> list(unwrap_map)
+[('mu',)]
+>>> jnp.isclose(sl.transform.apply_transformations(unwrapped, wrap_map)[("mu",)], 0.3)
+Array(True, dtype=bool)
 """
 
 from __future__ import annotations
@@ -26,14 +39,14 @@ def _resolve_keys(
     state: sl.FlatState[tp.Any],
     spec: str | sl.KeyPath,
 ) -> list[sl.KeyPath]:
-    """Resolve parameter specification to canonical keys in the state.
+    """Resolve a parameter specifier to canonical keys in ``state``.
 
-    Args:
-        state: FlatState containing parameters.
-        spec: Parameter name (str) or canonical key tuple.
-
-    Returns:
-        List of matching canonical keys.
+    Raises
+    ------
+    KeyError
+        If a tuple specifier does not exist in ``state``.
+    TypeError
+        If ``spec`` is neither a ``str`` nor a tuple key.
     """
     if isinstance(spec, str):
         # Find all keys matching this name
@@ -55,17 +68,14 @@ def match_bounds_to_state(
     state: sl.FlatState[tp.Any],
     bounds: tp.Mapping[str | sl.KeyPath, TransformSpec],
 ) -> dict[sl.KeyPath, AbstractParameterTransformation]:
-    """Match parameter bounds to their state representations.
+    """Return a mapping from canonical keys to user-supplied transforms.
 
-    Args:
-        state (sl.FlatState[tp.Any]): The state to match.
-        bounds (tp.Mapping[str  |  sl.KeyPath, TransformSpec]): The bounds specifications.
-
-    Raises:
-        TypeError: If the bounds specifications are invalid.
-
-    Returns:
-        dict[sl.KeyPath, AbstractParameterTransformation]: A mapping of state keys to their corresponding transformations.
+    Parameters
+    ----------
+    state
+        Flattened parameter state.
+    bounds
+        Mapping from parameter names/keys to transform instances (or ``None`` to skip).
     """
     transform_map: dict[sl.KeyPath, AbstractParameterTransformation] = {}
     for spec, transform in bounds.items():
@@ -83,14 +93,13 @@ def apply_bounds_transform(
     state: sl.FlatState[tp.Any],
     bounds: tp.Mapping[str | sl.KeyPath, TransformSpec],
 ) -> tuple[sl.FlatState[tp.Any], dict[sl.KeyPath, sl.Transform[tp.Any]], dict[sl.KeyPath, sl.Transform[tp.Any]]]:
-    """Applies bounds transformations to the state.
+    """Apply ``bounds`` to ``state``, returning the unwrapped state and helper maps.
 
-    Args:
-        state (sl.FlatState[tp.Any]): The state to transform.
-        bounds (tp.Mapping[str  |  tuple[tp.Any, ...], TransformSpec]): The bounds specifications.
+    Returns a tuple ``(unwrapped_state, unwrap_map, wrap_map)`` where:
 
-    Returns:
-        tuple[sl.FlatState[tp.Any], dict[sl.KeyPath, sl.Transform[tp.Any]], dict[sl.KeyPath, sl.Transform[tp.Any]]]: The transformed state, unwrap transforms, and wrap transforms.
+    - ``unwrapped_state`` is the result of applying ``transform.unwrap`` to each matched key.
+    - ``unwrap_map`` can be reused to unwrap additional states (same structure).
+    - ``wrap_map`` reverses the transformation (good for post-optimisation wrapping).
     """
     transform_map = match_bounds_to_state(state, bounds)
     if not transform_map:

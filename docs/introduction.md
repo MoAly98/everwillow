@@ -1,14 +1,16 @@
 # Introduction
 
-This guide explains how everwillow helps you fit statistical models using a simple, intuitive workflow.
+Everwillow is a statistical inference library for high-energy physics built on JAX pytrees and optimistix optimizers. This guide explains how to use everwillow's fitting API, the first of several planned inference tools.
 
 ## Overview
 
-Everwillow takes your model parameters (organized as a pytree) and finds the values that minimize your negative log-likelihood. The library handles all the complexity of parameter management internally while giving you a clean, flexible API.
+Everwillow provides a simple workflow for statistical inference tasks. Currently, the library focuses on parameter fitting—taking your model parameters (organized as a pytree) and finding values that minimize your negative log-likelihood. Future releases will add profile likelihood scans, hypothesis tests, and limit setting.
+
+The library handles all the complexity of parameter management internally while giving you a clean, flexible API.
 
 ## The Fitting Workflow
 
-Here's how everwillow processes your fit request:
+Here's how everwillow processes a fit request:
 
 ```{figure} images/user_workflow.svg
 :alt: Everwillow fitting workflow

@@ -6,7 +6,6 @@ listed roughly in the order you will encounter them when building fits.
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
-   :caption: API Documentation
 
    inference
    parameters

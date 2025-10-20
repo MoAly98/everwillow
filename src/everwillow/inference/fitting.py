@@ -10,6 +10,7 @@ import optimistix as optx
 
 import everwillow.parameters.bounds as bounds_module
 import everwillow.statelib as sl
+from everwillow.inference.utils import _prepare_fixed_param_state, _resolve_keys
 
 
 @dataclass(frozen=True)
@@ -22,72 +23,17 @@ class FitResult:
     solver_result: tp.Any = None  #: Raw solver result (optional).
 
 
-def _resolve_keys(
-    state: sl.FlatState[tp.Any],
-    names: tp.Iterable[str | tuple[tp.Any, ...]],
-) -> set[tuple[tp.Any, ...]]:
-    """Resolve parameter names or tuples to canonical key tuples.
-
-    String names are matched against the final element of each key
-    (e.g., ``"mu"`` matches ``("model", "mu")``). Tuple entries must
-    match exactly.
-
-    Args:
-        state: ``FlatState`` to search for matching keys.
-        names: Parameter identifiers (strings or tuples).
-
-    Returns:
-        Set of canonical key tuples.
-
-    Raises:
-        KeyError: If any name cannot be located in ``state``.
-        ValueError: If a string name matches multiple keys (ambiguous).
-    """
-    keys: set[tuple[tp.Any, ...]] = set()
-
-    for entry in names:
-        if isinstance(entry, tuple):
-            key = tuple(entry)
-            if key not in state.raw_mapping:
-                message = f"Parameter not found in state: {key}"
-                raise KeyError(message)
-            keys.add(key)
-        else:
-            matches = [key for key in state.raw_mapping if key and key[-1] == entry]
-            if not matches:
-                message = f"Parameter not found in state: {entry}"
-                raise KeyError(message)
-            if len(matches) > 1:
-                matches_str = ", ".join(str(k) for k in matches)
-                message = (
-                    f"Ambiguous parameter name '{entry}' matches multiple keys: "
-                    f"{matches_str}. Use the full tuple key to disambiguate."
-                )
-                raise ValueError(message)
-            keys.add(matches[0])
-
-    return keys
+def _minimize_fast(wrapped_nll, solver, y0, **kwargs):
+    """Fast minimization without side effects (can be JIT compiled by user)."""
+    return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
 
 
-def _build_param_updates(
-    state: sl.FlatState[tp.Any],
-    param_values: dict[str, tp.Any],
-) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
-    """Build canonical parameter updates from name-value pairs.
+def _minimize_interactive(wrapped_nll, solver, y0, **kwargs):
+    """Interactive minimization with callbacks and checkpointing (cannot be JIT compiled)."""
+    # TODO: Implement interactive minimization features
+    # For now, just delegate to fast minimization
+    return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
 
-    Resolves parameter names to canonical keys and constructs the update
-    dictionary for :func:`everwillow.statelib.state.update_state`.
-
-    Args:
-        state: ``FlatState`` derived from the caller's parameter pytree.
-        param_values: Mapping of parameter names to values.
-
-    Returns:
-        Tuple of (resolved keys, update dictionary ready for ``update_state``).
-    """
-    keys = _resolve_keys(state, param_values.keys())
-    updates = {key: param_values[key[-1]] for key in keys}
-    return keys, updates
 
 def _fit(
     nll_fn: tp.Callable[..., float],
@@ -232,17 +178,6 @@ def _fit(
         solver_result=solution,
     )
 
-
-def _minimize_fast(wrapped_nll, solver, y0, **kwargs):
-    """Fast minimization without side effects (can be JIT compiled by user)."""
-    return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
-
-
-def _minimize_interactive(wrapped_nll, solver, y0, **kwargs):
-    """Interactive minimization with callbacks and checkpointing (cannot be JIT compiled)."""
-    # TODO: Implement interactive minimization features
-    # For now, just delegate to fast minimization
-    return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
 
 def fit(
     nll_fn: tp.Callable[..., float],
@@ -491,26 +426,10 @@ def fixed_param_fit(
         >>> result = fixed_param_fit({"mu": 1.5}, my_nll, initial_params,
         ...                          args=(data,), kwargs={"verbose": True})
     """
-    # Convert to FlatState for manipulation
-    param_state = sl.FlatState.from_pytree(params)
-
-    # Build parameter updates from provided values
-    name_keys, updates = _build_param_updates(param_state, param_values)
-
-    updated_state = sl.update_state(param_state, updates)
-
-    # Identify additional fixed parameters
-    user_fixed_keys = _resolve_keys(updated_state, fixed) if fixed else set()
-    if fixed_predicate is not None:
-        user_fixed_keys |= {
-            key for key, value in updated_state.raw_mapping.items()
-            if fixed_predicate(key, value)
-        }
-    combined_keys = user_fixed_keys | name_keys
-    fixed_sequence = [tuple(key) for key in combined_keys]
-
-    # Convert back to pytree and delegate to _fit
-    updated_pytree = updated_state.to_pytree()
+    # Prepare parameter state with injected values and identify all fixed parameters
+    updated_pytree, fixed_sequence = _prepare_fixed_param_state(
+        params, param_values, fixed, fixed_predicate
+    )
 
     return _fit(
         nll_fn,
@@ -598,26 +517,10 @@ def ifixed_param_fit(
         ... )
         >>> result.params["mu"]  # Will be 1.5 (fixed)
     """
-    # Convert to FlatState for manipulation
-    param_state = sl.FlatState.from_pytree(params)
-
-    # Build parameter updates from provided values
-    name_keys, updates = _build_param_updates(param_state, param_values)
-
-    updated_state = sl.update_state(param_state, updates)
-
-    # Identify additional fixed parameters
-    user_fixed_keys = _resolve_keys(updated_state, fixed) if fixed else set()
-    if fixed_predicate is not None:
-        user_fixed_keys |= {
-            key for key, value in updated_state.raw_mapping.items()
-            if fixed_predicate(key, value)
-        }
-    combined_keys = user_fixed_keys | name_keys
-    fixed_sequence = [tuple(key) for key in combined_keys]
-
-    # Convert back to pytree and delegate to _fit
-    updated_pytree = updated_state.to_pytree()
+    # Prepare parameter state with injected values and identify all fixed parameters
+    updated_pytree, fixed_sequence = _prepare_fixed_param_state(
+        params, param_values, fixed, fixed_predicate
+    )
 
     return _fit(
         nll_fn,

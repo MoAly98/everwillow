@@ -18,6 +18,7 @@ import pytest
 
 import everwillow as ew
 from everwillow.inference import FitResult
+from everwillow.inference.fitting import _minimize_interactive  # noqa: PLC2701
 from everwillow.parameters.transforms import (
     MinuitTransform,
     OneSidedLogTransform,
@@ -430,7 +431,9 @@ class TestFitRealisticExamples:
             return expected - observed * jnp.log(expected)
 
         observed = 25.0
-        result = ew.fit(poisson_nll, {"mu": 1.0, "background": 10.0}, fn_args=(observed,))
+        result = ew.fit(
+            poisson_nll, {"mu": 1.0, "background": 10.0}, fn_args=(observed,)
+        )
 
         # MLE for Poisson: expected ≈ observed
         expected_total = result.params["mu"] * 10.0 + result.params["background"]
@@ -649,6 +652,128 @@ class TestFitWithBounds:
 # ============================================================================
 
 
+class TestInteractiveFit:
+    """Tests for ifit() interactive fitting."""
+
+    def test_callback_receives_correct_arguments(self):
+        """Test that callback is called with (iteration, y, nll)."""
+        callback_calls = []
+
+        def callback(iteration, y, nll):
+            callback_calls.append({"iteration": iteration, "y": y, "nll": nll})
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2
+
+        ew.ifit(nll, {"mu": 0.0}, callback=callback, max_steps=10)
+
+        # Callback should be called multiple times
+        assert len(callback_calls) > 1
+        # First call should be iteration 0
+        assert callback_calls[0]["iteration"] == 0
+        # Each call should have y (array) and nll (scalar)
+        assert callback_calls[0]["y"] is not None
+        assert isinstance(callback_calls[0]["nll"], (float, jnp.ndarray))
+
+    def test_results_match_non_interactive_fit(self):
+        """Test that ifit() produces same results as fit()."""
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
+        initial = {"mu": 0.0, "sigma": 0.5}
+
+        result_interactive = ew.ifit(nll, initial, max_steps=100)
+        result_standard = ew.fit(nll, initial)
+
+        assert (
+            abs(result_interactive.params["mu"] - result_standard.params["mu"]) < 1e-6
+        )
+        assert (
+            abs(result_interactive.params["sigma"] - result_standard.params["sigma"])
+            < 1e-6
+        )
+        assert abs(result_interactive.nll - result_standard.nll) < 1e-6
+
+    def test_max_steps_limits_iterations(self):
+        """Test that max_steps parameter limits optimization iterations."""
+        callback_calls = []
+
+        def callback(iteration, y, nll):
+            callback_calls.append(iteration)
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2
+
+        ew.ifit(nll, {"mu": 0.0}, callback=callback, max_steps=5)
+
+        # Should not exceed max_steps iterations
+        assert len(callback_calls) <= 6  # max_steps + final call
+
+    def test_with_fixed_parameters(self):
+        """Test ifit() with fixed parameters (smoke test only)."""
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
+        result = ew.ifit(
+            nll,
+            {"mu": 0.0, "sigma": 0.5},
+            fixed=["sigma"],
+            max_steps=50,
+        )
+
+        assert abs(result.params["mu"] - 2.0) < 1e-4
+        assert abs(result.params["sigma"] - 0.5) < 1e-10
+
+
+class TestInteractiveFixedParamFit:
+    """Tests for ifixed_param_fit() interactive profile fitting."""
+
+    def test_callback_works_with_fixed_params(self):
+        """Test that callback works in profile likelihood fits."""
+        callback_calls = []
+
+        def callback(iteration, y, nll):
+            callback_calls.append(iteration)
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
+        ew.ifixed_param_fit(
+            {"mu": 1.5},
+            nll,
+            {"mu": 0.0, "sigma": 0.5},
+            callback=callback,
+            max_steps=50,
+        )
+
+        assert len(callback_calls) > 0
+
+    def test_results_match_non_interactive_fixed_fit(self):
+        """Test that ifixed_param_fit() matches fixed_param_fit()."""
+
+        def nll(params):
+            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
+
+        param_values = {"mu": 1.5}
+        initial = {"mu": 0.0, "sigma": 0.5}
+
+        result_interactive = ew.ifixed_param_fit(
+            param_values, nll, initial, max_steps=100
+        )
+        result_standard = ew.fixed_param_fit(param_values, nll, initial)
+
+        assert (
+            abs(result_interactive.params["mu"] - result_standard.params["mu"]) < 1e-6
+        )
+        assert (
+            abs(result_interactive.params["sigma"] - result_standard.params["sigma"])
+            < 1e-6
+        )
+        assert abs(result_interactive.nll - result_standard.nll) < 1e-6
+
+
 class TestFixedParamFit:
     """Tests for fixed_param_fit() function."""
 
@@ -779,3 +904,38 @@ class TestFixedParamFit:
         # sigma should hit lower bound
         assert result.params["sigma"] >= 0.0
         assert jnp.isclose(result.params["sigma"], 0.0, atol=1e-2)
+
+
+class TestMinimizeInteractive:
+    """Tests for the internal interactive minimizer helper."""
+
+    def test_raises_for_non_scalar_objective(self):
+        """Objective returning a vector should trigger a ValueError."""
+
+        def bad_objective(_params, _args):
+            return jnp.array([1.0, 2.0])
+
+        with pytest.raises(
+            ValueError, match=r"Interactive objective must return a scalar NLL\."
+        ):
+            _minimize_interactive(
+                bad_objective,
+                optx.BFGS(rtol=1e-5, atol=1e-5),
+                jnp.array([0.0]),
+            )
+
+    # def test_warns_when_solver_not_successful(self, capfd):
+    #     """Solver that fails to converge should emit a warning message."""
+
+    #     def bad_objective(p, _):
+    #         return jnp.log(-p[0])  # log of negative → NaN for p[0] = +1
+
+    #     _minimize_interactive(
+    #         bad_objective,
+    #         optx.BFGS(rtol=1e-6, atol=1e-6),
+    #         jnp.array([1.0]),
+    #         max_steps=1,
+    #     )
+
+    #     captured = capfd.readouterr()
+    #     assert "Warning: Optimization ended with result code:" in captured.out

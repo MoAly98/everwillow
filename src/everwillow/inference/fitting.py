@@ -32,7 +32,7 @@ def _minimize_fast(wrapped_nll, solver, y0, **kwargs):
 
 def _minimize_interactive(
     wrapped_nll: tp.Callable[[tp.Any, tp.Any], tp.Any],
-    solver: optx.AbstractMinimiser,
+    solver: optx.AbstractMinimizer,
     y0: tp.Any,
     *,
     callback: tp.Callable[[int, tp.Any, tp.Any], None] | None = None,
@@ -48,11 +48,15 @@ def _minimize_interactive(
 
     Args:
         wrapped_nll: Objective callable taking ``(y, args)`` and returning a scalar NLL.
-        solver: Minimiser instance providing ``init``, ``step`` and ``terminate``.
+        solver: Minimizer instance providing ``init``, ``step`` and ``terminate``.
         y0: Initial free-parameter vector presented to the solver.
         callback: Optional hook ``callback(iteration, y, nll)`` for custom feedback.
         options: Runtime options forwarded directly to the solver.
-        tags: Optional Hessian structure hints for Optimistix/Lineax.
+        tags: Optional matrix structure tags (e.g., ``lineax.SymmetricTag``) that
+            describe the Jacobian structure to enable specialized linear solvers.
+            Default (empty frozenset) treats Jacobian as dense. Most users will not
+            need to set this. See Lineax documentation for available tags:
+            https://docs.kidger.site/lineax/api/tags/
         max_steps: Upper bound on interactive iterations before termination.
 
     Returns:
@@ -73,7 +77,8 @@ def _minimize_interactive(
         value, aux = objective_with_aux(point, args)
         value = jnp.asarray(value)
         if value.shape != ():
-            raise ValueError("Interactive objective must return a scalar NLL.")
+            msg = "Interactive objective must return a scalar NLL."
+            raise ValueError(msg)
         return value, aux
 
     # Dispatch progress feedback to callback or default stdout logging
@@ -84,7 +89,7 @@ def _minimize_interactive(
             prefix = "Final iteration" if final else "Iteration"
             print(f"{prefix} {step_idx}: NLL = {float(value):.6f}")
 
-    # === Solver initialization: infer output structure and create JIT'd step/terminate ===
+    # === Solver initialization: infer output structure and create step/terminate ===
     current_value, aux = run_objective(y0)
     # Function output is a scalar
     f_struct = jax.ShapeDtypeStruct((), current_value.dtype)
@@ -103,7 +108,7 @@ def _minimize_interactive(
             fn=objective_with_aux,
             args=args,
             options=options,
-            tags=tags
+            tags=tags,
         )
     )
 
@@ -156,7 +161,7 @@ def _fit(
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec] | None,
-    solver: optx.AbstractMinimiser | None,
+    solver: optx.AbstractMinimizer | None,
     fn_args: tuple,
     fn_kwargs: dict | None,
     interactive: bool,
@@ -199,7 +204,8 @@ def _fit(
     fixed_keys = _resolve_keys(unbounded_param_state, fixed) if fixed else set()
     if fixed_predicate is not None:
         fixed_keys |= {
-            key for key, value in unbounded_param_state.raw_mapping.items()
+            key
+            for key, value in unbounded_param_state.raw_mapping.items()
             if fixed_predicate(key, value)
         }
 
@@ -303,10 +309,10 @@ def fit(
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    solver: optx.AbstractMinimiser | None = None,
+    solver: optx.AbstractMinimizer | None = None,
     fn_args: tuple = (),
     fn_kwargs: dict | None = None,
-    **minimiser_kwargs,
+    **Minimizer_kwargs,
 ) -> FitResult:
     """Perform an unconditional maximum-likelihood fit.
 
@@ -333,12 +339,12 @@ def fit(
             tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimization and wrapped back afterwards.
-        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+        solver: :class:`optimistix.AbstractMinimizer` instance to use. Defaults to
             :class:`optimistix.BFGS`.
         fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**minimiser_kwargs``: Additional keyword arguments forwarded to
+        ``**Minimizer_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:
@@ -389,7 +395,7 @@ def fit(
         fn_args,
         fn_kwargs,
         interactive=False,
-        **minimiser_kwargs,
+        **Minimizer_kwargs,
     )
 
 
@@ -401,7 +407,7 @@ def ifit(
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    solver: optx.AbstractMinimiser | None = None,
+    solver: optx.AbstractMinimizer | None = None,
     fn_args: tuple = (),
     fn_kwargs: dict | None = None,
     **solver_kwargs,
@@ -430,14 +436,20 @@ def ifit(
             tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimization and wrapped back afterwards.
-        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+        solver: :class:`optimistix.AbstractMinimizer` instance to use. Defaults to
             :class:`optimistix.BFGS`.
         fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
         ``**solver_kwargs``: Additional keyword arguments forwarded to minimizer.
-            Interactive-specific options like ``callback``, ``max_steps``, etc.
-            can be passed here.
+            Interactive-specific options include:
+
+            - ``callback``: Function called at each iteration with signature
+              ``callback(iteration, y, nll)``
+            - ``max_steps``: Maximum number of optimization iterations (default: 100)
+            - ``tags``: Lineax matrix structure tags for specialized linear solvers.
+              See https://docs.kidger.site/lineax/api/tags/ (advanced usage)
+            - ``options``: Solver-specific runtime options
 
     Returns:
         :class:`FitResult` containing the fitted parameters and diagnostics.
@@ -485,10 +497,10 @@ def fixed_param_fit(
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    solver: optx.AbstractMinimiser | None = None,
+    solver: optx.AbstractMinimizer | None = None,
     fn_args: tuple = (),
     fn_kwargs: dict | None = None,
-    **minimiser_kwargs,
+    **Minimizer_kwargs,
 ) -> FitResult:
     """
     Perform a profile-likelihood style fit with selected parameters frozen.
@@ -513,12 +525,12 @@ def fixed_param_fit(
             ``param_values`` have been applied. Returning ``True`` marks the leaf
             as fixed.
         bounds: Optional parameter bounds specification (same format as :func:`fit`).
-        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+        solver: :class:`optimistix.AbstractMinimizer` instance to use. Defaults to
             :class:`optimistix.BFGS`.
         fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**minimiser_kwargs``: Additional keyword arguments forwarded to minimizer.
+        ``**Minimizer_kwargs``: Additional keyword arguments forwarded to minimizer.
 
     Returns:
         :class:`FitResult` containing the fitted parameters and diagnostics.
@@ -557,7 +569,7 @@ def fixed_param_fit(
         fn_args,
         fn_kwargs,
         interactive=False,
-        **minimiser_kwargs,
+        **Minimizer_kwargs,
     )
 
 
@@ -570,7 +582,7 @@ def ifixed_param_fit(
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    solver: optx.AbstractMinimiser | None = None,
+    solver: optx.AbstractMinimizer | None = None,
     fn_args: tuple = (),
     fn_kwargs: dict | None = None,
     **solver_kwargs,
@@ -600,14 +612,20 @@ def ifixed_param_fit(
             ``param_values`` have been applied. Returning ``True`` marks the leaf
             as fixed.
         bounds: Optional parameter bounds specification (same format as :func:`fit`).
-        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
+        solver: :class:`optimistix.AbstractMinimizer` instance to use. Defaults to
             :class:`optimistix.BFGS`.
         fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
         fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
         ``**solver_kwargs``: Additional keyword arguments forwarded to minimizer.
-            Interactive-specific options like ``callback``, ``max_steps``, etc.
-            can be passed here.
+            Interactive-specific options include:
+
+            - ``callback``: Function called at each iteration with signature
+              ``callback(iteration, y, nll)``
+            - ``max_steps``: Maximum number of optimization iterations (default: 100)
+            - ``tags``: Lineax matrix structure tags for specialized linear solvers.
+              See https://docs.kidger.site/lineax/api/tags/ (advanced usage)
+            - ``options``: Solver-specific runtime options
 
     Returns:
         :class:`FitResult` containing the fitted parameters and diagnostics.

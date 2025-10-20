@@ -109,7 +109,8 @@ def _prepare_fixed_param_state(
     user_fixed_keys = _resolve_keys(updated_state, fixed) if fixed else set()
     if fixed_predicate is not None:
         user_fixed_keys |= {
-            key for key, value in updated_state.raw_mapping.items()
+            key
+            for key, value in updated_state.raw_mapping.items()
             if fixed_predicate(key, value)
         }
     combined_keys = user_fixed_keys | name_keys

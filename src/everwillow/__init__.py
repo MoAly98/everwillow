@@ -19,7 +19,7 @@ from everwillow.inference import FitResult, fit, fixed_param_fit, ifit, ifixed_p
 __all__ = [
     "FitResult",
     "fit",
-    "ifit",
     "fixed_param_fit",
+    "ifit",
     "ifixed_param_fit",
 ]

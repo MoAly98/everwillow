@@ -11,9 +11,9 @@ from __future__ import annotations
 import pytest
 
 from everwillow.inference.utils import (
-    _build_param_updates,
-    _prepare_fixed_param_state,
-    _resolve_keys,
+    _build_param_updates,  # noqa: PLC2701
+    _prepare_fixed_param_state,  # noqa: PLC2701
+    _resolve_keys,  # noqa: PLC2701
 )
 from everwillow.statelib import FlatState
 
@@ -23,7 +23,7 @@ class TestResolveKeys:
 
     def test_resolve_string_names(self):
         """Test resolving simple string parameter names."""
-        state = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
 
         keys = _resolve_keys(state, ["mu"])
 
@@ -31,7 +31,9 @@ class TestResolveKeys:
 
     def test_resolve_multiple_string_names(self):
         """Test resolving multiple string parameter names."""
-        state = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0, "background": 100.0})
+        state: FlatState = FlatState.from_pytree(
+            {"mu": 1.0, "sigma": 2.0, "background": 100.0}
+        )
 
         keys = _resolve_keys(state, ["mu", "sigma"])
 
@@ -39,7 +41,7 @@ class TestResolveKeys:
 
     def test_resolve_tuple_keys(self):
         """Test resolving exact tuple keys."""
-        state = FlatState.from_pytree({"model": {"mu": 1.0, "sigma": 2.0}})
+        state: FlatState = FlatState.from_pytree({"model": {"mu": 1.0, "sigma": 2.0}})
 
         keys = _resolve_keys(state, [("model", "mu")])
 
@@ -47,10 +49,7 @@ class TestResolveKeys:
 
     def test_resolve_mixed_strings_and_tuples(self):
         """Test resolving mix of string names and tuple keys."""
-        state = FlatState.from_pytree({
-            "mu": 1.0,
-            "model": {"sigma": 2.0}
-        })
+        state: FlatState = FlatState.from_pytree({"mu": 1.0, "model": {"sigma": 2.0}})
 
         keys = _resolve_keys(state, ["mu", ("model", "sigma")])
 
@@ -58,13 +57,7 @@ class TestResolveKeys:
 
     def test_resolve_nested_structure(self):
         """Test resolving parameters in deeply nested structures."""
-        state = FlatState.from_pytree({
-            "level1": {
-                "level2": {
-                    "mu": 1.0
-                }
-            }
-        })
+        state: FlatState = FlatState.from_pytree({"level1": {"level2": {"mu": 1.0}}})
 
         keys = _resolve_keys(state, ["mu"])
 
@@ -72,41 +65,41 @@ class TestResolveKeys:
 
     def test_error_on_missing_string_name(self):
         """Test that KeyError is raised for non-existent string name."""
-        state = FlatState.from_pytree({"mu": 1.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0})
 
         with pytest.raises(KeyError, match="Parameter not found in state: nonexistent"):
             _resolve_keys(state, ["nonexistent"])
 
     def test_error_on_missing_tuple_key(self):
         """Test that KeyError is raised for non-existent tuple key."""
-        state = FlatState.from_pytree({"mu": 1.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0})
 
-        with pytest.raises(KeyError, match=r"Parameter not found in state: \('model', 'mu'\)"):
+        with pytest.raises(
+            KeyError, match=r"Parameter not found in state: \('model', 'mu'\)"
+        ):
             _resolve_keys(state, [("model", "mu")])
 
     def test_error_on_ambiguous_name(self):
         """Test that ValueError is raised when string name matches multiple keys."""
-        state = FlatState.from_pytree({
-            "model1": {"mu": 1.0},
-            "model2": {"mu": 2.0}
-        })
+        state: FlatState = FlatState.from_pytree(
+            {"model1": {"mu": 1.0}, "model2": {"mu": 2.0}}
+        )
 
         with pytest.raises(ValueError, match="Ambiguous parameter name 'mu'"):
             _resolve_keys(state, ["mu"])
 
     def test_ambiguous_error_suggests_full_key(self):
         """Test that ambiguous error message suggests using full tuple key."""
-        state = FlatState.from_pytree({
-            "model1": {"mu": 1.0},
-            "model2": {"mu": 2.0}
-        })
+        state: FlatState = FlatState.from_pytree(
+            {"model1": {"mu": 1.0}, "model2": {"mu": 2.0}}
+        )
 
         with pytest.raises(ValueError, match="Use the full tuple key to disambiguate"):
             _resolve_keys(state, ["mu"])
 
     def test_empty_names_returns_empty_set(self):
         """Test that empty input returns empty set."""
-        state = FlatState.from_pytree({"mu": 1.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0})
 
         keys = _resolve_keys(state, [])
 
@@ -118,7 +111,7 @@ class TestBuildParamUpdates:
 
     def test_build_updates_single_param(self):
         """Test building updates for a single parameter."""
-        state = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
 
         keys, updates = _build_param_updates(state, {"mu": 5.0})
 
@@ -127,7 +120,9 @@ class TestBuildParamUpdates:
 
     def test_build_updates_multiple_params(self):
         """Test building updates for multiple parameters."""
-        state = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0, "background": 100.0})
+        state: FlatState = FlatState.from_pytree(
+            {"mu": 1.0, "sigma": 2.0, "background": 100.0}
+        )
 
         keys, updates = _build_param_updates(state, {"mu": 5.0, "sigma": 3.0})
 
@@ -136,12 +131,7 @@ class TestBuildParamUpdates:
 
     def test_build_updates_nested_structure(self):
         """Test building updates for parameters in nested structure."""
-        state = FlatState.from_pytree({
-            "model": {
-                "mu": 1.0,
-                "sigma": 2.0
-            }
-        })
+        state: FlatState = FlatState.from_pytree({"model": {"mu": 1.0, "sigma": 2.0}})
 
         keys, updates = _build_param_updates(state, {"mu": 5.0})
 
@@ -150,35 +140,34 @@ class TestBuildParamUpdates:
 
     def test_build_updates_preserves_value_types(self):
         """Test that update values preserve their types."""
-        state = FlatState.from_pytree({"mu": 1.0, "count": 10})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0, "count": 10})
 
-        keys, updates = _build_param_updates(state, {"mu": 5.0, "count": 20})
+        _keys, updates = _build_param_updates(state, {"mu": 5.0, "count": 20})
 
-        assert updates[("mu",)] == 5.0
-        assert updates[("count",)] == 20
-        assert isinstance(updates[("mu",)], float)
-        assert isinstance(updates[("count",)], int)
+        assert updates["mu",] == 5.0
+        assert updates["count",] == 20
+        assert isinstance(updates["mu",], float)
+        assert isinstance(updates["count",], int)
 
     def test_build_updates_error_on_missing_param(self):
         """Test that KeyError is raised for non-existent parameter."""
-        state = FlatState.from_pytree({"mu": 1.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0})
 
         with pytest.raises(KeyError, match="Parameter not found in state: sigma"):
             _build_param_updates(state, {"sigma": 2.0})
 
     def test_build_updates_error_on_ambiguous_param(self):
         """Test that ValueError is raised for ambiguous parameter name."""
-        state = FlatState.from_pytree({
-            "model1": {"mu": 1.0},
-            "model2": {"mu": 2.0}
-        })
+        state: FlatState = FlatState.from_pytree(
+            {"model1": {"mu": 1.0}, "model2": {"mu": 2.0}}
+        )
 
         with pytest.raises(ValueError, match="Ambiguous parameter name 'mu'"):
             _build_param_updates(state, {"mu": 5.0})
 
     def test_build_updates_empty_dict(self):
         """Test that empty param_values returns empty keys and updates."""
-        state = FlatState.from_pytree({"mu": 1.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0})
 
         keys, updates = _build_param_updates(state, {})
 
@@ -189,13 +178,13 @@ class TestBuildParamUpdates:
         """Test that returned updates work with update_state."""
         from everwillow.statelib import update_state
 
-        state = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
+        state: FlatState = FlatState.from_pytree({"mu": 1.0, "sigma": 2.0})
 
-        keys, updates = _build_param_updates(state, {"mu": 5.0})
+        _keys, updates = _build_param_updates(state, {"mu": 5.0})
         updated_state = update_state(state, updates)
 
-        assert updated_state[("mu",)] == 5.0
-        assert updated_state[("sigma",)] == 2.0  # Unchanged
+        assert updated_state["mu",] == 5.0
+        assert updated_state["sigma",] == 2.0  # Unchanged
 
 
 class TestPrepareFixedParamState:

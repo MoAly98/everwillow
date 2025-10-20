@@ -182,7 +182,7 @@ All transformations are differentiable and JAX-compatible.
 
 ### Using Bounds in Practice
 
-See also :doc:`parameters_overview` for a catalogue of available transforms
+See also :doc:`parameter_transforms` for a catalogue of available transforms
 and guidance on applying them directly to flat states.
 
 ```python

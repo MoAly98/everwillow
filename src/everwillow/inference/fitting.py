@@ -21,7 +21,7 @@ class FitResult:
 
     params: tp.Any  #: Fitted parameter pytree (same structure as input).
     nll: float  #: Negative log-likelihood at the optimum.
-    success: bool  #: Whether the optimisation converged.
+    success: bool  #: Whether the optimization converged.
     solver_result: tp.Any = None  #: Raw solver result (optional).
 
 
@@ -30,82 +30,137 @@ def _minimize_fast(wrapped_nll, solver, y0, **kwargs):
     return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
 
 
-def _minimize_interactive(wrapped_nll, solver, y0, **kwargs):
-    """Interactive minimization with callbacks and checkpointing (cannot be JIT compiled)."""
-    # Extract interactive-specific arguments
-    callback = kwargs.pop('callback', None)
-    options = kwargs.pop('options', {})
-    tags = kwargs.pop('tags', frozenset())
-    max_steps = kwargs.pop('max_steps', 100)
+def _minimize_interactive(
+    wrapped_nll: tp.Callable[[tp.Any, tp.Any], tp.Any],
+    solver: optx.AbstractMinimiser,
+    y0: tp.Any,
+    *,
+    callback: tp.Callable[[int, tp.Any, tp.Any], None] | None = None,
+    options: dict[str, tp.Any] | None = None,
+    tags: frozenset[object] = frozenset(),
+    max_steps: int = 100,
+) -> optx.Solution:
+    """Run an Optimistix solver while emitting progress for each iteration.
 
-    # Args passed to wrapped_nll (always None in our usage)
-    args = None
+    The wrapped objective is normalised to ``(value, None)`` so that solvers
+    expecting auxiliary outputs (e.g. ``optimistix.BFGS``) operate correctly,
+    while callers continue to supply a scalar-valued function.
 
-    # Shape/dtype for NLL output (scalar float)
-    f_struct = jax.ShapeDtypeStruct((), jnp.float64)
+    Args:
+        wrapped_nll: Objective callable taking ``(y, args)`` and returning a scalar NLL.
+        solver: Minimiser instance providing ``init``, ``step`` and ``terminate``.
+        y0: Initial free-parameter vector presented to the solver.
+        callback: Optional hook ``callback(iteration, y, nll)`` for custom feedback.
+        options: Runtime options forwarded directly to the solver.
+        tags: Optional Hessian structure hints for Optimistix/Lineax.
+        max_steps: Upper bound on interactive iterations before termination.
+
+    Returns:
+        An :class:`optimistix.Solution` matching the structure of
+        :func:`optimistix.minimise`.
+    """
+    # === Setup: normalize arguments and prepare solver-compatible objective ===
+    options = {} if options is None else dict(options)
+    args = None  # interactive fits currently never forward auxiliary args
+
+    # Wrap scalar NLL to return (value, aux) tuple for solver compatibility
+    def objective_with_aux(point, fn_args):
+        value = wrapped_nll(point, fn_args)
+        return value, None
+
+    # Validate objective output shape and enforce scalar return
+    def run_objective(point):
+        value, aux = objective_with_aux(point, args)
+        value = jnp.asarray(value)
+        if value.shape != ():
+            raise ValueError("Interactive objective must return a scalar NLL.")
+        return value, aux
+
+    # Dispatch progress feedback to callback or default stdout logging
+    def emit_progress(step_idx, point, value, *, final=False):
+        if callback is not None:
+            callback(step_idx, point, value)
+        else:
+            prefix = "Final iteration" if final else "Iteration"
+            print(f"{prefix} {step_idx}: NLL = {float(value):.6f}")
+
+    # === Solver initialization: infer output structure and create JIT'd step/terminate ===
+    current_value, aux = run_objective(y0)
+    # Function output is a scalar
+    f_struct = jax.ShapeDtypeStruct((), current_value.dtype)
+    # Auxiliary output is None
     aux_struct = None
 
-    # Create JIT-compiled partial applications for step and terminate
-    # These freeze fn, args, options, and tags for the solver methods
+    # Partial application freezes fn, args, options, tags for JIT compilation
     step = eqx.filter_jit(
-        eqx.Partial(solver.step, fn=wrapped_nll, args=args, options=options, tags=tags)
+        eqx.Partial(
+            solver.step, fn=objective_with_aux, args=args, options=options, tags=tags
+        )
     )
     terminate = eqx.filter_jit(
-        eqx.Partial(solver.terminate, fn=wrapped_nll, args=args, options=options, tags=tags)
+        eqx.Partial(
+            solver.terminate,
+            fn=objective_with_aux,
+            args=args,
+            options=options,
+            tags=tags
+        )
     )
 
-    # Initialize solver state
-    state = solver.init(wrapped_nll, y0, args, options, f_struct, aux_struct, tags)
+    # === Initial state: initialize solver and check if already converged ===
+    state = solver.init(
+        objective_with_aux, y0, args, options, f_struct, aux_struct, tags
+    )
+    # Initial point is y0
     y = y0
     done, result = terminate(y=y, state=state)
 
-    # Interactive optimization loop
+    # === Interactive optimization loop: step until convergence or max_steps ===
     iteration = 0
     while not done and iteration < max_steps:
-        # Evaluate current NLL value
-        current_nll, _ = wrapped_nll(y, args)
-
-        # User-provided callback or default logging
-        if callback is not None:
-            callback(iteration, y, current_nll)
-        else:
-            print(f"Iteration {iteration}: NLL = {float(current_nll):.6f}")
+        emit_progress(iteration, y, current_value, final=False)
 
         # Take one optimization step
         y, state, aux = step(y=y, state=state)
-        done, result = terminate(y=y, state=state)
         iteration += 1
+        done, result = terminate(y=y, state=state)
 
-    # Final evaluation and logging
-    final_nll, _ = wrapped_nll(y, args)
-    if callback is not None:
-        callback(iteration, y, final_nll)
-    else:
-        print(f"Final iteration {iteration}: NLL = {float(final_nll):.6f}")
+        # Re-evaluate objective for next iteration's logging (unless done)
+        if not done and iteration < max_steps:
+            current_value, aux = run_objective(y)
 
-    # Warn if optimization didn't succeed
+    # === Finalization: log final result, postprocess, and return solution ===
+    final_value, aux = run_objective(y)
+    emit_progress(iteration, y, final_value, final=True)
+
     if result != optx.RESULTS.successful:
         print(f"Warning: Optimization ended with result code: {result}")
 
-    # Postprocess the solution
+    # Apply any solver-specific postprocessing (e.g., line search cleanup)
     y_final, aux_final, _ = solver.postprocess(
-        wrapped_nll, y, aux, args, options, state, tags, result
+        objective_with_aux, y, aux, args, options, state, tags, result
     )
-    # Return a Solution object compatible with optx.minimise
-    return optx.Solution(value=y_final, result=result, aux=aux_final, stats={}, state=state)
+
+    return optx.Solution(
+        value=y_final,
+        result=result,
+        aux=aux_final,
+        stats={},
+        state=state,
+    )
 
 
 def _fit(
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
-    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec] | None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
+    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec] | None,
     solver: optx.AbstractMinimiser | None,
-    args: tuple,
-    kwargs: dict | None,
+    fn_args: tuple,
+    fn_kwargs: dict | None,
     interactive: bool,
-    **solver_kwargs,
+    **minimize_kwargs,
 ) -> FitResult:
     """Internal fitting implementation shared by fit() and ifit().
 
@@ -116,13 +171,13 @@ def _fit(
         nll_fn: Callable returning the scalar NLL.
         params: Initial parameter values as a pytree.
         fixed: Optional parameters to hold fixed (names or key tuples).
-        bounds: Optional parameter bounds specification.
         fixed_predicate: Optional callable to identify additional fixed parameters.
+        bounds: Optional parameter bounds specification.
         solver: Optimizer instance (defaults to BFGS if None).
-        args: Positional arguments forwarded to ``nll_fn``.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
+        fn_args: Positional arguments forwarded to ``nll_fn``.
+        fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
         interactive: If True, use interactive minimization with side effects.
-        **solver_kwargs: Additional arguments forwarded to minimizer.
+        **minimize_kwargs: Additional arguments forwarded to minimizer.
 
     Returns:
         FitResult containing fitted parameters and diagnostics.
@@ -160,7 +215,7 @@ def _fit(
     free_keys = list(free_state.raw_mapping.keys())
 
     # Handle kwargs default
-    kwargs = kwargs or {}
+    fn_kwargs = fn_kwargs or {}
 
     # Wrap nll to only take free parameters (as flat array)
     def wrapped_nll(free_values, _args):
@@ -187,7 +242,7 @@ def _fit(
         full_pytree = full_bounded_state.to_pytree()
 
         # Call user's nll_fn with params + additional args/kwargs
-        return nll_fn(full_pytree, *args, **kwargs), None
+        return nll_fn(full_pytree, *fn_args, **fn_kwargs)
 
     # Set up solver
     if solver is None:
@@ -197,14 +252,14 @@ def _fit(
     y0 = jnp.array([free_state[k] for k in free_keys])
 
     # Delegate to mode-specific minimization
-    if interactive:
-        solution = _minimize_interactive(
-            wrapped_nll, solver, y0,
-            **solver_kwargs
-        )
-    else:
-        solution = _minimize_fast(wrapped_nll, solver, y0, **solver_kwargs)
-
+    _minimize = _minimize_interactive if interactive else _minimize_fast
+    # Run minimization
+    solution = _minimize(
+        wrapped_nll,
+        solver,
+        y0,
+        **minimize_kwargs,
+    )
     # Reconstruct fitted parameters (in unbounded space)
     fitted_updates = dict(zip(free_keys, solution.value, strict=True))
     fitted_free = sl.update_state(free_state, fitted_updates)
@@ -229,7 +284,8 @@ def _fit(
 
     # Get the final NLL value by evaluating wrapped_nll at the solution
     # (wrapped_nll already handles transformation internally)
-    final_nll, _ = wrapped_nll(solution.value, None)
+    final_eval = wrapped_nll(solution.value, None)
+    final_nll = final_eval[0] if isinstance(final_eval, tuple) else final_eval
 
     return FitResult(
         params=fitted_pytree,
@@ -242,19 +298,19 @@ def _fit(
 def fit(
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
-    **solver_kwargs,
+    fn_args: tuple = (),
+    fn_kwargs: dict | None = None,
+    **minimiser_kwargs,
 ) -> FitResult:
     """Perform an unconditional maximum-likelihood fit.
 
-    The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
+    The negative log-likelihood (NLL) provided via ``nll_fn`` is minimized with
     respect to all parameters except those explicitly marked as fixed. Internally
     the parameter pytree is converted into a :class:`~everwillow.statelib.state.FlatState`
     so that subsets of the state can be frozen using
@@ -266,23 +322,23 @@ def fit(
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
             arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree (e.g. mapping or
+        params: Initial parameter values organized as a pytree (e.g. mapping or
             nested containers).
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional mapping from parameter names (``str``) or canonical key
-            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
-            instances. When provided, parameters are unwrapped via the transform's
-            ``unwrap`` method prior to optimisation and wrapped back afterwards.
         fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
             in the flattened state. Returning ``True`` marks the parameter as
             fixed. This is evaluated in addition to ``fixed`` when provided.
+        bounds: Optional mapping from parameter names (``str``) or canonical key
+            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
+            instances. When provided, parameters are unwrapped via the transform's
+            ``unwrap`` method prior to optimization and wrapped back afterwards.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+        fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**solver_kwargs``: Additional keyword arguments forwarded to
+        fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
+        ``**minimiser_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:
@@ -298,7 +354,7 @@ def fit(
         >>> # With additional arguments
         >>> def my_nll(params, data, templates, *, config):
         ...     return compute_loss(params, data, templates, config)
-        >>> result = fit(my_nll, initial_params, args=(data, templates), kwargs={"config": cfg})
+        >>> result = fit(my_nll, initial_params, fn_args=(data, templates), fn_kwargs={"config": cfg})
 
         >>> # Fix background while fitting mu and sigma
         >>> def my_nll(params):
@@ -327,27 +383,27 @@ def fit(
         nll_fn,
         params,
         fixed,
-        bounds,
         fixed_predicate,
+        bounds,
         solver,
-        args,
-        kwargs,
+        fn_args,
+        fn_kwargs,
         interactive=False,
-        **solver_kwargs,
+        **minimiser_kwargs,
     )
 
 
 def ifit(
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
+    fn_args: tuple = (),
+    fn_kwargs: dict | None = None,
     **solver_kwargs,
 ) -> FitResult:
     """Perform an interactive maximum-likelihood fit with monitoring.
@@ -355,7 +411,7 @@ def ifit(
     Similar to :func:`fit` but supports callbacks, checkpointing, and progress
     monitoring. This function **cannot be JIT compiled** due to side effects (I/O).
 
-    The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
+    The negative log-likelihood (NLL) provided via ``nll_fn`` is minimized with
     respect to all parameters except those explicitly marked as fixed. Parameter
     state management and bounds handling are identical to :func:`fit`.
 
@@ -363,24 +419,24 @@ def ifit(
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
             arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree (e.g. mapping or
+        params: Initial parameter values organized as a pytree (e.g. mapping or
             nested containers).
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional mapping from parameter names (``str``) or canonical key
-            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
-            instances. When provided, parameters are unwrapped via the transform's
-            ``unwrap`` method prior to optimisation and wrapped back afterwards.
         fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
             in the flattened state. Returning ``True`` marks the parameter as
             fixed. This is evaluated in addition to ``fixed`` when provided.
+        bounds: Optional mapping from parameter names (``str``) or canonical key
+            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
+            instances. When provided, parameters are unwrapped via the transform's
+            ``unwrap`` method prior to optimization and wrapped back afterwards.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+        fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
+        fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
         ``**solver_kwargs``: Additional keyword arguments forwarded to minimizer.
-            Interactive-specific options like ``callback``, ``checkpoint_dir``, etc.
+            Interactive-specific options like ``callback``, ``max_steps``, etc.
             can be passed here.
 
     Returns:
@@ -410,11 +466,11 @@ def ifit(
         nll_fn,
         params,
         fixed,
-        bounds,
         fixed_predicate,
+        bounds,
         solver,
-        args,
-        kwargs,
+        fn_args,
+        fn_kwargs,
         interactive=True,
         **solver_kwargs,
     )
@@ -424,15 +480,15 @@ def fixed_param_fit(
     param_values: dict[str, float],
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
-    **solver_kwargs,
+    fn_args: tuple = (),
+    fn_kwargs: dict | None = None,
+    **minimiser_kwargs,
 ) -> FitResult:
     """
     Perform a profile-likelihood style fit with selected parameters frozen.
@@ -446,23 +502,23 @@ def fixed_param_fit(
 
     Args:
         param_values: Mapping from parameter names to the values that should be
-            injected prior to optimisation.
+            injected prior to optimization.
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
             arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree.
+        params: Initial parameter values organized as a pytree.
         fixed: Additional parameters to hold fixed, expressed as leaf names or
             canonical key tuples.
-        bounds: Optional parameter bounds specification (same format as :func:`fit`).
         fixed_predicate: Optional callable evaluated for each leaf after
             ``param_values`` have been applied. Returning ``True`` marks the leaf
             as fixed.
+        bounds: Optional parameter bounds specification (same format as :func:`fit`).
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+        fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**solver_kwargs``: Additional keyword arguments forwarded to minimizer.
+        fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
+        ``**minimiser_kwargs``: Additional keyword arguments forwarded to minimizer.
 
     Returns:
         :class:`FitResult` containing the fitted parameters and diagnostics.
@@ -484,7 +540,7 @@ def fixed_param_fit(
         >>> def my_nll(params, data, *, verbose):
         ...     return compute_loss(params, data, verbose=verbose)
         >>> result = fixed_param_fit({"mu": 1.5}, my_nll, initial_params,
-        ...                          args=(data,), kwargs={"verbose": True})
+        ...                          fn_args=(data,), fn_kwargs={"verbose": True})
     """
     # Prepare parameter state with injected values and identify all fixed parameters
     updated_pytree, fixed_sequence = _prepare_fixed_param_state(
@@ -495,13 +551,13 @@ def fixed_param_fit(
         nll_fn,
         updated_pytree,
         fixed_sequence,
-        bounds,
         fixed_predicate,
+        bounds,
         solver,
-        args,
-        kwargs,
+        fn_args,
+        fn_kwargs,
         interactive=False,
-        **solver_kwargs,
+        **minimiser_kwargs,
     )
 
 
@@ -509,14 +565,14 @@ def ifixed_param_fit(
     param_values: dict[str, float],
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
+    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
+    fn_args: tuple = (),
+    fn_kwargs: dict | None = None,
     **solver_kwargs,
 ) -> FitResult:
     """
@@ -533,24 +589,24 @@ def ifixed_param_fit(
 
     Args:
         param_values: Mapping from parameter names to the values that should be
-            injected prior to optimisation.
+            injected prior to optimization.
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
             arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree.
+        params: Initial parameter values organized as a pytree.
         fixed: Additional parameters to hold fixed, expressed as leaf names or
             canonical key tuples.
-        bounds: Optional parameter bounds specification (same format as :func:`fit`).
         fixed_predicate: Optional callable evaluated for each leaf after
             ``param_values`` have been applied. Returning ``True`` marks the leaf
             as fixed.
+        bounds: Optional parameter bounds specification (same format as :func:`fit`).
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
+        fn_args: Positional arguments forwarded to ``nll_fn`` after the parameter
             pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
+        fn_kwargs: Keyword arguments forwarded to ``nll_fn``.
         ``**solver_kwargs``: Additional keyword arguments forwarded to minimizer.
-            Interactive-specific options like ``callback``, ``checkpoint_dir``, etc.
+            Interactive-specific options like ``callback``, ``max_steps``, etc.
             can be passed here.
 
     Returns:
@@ -586,11 +642,11 @@ def ifixed_param_fit(
         nll_fn,
         updated_pytree,
         fixed_sequence,
-        bounds,
         fixed_predicate,
+        bounds,
         solver,
-        args,
-        kwargs,
+        fn_args,
+        fn_kwargs,
         interactive=True,
         **solver_kwargs,
     )

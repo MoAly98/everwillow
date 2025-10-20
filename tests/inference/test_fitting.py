@@ -306,7 +306,7 @@ class TestFitAdditionalArguments:
                 params["sigma"] - target_sigma
             ) ** 2
 
-        result = ew.fit(nll, {"mu": 0.0, "sigma": 0.5}, args=(3.0, 1.5))
+        result = ew.fit(nll, {"mu": 0.0, "sigma": 0.5}, fn_args=(3.0, 1.5))
 
         assert abs(result.params["mu"] - 3.0) < 1e-4
         assert abs(result.params["sigma"] - 1.5) < 1e-4
@@ -322,7 +322,7 @@ class TestFitAdditionalArguments:
         result = ew.fit(
             nll,
             {"mu": 0.0, "sigma": 0.5},
-            kwargs={"target_mu": 4.0, "target_sigma": 0.8},
+            fn_kwargs={"target_mu": 4.0, "target_sigma": 0.8},
         )
 
         assert abs(result.params["mu"] - 4.0) < 1e-4
@@ -334,7 +334,7 @@ class TestFitAdditionalArguments:
         def nll(params, target_mu, *, offset):
             return (params["mu"] - target_mu - offset) ** 2
 
-        result = ew.fit(nll, {"mu": 0.0}, args=(2.0,), kwargs={"offset": 0.5})
+        result = ew.fit(nll, {"mu": 0.0}, fn_args=(2.0,), fn_kwargs={"offset": 0.5})
 
         assert abs(result.params["mu"] - 2.5) < 1e-4
 
@@ -348,7 +348,7 @@ class TestFitAdditionalArguments:
             nll,
             {"a": 0.0, "b": 5.0},
             fixed=["b"],
-            args=(7.0,),
+            fn_args=(7.0,),
         )
 
         assert abs(result.params["a"] - 7.0) < 1e-4
@@ -360,7 +360,7 @@ class TestFitAdditionalArguments:
         def nll(params):
             return (params["mu"] - 1.0) ** 2
 
-        result = ew.fit(nll, {"mu": 0.0}, args=())
+        result = ew.fit(nll, {"mu": 0.0}, fn_args=())
         assert abs(result.params["mu"] - 1.0) < 1e-4
 
     def test_empty_kwargs(self):
@@ -369,16 +369,16 @@ class TestFitAdditionalArguments:
         def nll(params):
             return (params["mu"] - 1.0) ** 2
 
-        result = ew.fit(nll, {"mu": 0.0}, kwargs={})
+        result = ew.fit(nll, {"mu": 0.0}, fn_kwargs={})
         assert abs(result.params["mu"] - 1.0) < 1e-4
 
     def test_none_kwargs(self):
-        """Test that kwargs=None works (default)."""
+        """Test that fn_kwargs=None works (default)."""
 
         def nll(params):
             return (params["mu"] - 1.0) ** 2
 
-        result = ew.fit(nll, {"mu": 0.0}, kwargs=None)
+        result = ew.fit(nll, {"mu": 0.0}, fn_kwargs=None)
         assert abs(result.params["mu"] - 1.0) < 1e-4
 
 
@@ -430,7 +430,7 @@ class TestFitRealisticExamples:
             return expected - observed * jnp.log(expected)
 
         observed = 25.0
-        result = ew.fit(poisson_nll, {"mu": 1.0, "background": 10.0}, args=(observed,))
+        result = ew.fit(poisson_nll, {"mu": 1.0, "background": 10.0}, fn_args=(observed,))
 
         # MLE for Poisson: expected ≈ observed
         expected_total = result.params["mu"] * 10.0 + result.params["background"]
@@ -709,7 +709,7 @@ class TestFixedParamFit:
             return (params["mu"] - target) ** 2 + (params["sigma"] - 1.0) ** 2
 
         result = ew.fixed_param_fit(
-            {"mu": 3.0}, nll, {"mu": 0.0, "sigma": 0.5}, args=(5.0,)
+            {"mu": 3.0}, nll, {"mu": 0.0, "sigma": 0.5}, fn_args=(5.0,)
         )
 
         assert abs(result.params["mu"] - 3.0) < 1e-10
@@ -722,7 +722,7 @@ class TestFixedParamFit:
             return (params["mu"] - 2.0) ** 2 + (params["sigma"] - target_sigma) ** 2
 
         result = ew.fixed_param_fit(
-            {"mu": 1.5}, nll, {"mu": 0.0, "sigma": 0.5}, kwargs={"target_sigma": 1.8}
+            {"mu": 1.5}, nll, {"mu": 0.0, "sigma": 0.5}, fn_kwargs={"target_sigma": 1.8}
         )
 
         assert abs(result.params["mu"] - 1.5) < 1e-10
@@ -735,7 +735,7 @@ class TestFixedParamFit:
             return (params["mu"] - scale - offset) ** 2
 
         result = ew.fixed_param_fit(
-            {"mu": 5.0}, nll, {"mu": 0.0}, args=(2.0,), kwargs={"offset": 3.0}
+            {"mu": 5.0}, nll, {"mu": 0.0}, fn_args=(2.0,), fn_kwargs={"offset": 3.0}
         )
 
         assert abs(result.params["mu"] - 5.0) < 1e-10

@@ -22,94 +22,71 @@ class FitResult:
     solver_result: tp.Any = None  #: Raw solver result (optional).
 
 
-def _resolve_fixed_keys(
+def _resolve_keys(
     state: sl.FlatState[tp.Any],
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
-    predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
+    names: tp.Iterable[str | tuple[tp.Any, ...]],
 ) -> set[tuple[tp.Any, ...]]:
-    """Normalise user-provided fixed-parameter hints.
+    """Resolve parameter names or tuples to canonical key tuples.
+
+    String names are matched against the final element of each key
+    (e.g., ``"mu"`` matches ``("model", "mu")``). Tuple entries must
+    match exactly.
 
     Args:
-        state: ``FlatState`` generated from the caller's parameter pytree.
-        fixed: Optional collection of leaf names (``str``) or canonical key
-            tuples identifying leaves that should remain unchanged.
-        predicate: Optional callable evaluated for every ``(key, value)`` pair in
-            ``state``. Returning ``True`` marks the parameter as fixed.
+        state: ``FlatState`` to search for matching keys.
+        names: Parameter identifiers (strings or tuples).
 
     Returns:
-        Set of canonical key tuples describing the leaves that should be frozen.
+        Set of canonical key tuples.
 
     Raises:
-        KeyError: If a supplied name or tuple does not correspond to a leaf in
-            ``state``.
+        KeyError: If any name cannot be located in ``state``.
+        ValueError: If a string name matches multiple keys (ambiguous).
     """
     keys: set[tuple[tp.Any, ...]] = set()
 
-    if fixed:
-        for entry in fixed:
-            if isinstance(entry, tuple):
-                key = tuple(entry)
-                if key not in state.raw_mapping:
-                    message = f"Fixed parameter not found in state: {key}"
-                    raise KeyError(message)
-                keys.add(key)
-            else:
-                matched = False
-                for key in state.raw_mapping:
-                    if key and key[-1] == entry:
-                        keys.add(key)
-                        matched = True
-                if not matched:
-                    message = f"Fixed parameter not found in state: {entry}"
-                    raise KeyError(message)
-
-    if predicate is not None:
-        for key, value in state.raw_mapping.items():
-            if predicate(key, value):
-                keys.add(key)
+    for entry in names:
+        if isinstance(entry, tuple):
+            key = tuple(entry)
+            if key not in state.raw_mapping:
+                message = f"Parameter not found in state: {key}"
+                raise KeyError(message)
+            keys.add(key)
+        else:
+            matches = [key for key in state.raw_mapping if key and key[-1] == entry]
+            if not matches:
+                message = f"Parameter not found in state: {entry}"
+                raise KeyError(message)
+            if len(matches) > 1:
+                matches_str = ", ".join(str(k) for k in matches)
+                message = (
+                    f"Ambiguous parameter name '{entry}' matches multiple keys: "
+                    f"{matches_str}. Use the full tuple key to disambiguate."
+                )
+                raise ValueError(message)
+            keys.add(matches[0])
 
     return keys
 
 
-def _resolve_name_keys(
+def _build_param_updates(
     state: sl.FlatState[tp.Any],
     param_values: dict[str, tp.Any],
 ) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
-    """Map ``param_values`` into canonical key/value updates.
+    """Build canonical parameter updates from name-value pairs.
+
+    Resolves parameter names to canonical keys and constructs the update
+    dictionary for :func:`everwillow.statelib.state.update_state`.
 
     Args:
         state: ``FlatState`` derived from the caller's parameter pytree.
-        param_values: Mapping of parameter names to the values that should be
-            injected into the state.
+        param_values: Mapping of parameter names to values.
 
     Returns:
-        A tuple ``(keys, updates)`` where ``keys`` contains the resolved
-        canonical tuples and ``updates`` may be fed directly to
-        :func:`everwillow.statelib.state.update_state`.
-
-    Raises:
-        KeyError: If any name in ``param_values`` cannot be located in
-            ``state``.
+        Tuple of (resolved keys, update dictionary ready for ``update_state``).
     """
-    updates: dict[tuple[tp.Any, ...], tp.Any] = {}
-    keys: set[tuple[tp.Any, ...]] = set()
-    missing: list[str] = []
-
-    for name, value in param_values.items():
-        matched = False
-        for key in state.raw_mapping:
-            if key and key[-1] == name:
-                keys.add(key)
-                updates[key] = value
-                matched = True
-        if not matched:
-            missing.append(name)
-
-    if missing:
-        missing_list = ", ".join(sorted(missing))
-        message = f"Fixed parameter values not found in state: {missing_list}"
-        raise KeyError(message)
-
+    keys = _resolve_keys(state, param_values.keys())
+    updates = {key: param_values[key[-1]] for key in keys}
     return keys, updates
 
 
@@ -210,7 +187,13 @@ def fit(
         wrap_transforms,
     ) = bounds_module.apply_bounds_transform(param_state, resolved_bounds)
 
-    fixed_keys = _resolve_fixed_keys(unbounded_param_state, fixed, fixed_predicate)
+    # Identify fixed parameters
+    fixed_keys = _resolve_keys(unbounded_param_state, fixed) if fixed else set()
+    if fixed_predicate is not None:
+        fixed_keys |= {
+            key for key, value in unbounded_param_state.raw_mapping.items()
+            if fixed_predicate(key, value)
+        }
 
     if fixed_keys:
         fixed_state, free_state = sl.partition_state(
@@ -367,12 +350,18 @@ def fixed_param_fit(
     # Convert to FlatState for manipulation
     param_state = sl.FlatState.from_pytree(params)
 
-    # Resolve canonical keys and apply the fixed values
-    name_keys, updates = _resolve_name_keys(param_state, param_values)
+    # Build parameter updates from provided values
+    name_keys, updates = _build_param_updates(param_state, param_values)
 
     updated_state = sl.update_state(param_state, updates)
 
-    user_fixed_keys = _resolve_fixed_keys(updated_state, fixed, fixed_predicate)
+    # Identify additional fixed parameters
+    user_fixed_keys = _resolve_keys(updated_state, fixed) if fixed else set()
+    if fixed_predicate is not None:
+        user_fixed_keys |= {
+            key for key, value in updated_state.raw_mapping.items()
+            if fixed_predicate(key, value)
+        }
     combined_keys = user_fixed_keys | name_keys
     fixed_sequence = [tuple(key) for key in combined_keys]
 

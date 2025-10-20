@@ -32,18 +32,25 @@ freely in dictionaries keyed by leaf names or canonical key paths.
 
 To define a new transform, subclass
 ``everwillow.parameters.transforms.AbstractParameterTransformation`` and
-implement ``unwrap`` and ``wrap`` using JAX-compatible operations. Mark
-static configuration (such as bounds) with ``equinox.field(static=True)``
-so that transform instances behave as pytrees.
+implement ``unwrap`` and ``wrap`` using JAX-compatible operations. Use JAX's
+dataclass pytree registration: https://docs.jax.dev/en/latest/_autosummary/jax.tree_util.register_dataclass.html.
 
 ```python
-import equinox as eqx
+from functools import partial
+import dataclasses
 import jax.numpy as jnp
+from jaxtyping import ArrayLike
 from everwillow.parameters.transforms import AbstractParameterTransformation
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["scale"],
+    meta_fields=[],
+)
+@dataclasses.dataclass
 class SquareTransform(AbstractParameterTransformation):
-    scale: float = eqx.field(static=True)
+    scale: ArrayLike
 
     def unwrap(self, value):
         value = jnp.asarray(value)

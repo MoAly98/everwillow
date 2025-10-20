@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
@@ -19,11 +18,6 @@ ATOL = 1e-8
 
 class TestMinuitTransform:
     """Minuit arcsin/sin transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
-        assert transform.__name__() == "MinuitTransform"
 
     def test_unwrap_expected_value(self):
         """unwrap matches the Minuit arcsin formula."""
@@ -57,25 +51,25 @@ class TestMinuitTransform:
         """unwrap rejects values at either boundary."""
         transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
         with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="MinuitTransform"
+            jax._src.checkify.JaxRuntimeError, match="value needs to be bounded between"
         ):
             transform.unwrap(getattr(transform, boundary))
 
     def test_init_requires_finite_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(ValueError, match="requires finite lower/upper bounds"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError, match="value needs to be finite"
+        ):
             transforms.MinuitTransform(lower=0.0, upper=jnp.inf)
-        with pytest.raises(ValueError, match="requires lower bound"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError,
+            match="left value needs to be greater than right value",
+        ):
             transforms.MinuitTransform(lower=1.0, upper=0.5)
 
 
 class TestSigmoidTransform:
     """Logit/Sigmoid transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.SigmoidTransform(lower=0.0, upper=1.0)
-        assert transform.__name__() == "SigmoidTransform"
 
     def test_unwrap_expected_value(self):
         """unwrap equals logit of the affine-scaled value."""
@@ -108,25 +102,25 @@ class TestSigmoidTransform:
         """unwrap rejects values at either boundary."""
         transform = transforms.SigmoidTransform(lower=-1.0, upper=1.0)
         with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="SigmoidTransform"
+            jax._src.checkify.JaxRuntimeError, match="value needs to be bounded between"
         ):
             transform.unwrap(getattr(transform, boundary))
 
     def test_init_requires_valid_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(ValueError, match="requires finite lower/upper bounds"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError, match="value needs to be finite"
+        ):
             transforms.SigmoidTransform(lower=-1.0, upper=jnp.inf)
-        with pytest.raises(ValueError, match="requires lower bound"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError,
+            match="left value needs to be greater than right value",
+        ):
             transforms.SigmoidTransform(lower=1.0, upper=1.0)
 
 
 class TestOneSidedLogTransform:
     """Single-sided log transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.OneSidedLogTransform(bound=0.0, direction="lower")
-        assert transform.__name__() == "OneSidedLogTransform"
 
     @pytest.mark.parametrize(
         ("direction", "bound", "value"),
@@ -182,30 +176,30 @@ class TestOneSidedLogTransform:
 
     def test_raises_on_infinite_bound(self):
         """constructor rejects non-finite bounds."""
-        with pytest.raises(ValueError, match="requires a finite bound"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError, match="value needs to be finite"
+        ):
             transforms.OneSidedLogTransform(bound=jnp.inf, direction="lower")
 
     @pytest.mark.parametrize(
-        ("direction", "bound", "match"),
+        ("direction", "bound"),
         [
-            ("lower", 0.0, "greater than lower bound"),
-            ("upper", 1.0, "less than upper bound"),
+            ("lower", 0.0),
+            ("upper", 1.0),
         ],
     )
-    def test_raises_on_bound_violation(self, direction, bound, match):
+    def test_raises_on_bound_violation(self, direction, bound):
         """unwrap raises if value is outside the permitted side."""
         transform = transforms.OneSidedLogTransform(bound=bound, direction=direction)
-        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match=match):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError,
+            match="left value needs to be greater than right value",
+        ):
             transform.unwrap(transform.bound)
 
 
 class TestSoftPlusTransform:
     """SoftPlus-based positivity transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.SoftPlusTransform()
-        assert transform.__name__() == "SoftPlusTransform"
 
     def test_unwrap_expected_value(self):
         """unwrap matches the analytic inverse softplus."""
@@ -233,7 +227,9 @@ class TestSoftPlusTransform:
     def test_raises_on_negative_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(ValueError, match="Expected positive inputs"):
+        with pytest.raises(
+            jax._src.checkify.JaxRuntimeError, match="value needs to be non-negative"
+        ):
             transform.unwrap(-0.1)
 
 

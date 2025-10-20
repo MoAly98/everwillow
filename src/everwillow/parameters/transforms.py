@@ -3,12 +3,14 @@ Abstract base and implementations of parameter space transforms.
 """
 
 import abc
-import math
+import dataclasses
+import typing as tp
+from functools import partial
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
+from jax.experimental import checkify
+from jaxtyping import ArrayLike
 
 __all__ = [
     "AbstractParameterTransformation",
@@ -33,7 +35,85 @@ def _sigmoid(x: ArrayLike) -> ArrayLike:
     )
 
 
-class AbstractParameterTransformation(eqx.Module):
+def _safe_assert(fn: tp.Callable, *args, **kwargs) -> None:
+    error, _ = fn(*args, **kwargs)
+    checkify.check_error(error)
+    return
+
+
+@checkify.checkify
+def _check_in_bounds(value: ArrayLike, lower: ArrayLike, upper: ArrayLike) -> None:
+    """Check if a value is bounded between lower and upper.
+
+    Args:
+        value: The value to check.
+        lower: The lower bound.
+        upper: The upper bound.
+
+    Raises:
+        ValueError: If any element of value is outside the bounds.
+    """
+    checkify.check(
+        jnp.all((value > lower) & (value < upper)),
+        "value needs to be bounded between {lower} and {upper}, got {value}",
+        value=jnp.asarray(value),
+        lower=jnp.asarray(lower),
+        upper=jnp.asarray(upper),
+    )
+
+
+@checkify.checkify
+def _check_left_gt_right(left: ArrayLike, right: ArrayLike) -> None:
+    """Check if the left value is greater than the right value.
+
+    Args:
+        left: The left value.
+        right: The right value.
+
+    Raises:
+        ValueError: If left is not greater than right.
+    """
+    checkify.check(
+        left > right,
+        "left value needs to be greater than right value, got right={right}, left={left}",
+        right=jnp.asarray(right),
+        left=jnp.asarray(left),
+    )
+
+
+@checkify.checkify
+def _check_is_finite(value: ArrayLike) -> None:
+    """Check if a value is finite.
+
+    Args:
+        value: The value to check.
+
+    Raises:
+        ValueError: If any element of value is not finite.
+    """
+    checkify.check(
+        jnp.isfinite(value),
+        "value needs to be finite, got {value}",
+        value=jnp.asarray(value),
+    )
+
+
+@checkify.checkify
+def _check_is_non_negative(value: ArrayLike) -> None:
+    checkify.check(
+        jnp.all(value >= 0),
+        "value needs to be non-negative, got {value}",
+        value=jnp.asarray(value),
+    )
+
+
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=[],
+    meta_fields=[],
+)
+@dataclasses.dataclass
+class AbstractParameterTransformation(abc.ABC):
     """
     Abstract base for parameter transformations.
 
@@ -50,6 +130,12 @@ class AbstractParameterTransformation(eqx.Module):
         """Transform a value from the real line back to its constrained space."""
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["lower", "upper"],
+    meta_fields=[],
+)
+@dataclasses.dataclass
 class MinuitTransform(AbstractParameterTransformation):
     """
     Minuit-style transform for parameters with finite lower and upper bounds.
@@ -65,34 +151,20 @@ class MinuitTransform(AbstractParameterTransformation):
     Reference: https://root.cern.ch/download/minuit.pdf (Sec. 1.2.1).
     """
 
-    lower: float = eqx.field(static=True)
-    upper: float = eqx.field(static=True)
+    lower: ArrayLike
+    upper: ArrayLike
 
-    def __name__(self) -> str:
-        return "MinuitTransform"
-
-    # check for finite boundaries
     def __post_init__(self):
-        if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            message = f"{self.__name__} requires finite lower/upper bounds."
-            raise ValueError(message)
-        if self.lower >= self.upper:
-            message = (
-                f"{self.__name__} requires lower bound to be strictly less than "
-                "upper bound."
-            )
-            raise ValueError(message)
+        # checks
+        _safe_assert(_check_is_finite, self.lower)
+        _safe_assert(_check_is_finite, self.upper)
+        _safe_assert(_check_left_gt_right, self.upper, self.lower)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
-        error_msg = (
-            f"Value passed to {self.__name__} is exactly at or outside the boundaries "
-            f"[{self.lower}, {self.upper}]."
-        )
-        value = eqx.error_if(value, value <= self.lower, error_msg)
-        value = eqx.error_if(value, value >= self.upper, error_msg)
+        _safe_assert(_check_is_finite, value)
+        _safe_assert(_check_in_bounds, value, lower=self.lower, upper=self.upper)
         # this formula turns user-provided "external" parameter values into "internal" values
         return jnp.arcsin(2.0 * (value - self.lower) / (self.upper - self.lower) - 1.0)
 
@@ -101,6 +173,12 @@ class MinuitTransform(AbstractParameterTransformation):
         return self.lower + (self.upper - self.lower) / 2 * (jnp.sin(value) + 1)
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["lower", "upper"],
+    meta_fields=[],
+)
+@dataclasses.dataclass
 class SigmoidTransform(AbstractParameterTransformation):
     """
     Logit/sigmoid pair for parameters with finite lower and upper bounds.
@@ -116,34 +194,20 @@ class SigmoidTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    lower: float = eqx.field(static=True)
-    upper: float = eqx.field(static=True)
+    lower: ArrayLike
+    upper: ArrayLike
 
-    def __name__(self) -> str:
-        return "SigmoidTransform"
-
-    # check for finite boundaries
     def __post_init__(self):
-        if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            message = f"{self.__name__} requires finite lower/upper bounds."
-            raise ValueError(message)
-        if self.lower >= self.upper:
-            message = (
-                f"{self.__name__} requires lower bound to be strictly less than "
-                "upper bound."
-            )
-            raise ValueError(message)
+        # checks
+        _safe_assert(_check_is_finite, self.lower)
+        _safe_assert(_check_is_finite, self.upper)
+        _safe_assert(_check_left_gt_right, self.upper, self.lower)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
-        error_msg = (
-            f"Value passed to {self.__name__} is exactly at or outside the boundaries "
-            f"[{self.lower}, {self.upper}]."
-        )
-        value = eqx.error_if(value, value <= self.lower, error_msg)
-        value = eqx.error_if(value, value >= self.upper, error_msg)
+        _safe_assert(_check_is_finite, value)
+        _safe_assert(_check_in_bounds, value, lower=self.lower, upper=self.upper)
         # this formula turns user-provided "external" parameter values into "internal" values
         return _logit((value - self.lower) / (self.upper - self.lower))
 
@@ -152,6 +216,12 @@ class SigmoidTransform(AbstractParameterTransformation):
         return self.lower + (self.upper - self.lower) * _sigmoid(value)
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["bound"],
+    meta_fields=["direction"],
+)
+@dataclasses.dataclass
 class OneSidedLogTransform(AbstractParameterTransformation):
     """
     Log transform for parameters with exactly one finite bound.
@@ -166,35 +236,28 @@ class OneSidedLogTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    bound: float = eqx.field(static=True)
-    direction: str = eqx.field(static=True)  # 'lower' or 'upper'
+    bound: ArrayLike
+    direction: str  # 'lower' or 'upper'
 
-    def __name__(self) -> str:
-        return "OneSidedLogTransform"
-
-    # check for finite lower boundary
     def __post_init__(self):
+        # checks
         if self.direction not in ("lower", "upper"):
-            message = f"Unsupported direction {self.direction!r} for {self.__name__}."
+            message = (
+                f"Unsupported direction {self.direction!r} for {type(self).__name__}."
+            )
             raise ValueError(message)
-        if not math.isfinite(self.bound):
-            message = f"{self.__name__} requires a finite bound."
-            raise ValueError(message)
+        _safe_assert(_check_is_finite, self.bound)
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a single-sided bounded value into an unconstrained representation."""
         value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
+        _safe_assert(_check_is_finite, value)
         if self.direction == "lower":
-            error_msg = (
-                f"Value passed to {self.__name__} must be greater than lower bound "
-                f"{self.bound}."
-            )
-            value = eqx.error_if(value, value <= self.bound, error_msg)
+            # checks
+            _safe_assert(_check_left_gt_right, value, self.bound)
             return jnp.log(value - self.bound)
-
-        error_msg = f"Value passed to {self.__name__} must be less than upper bound {self.bound}."
-        value = eqx.error_if(value, value >= self.bound, error_msg)
+        # direction == "upper"
+        _safe_assert(_check_left_gt_right, self.bound, value)
         return jnp.log(self.bound - value)
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
@@ -205,6 +268,12 @@ class OneSidedLogTransform(AbstractParameterTransformation):
         return self.bound - jnp.exp(value)
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=[],
+    meta_fields=[],
+)
+@dataclasses.dataclass
 class SoftPlusTransform(AbstractParameterTransformation):
     """
     Applies the softplus transformation to parameters, projecting them from real space (R) to positive space (R+).
@@ -220,16 +289,11 @@ class SoftPlusTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    def __name__(self) -> str:
-        return "SoftPlusTransform"
-
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Apply the inverse softplus, validating positivity and finiteness."""
         value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
-        value = eqx.error_if(
-            value, value < 0, "Expected positive inputs to inv_softplus."
-        )
+        _safe_assert(_check_is_finite, value)
+        _safe_assert(_check_is_non_negative, value)
         return jnp.log(-jnp.expm1(-value)) + value
 
     def wrap(self, value: ArrayLike) -> ArrayLike:

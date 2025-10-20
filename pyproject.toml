@@ -33,6 +33,8 @@ authors = [
 dependencies = [
     "jax>=0.7.2",
     "optimistix>=0.0.10",
+    "jaxtyping",
+    "equinox", # dep of optimistix but we make it explicit
 ]
 
 

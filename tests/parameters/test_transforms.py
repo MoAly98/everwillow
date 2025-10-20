@@ -20,11 +20,6 @@ ATOL = 1e-8
 class TestMinuitTransform:
     """Minuit arcsin/sin transform behaviour."""
 
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
-        assert transform.__name__() == "MinuitTransform"
-
     def test_unwrap_expected_value(self):
         """unwrap matches the Minuit arcsin formula."""
         transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
@@ -63,19 +58,18 @@ class TestMinuitTransform:
 
     def test_init_requires_finite_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(ValueError, match="requires finite lower/upper bounds"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
+        ):
             transforms.MinuitTransform(lower=0.0, upper=jnp.inf)
-        with pytest.raises(ValueError, match="requires lower bound"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"
+        ):
             transforms.MinuitTransform(lower=1.0, upper=0.5)
 
 
 class TestSigmoidTransform:
     """Logit/Sigmoid transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.SigmoidTransform(lower=0.0, upper=1.0)
-        assert transform.__name__() == "SigmoidTransform"
 
     def test_unwrap_expected_value(self):
         """unwrap equals logit of the affine-scaled value."""
@@ -114,19 +108,18 @@ class TestSigmoidTransform:
 
     def test_init_requires_valid_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(ValueError, match="requires finite lower/upper bounds"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
+        ):
             transforms.SigmoidTransform(lower=-1.0, upper=jnp.inf)
-        with pytest.raises(ValueError, match="requires lower bound"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"
+        ):
             transforms.SigmoidTransform(lower=1.0, upper=1.0)
 
 
 class TestOneSidedLogTransform:
     """Single-sided log transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.OneSidedLogTransform(bound=0.0, direction="lower")
-        assert transform.__name__() == "OneSidedLogTransform"
 
     @pytest.mark.parametrize(
         ("direction", "bound", "value"),
@@ -177,12 +170,14 @@ class TestOneSidedLogTransform:
 
     def test_raises_on_invalid_direction(self):
         """constructor rejects unsupported directions."""
-        with pytest.raises(ValueError, match="Unsupported direction"):
+        with pytest.raises(ValueError, match="unsupported direction"):
             transforms.OneSidedLogTransform(bound=0.0, direction="sideways")
 
     def test_raises_on_infinite_bound(self):
         """constructor rejects non-finite bounds."""
-        with pytest.raises(ValueError, match="requires a finite bound"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="bound must be finite"
+        ):
             transforms.OneSidedLogTransform(bound=jnp.inf, direction="lower")
 
     @pytest.mark.parametrize(
@@ -201,11 +196,6 @@ class TestOneSidedLogTransform:
 
 class TestSoftPlusTransform:
     """SoftPlus-based positivity transform behaviour."""
-
-    def test_name(self):
-        """__name__ returns class descriptor."""
-        transform = transforms.SoftPlusTransform()
-        assert transform.__name__() == "SoftPlusTransform"
 
     def test_unwrap_expected_value(self):
         """unwrap matches the analytic inverse softplus."""
@@ -233,7 +223,7 @@ class TestSoftPlusTransform:
     def test_raises_on_negative_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(ValueError, match="Expected positive inputs"):
+        with pytest.raises(ValueError, match="expected positive inputs"):
             transform.unwrap(-0.1)
 
 

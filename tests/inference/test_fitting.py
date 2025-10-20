@@ -1,19 +1,49 @@
-"""Unit tests for everwillow.fitting module.
+"""Unit tests for everwillow.inference module.
 
 Tests cover:
 - FitResult dataclass
 - fit() function with various parameter structures and options
+- fit() with parameter bounds
 - fixed_param_fit() function for profile likelihood
 """
 
 from __future__ import annotations
 
+from functools import partial
+
+import jax
 import jax.numpy as jnp
 import optimistix as optx
 import pytest
 
 import everwillow as ew
-from everwillow.fitting import FitResult
+from everwillow.inference import FitResult
+from everwillow.parameters.transforms import (
+    MinuitTransform,
+    OneSidedLogTransform,
+    SigmoidTransform,
+    SoftPlusTransform,
+)
+
+jax.config.update("jax_enable_x64", True)
+
+
+def _expect_close(expected: float, *, atol: float = 1e-2):
+    def _check(value: float) -> None:
+        assert jnp.isclose(value, expected, atol=atol)
+
+    return _check
+
+
+def _expect_interval(*, lower: float | None = None, upper: float | None = None):
+    def _check(value: float) -> None:
+        if lower is not None:
+            assert value >= lower
+        if upper is not None:
+            assert value <= upper
+
+    return _check
+
 
 # ============================================================================
 # FitResult dataclass tests
@@ -427,6 +457,194 @@ class TestFitRealisticExamples:
 
 
 # ============================================================================
+# fit() function tests - parameter bounds
+# ============================================================================
+
+
+class TestFitWithBounds:
+    """Test the fit() function with parameter bounds."""
+
+    def test_fit_hits_upper_bound(self):
+        """Test that upper bound is enforced when minimum is above it."""
+
+        def nll(params):
+            # Unconstrained minimum at mu=10
+            return (params["mu"] - 10.0) ** 2
+
+        result = ew.fit(
+            nll,
+            {"mu": 0.5},
+            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},  # Constrain to [0, 5]
+        )
+
+        # Should hit the upper bound since true minimum is at 10
+        assert 0.0 <= result.params["mu"] <= 5.0
+        assert jnp.isclose(result.params["mu"], 5.0, atol=1e-2)
+        assert result.nll < 100.0  # Should be at (5-10)^2 = 25, not (0.5-10)^2
+
+    def test_fit_hits_lower_bound(self):
+        """Test that lower bound is enforced when minimum is below it."""
+
+        def nll(params):
+            # Unconstrained minimum at mu=-5
+            return (params["mu"] + 5.0) ** 2
+
+        result = ew.fit(
+            nll,
+            {"mu": 2.0},
+            bounds={
+                "mu": MinuitTransform(lower=0.0, upper=10.0)
+            },  # Constrain to [0, 10]
+        )
+
+        # Should hit the lower bound since true minimum is at -5
+        assert 0.0 <= result.params["mu"] <= 10.0
+        assert jnp.isclose(result.params["mu"], 0.0, atol=1e-2)
+        assert result.nll < 100.0  # Should be at (0+5)^2 = 25
+
+    def test_fit_within_bounds_unconstrained(self):
+        """Test that bounds don't affect fit when minimum is within bounds."""
+
+        def nll(params):
+            # Unconstrained minimum at mu=2.5 (inside [0, 5])
+            return (params["mu"] - 2.5) ** 2
+
+        result = ew.fit(
+            nll,
+            {"mu": 1.0},
+            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+        )
+
+        # Should find true minimum
+        assert 0.0 <= result.params["mu"] <= 5.0
+        assert jnp.isclose(result.params["mu"], 2.5, atol=1e-2)
+
+    def test_fit_with_none_bounds_no_constraint(self):
+        """Test that None bounds allow finding true minimum."""
+
+        def nll(params):
+            # Unconstrained minima: x=-50, y=50
+            return (params["x"] + 50.0) ** 2 + (params["y"] - 50.0) ** 2
+
+        result = ew.fit(
+            nll,
+            {"x": 1.0, "y": 1.0},
+            bounds={"x": None, "y": None},  # No bounds
+        )
+
+        # Should find true minima
+        assert jnp.isclose(result.params["x"], -50.0, atol=1e-1)
+        assert jnp.isclose(result.params["y"], 50.0, atol=1e-1)
+
+    @pytest.mark.parametrize(
+        ("transform_factory", "target", "initial", "expected"),
+        [
+            (partial(MinuitTransform, lower=0.0, upper=5.0), 2.5, 0.1, 2.5),
+            (partial(SigmoidTransform, lower=-2.0, upper=3.0), 2.0, -1.0, 2.0),
+            (
+                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                -3.0,
+                1.0,
+                0.0,
+            ),
+            (
+                partial(OneSidedLogTransform, bound=5.0, direction="upper"),
+                8.0,
+                1.0,
+                5.0,
+            ),
+            (partial(SoftPlusTransform), 1.5, 0.2, 1.5),
+        ],
+    )
+    def test_fit_supports_all_transform_variants(
+        self,
+        transform_factory,
+        target,
+        initial,
+        expected,
+    ):
+        """Ensure fit integrates each transform class."""
+
+        def nll(params):
+            return (params["x"] - target) ** 2
+
+        result = ew.fit(
+            nll,
+            {"x": initial},
+            bounds={"x": transform_factory()},
+        )
+
+        assert jnp.isclose(result.params["x"], expected, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        ("transform_factory", "target", "initial", "check"),
+        [
+            (
+                partial(MinuitTransform, lower=0.0, upper=1.0),
+                -2.0,
+                0.3,
+                _expect_close(0.0),
+            ),
+            (
+                partial(MinuitTransform, lower=0.0, upper=1.0),
+                5.0,
+                0.7,
+                _expect_close(1.0),
+            ),
+            (
+                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                -5.0,
+                0.4,
+                _expect_close(0.0),
+            ),
+            (
+                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                5.0,
+                0.6,
+                _expect_close(1.0),
+            ),
+            (
+                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                -5.0,
+                0.8,
+                _expect_close(0.0),
+            ),
+            (
+                partial(OneSidedLogTransform, bound=2.0, direction="upper"),
+                10.0,
+                1.0,
+                _expect_close(2.0),
+            ),
+            (
+                partial(SoftPlusTransform),
+                -1.0,
+                0.5,
+                _expect_interval(lower=0.0, upper=5e-2),
+            ),
+        ],
+    )
+    def test_fit_transforms_enforce_bounds(
+        self,
+        transform_factory,
+        target,
+        initial,
+        check,
+    ):
+        """Verify each transform clamps solutions at its boundary."""
+
+        def nll(params):
+            return (params["x"] - target) ** 2
+
+        result = ew.fit(
+            nll,
+            {"x": initial},
+            bounds={"x": transform_factory()},
+        )
+
+        check(float(result.params["x"]))
+
+
+# ============================================================================
 # fixed_param_fit() function tests
 # ============================================================================
 
@@ -538,3 +756,26 @@ class TestFixedParamFit:
         assert result_profile.nll > result_uncond.nll
         assert abs(result_profile.params["mu"] - 1.5) < 1e-10
         assert abs(result_profile.params["sigma"] - 1.0) < 1e-4
+
+    def test_fixed_param_fit_with_bounds_constrains_free_param(self):
+        """Test profile likelihood fit where free parameter would violate bound."""
+
+        def nll(params):
+            # Unconstrained minimum: mu=any, sigma=-10
+            return (params["sigma"] + 10.0) ** 2
+
+        result = ew.fixed_param_fit(
+            {"mu": 1.5},  # Fix mu
+            nll,
+            {"mu": 1.0, "sigma": 0.5},
+            bounds={
+                "sigma": OneSidedLogTransform(bound=0.0, direction="lower")
+            },  # sigma >= 0
+        )
+
+        # mu should be fixed at 1.5
+        assert jnp.isclose(result.params["mu"], 1.5, atol=1e-6)
+
+        # sigma should hit lower bound
+        assert result.params["sigma"] >= 0.0
+        assert jnp.isclose(result.params["sigma"], 0.0, atol=1e-2)

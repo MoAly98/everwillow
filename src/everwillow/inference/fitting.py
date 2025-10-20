@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import optimistix as optx
 
-import everwillow.bounds as bounds_module
+import everwillow.parameters.bounds as bounds_module
 import everwillow.statelib as sl
 
 
@@ -118,7 +118,8 @@ def fit(
     params: tp.Any,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
-    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.BoundSpec] | None = None,
+    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
+    | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),
@@ -144,14 +145,9 @@ def fit(
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
             identifying parameters that should remain unchanged during the fit.
         bounds: Optional mapping from parameter names (``str``) or canonical key
-            tuples to ``(lower, upper)`` bound specifications. Each bound can be:
-
-            - ``(lower, upper)``: bounded on both sides
-            - ``(lower, None)``: lower bound only
-            - ``(None, upper)``: upper bound only
-            - ``None`` or ``(None, None)``: no bounds
-
-            Parameters are transformed to unbounded space for optimization.
+            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
+            instances. When provided, parameters are unwrapped via the transform's
+            ``unwrap`` method prior to optimisation and wrapped back afterwards.
         fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
             in the flattened state. Returning ``True`` marks the parameter as
             fixed. This is evaluated in addition to ``fixed`` when provided.
@@ -192,10 +188,11 @@ def fit(
         >>> # With parameter bounds
         >>> def my_nll(params):
         ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
+        >>> from everwillow.parameters.transforms import MinuitTransform
         >>> result = fit(
         ...     my_nll,
         ...     {"mu": 0.5, "sigma": 0.1},
-        ...     bounds={"mu": (0.0, 5.0), "sigma": (0.0, None)},
+        ...     bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
         ... )
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True
@@ -203,19 +200,15 @@ def fit(
     # Convert to FlatState for manipulation
     param_state = sl.FlatState.from_pytree(params)
 
-    # Create bounds transformations if specified
-    if bounds:
-        forward_transforms, inverse_transforms = bounds_module.create_bounds_transforms(
-            param_state, bounds
-        )
-        # Transform initial params to unbounded space for optimization
-        unbounded_param_state = sl.apply_transformations(
-            param_state, forward_transforms
-        )
-    else:
-        forward_transforms = {}
-        inverse_transforms = {}
-        unbounded_param_state = param_state
+    resolved_bounds: dict[str | tuple[tp.Any, ...], bounds_module.TransformSpec] = (
+        {} if bounds is None else dict(bounds)
+    )
+
+    (
+        unbounded_param_state,
+        _unwrap_transforms,
+        wrap_transforms,
+    ) = bounds_module.apply_bounds_transform(param_state, resolved_bounds)
 
     fixed_keys = _resolve_fixed_keys(unbounded_param_state, fixed, fixed_predicate)
 
@@ -247,9 +240,9 @@ def fit(
         )
 
         # Transform back to bounded space for NLL evaluation
-        if inverse_transforms:
+        if wrap_transforms:
             full_bounded_state = sl.apply_transformations(
-                full_unbounded_state, inverse_transforms
+                full_unbounded_state, wrap_transforms
             )
         else:
             full_bounded_state = full_unbounded_state
@@ -282,9 +275,9 @@ def fit(
     )
 
     # Transform back to bounded space for final result
-    if inverse_transforms:
+    if wrap_transforms:
         fitted_full_state = sl.apply_transformations(
-            fitted_full_unbounded_state, inverse_transforms
+            fitted_full_unbounded_state, wrap_transforms
         )
     else:
         fitted_full_state = fitted_full_unbounded_state
@@ -310,7 +303,8 @@ def fixed_param_fit(
     params: tp.Any,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
-    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.BoundSpec] | None = None,
+    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
+    | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     args: tuple = (),

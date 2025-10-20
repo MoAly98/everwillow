@@ -12,6 +12,7 @@ getting-started
 introduction
 quickstart
 statelib_overview
+parameter_transforms
 ```
 
 ```{toctree}

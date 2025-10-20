@@ -182,23 +182,29 @@ All transformations are differentiable and JAX-compatible.
 
 ### Using Bounds in Practice
 
+See also :doc:`parameters_overview` for a catalogue of available transforms
+and guidance on applying them directly to flat states.
+
 ```python
 import everwillow as ew
+from everwillow.parameters.transforms import MinuitTransform
 
 
 def nll(params):
     return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
 
 
-# Specify bounds as a pytree matching your parameters
 result = ew.fit(
     nll,
     params={"mu": 0.0, "sigma": 0.5},
-    bounds={"mu": (0.0, 5.0), "sigma": (0.0, None)},  # sigma must be positive
+    bounds={
+        "mu": MinuitTransform(lower=0.0, upper=5.0),
+        "sigma": MinuitTransform(lower=0.1, upper=3.0),
+    },
 )
 
 # Result parameters are in the original bounded space
-print(result.params)  # {'mu': 2.0, 'sigma': 1.0}
+print(result.params)  # {'mu': ..., 'sigma': ...}
 ```
 
 The transformation machinery ensures that:

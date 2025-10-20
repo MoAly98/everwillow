@@ -5,6 +5,8 @@ from __future__ import annotations
 import typing as tp
 from dataclasses import dataclass
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import optimistix as optx
 
@@ -30,9 +32,67 @@ def _minimize_fast(wrapped_nll, solver, y0, **kwargs):
 
 def _minimize_interactive(wrapped_nll, solver, y0, **kwargs):
     """Interactive minimization with callbacks and checkpointing (cannot be JIT compiled)."""
-    # TODO: Implement interactive minimization features
-    # For now, just delegate to fast minimization
-    return optx.minimise(wrapped_nll, solver, y0=y0, **kwargs)
+    # Extract interactive-specific arguments
+    callback = kwargs.pop('callback', None)
+    options = kwargs.pop('options', {})
+    tags = kwargs.pop('tags', frozenset())
+    max_steps = kwargs.pop('max_steps', 100)
+
+    # Args passed to wrapped_nll (always None in our usage)
+    args = None
+
+    # Shape/dtype for NLL output (scalar float)
+    f_struct = jax.ShapeDtypeStruct((), jnp.float64)
+    aux_struct = None
+
+    # Create JIT-compiled partial applications for step and terminate
+    # These freeze fn, args, options, and tags for the solver methods
+    step = eqx.filter_jit(
+        eqx.Partial(solver.step, fn=wrapped_nll, args=args, options=options, tags=tags)
+    )
+    terminate = eqx.filter_jit(
+        eqx.Partial(solver.terminate, fn=wrapped_nll, args=args, options=options, tags=tags)
+    )
+
+    # Initialize solver state
+    state = solver.init(wrapped_nll, y0, args, options, f_struct, aux_struct, tags)
+    y = y0
+    done, result = terminate(y=y, state=state)
+
+    # Interactive optimization loop
+    iteration = 0
+    while not done and iteration < max_steps:
+        # Evaluate current NLL value
+        current_nll, _ = wrapped_nll(y, args)
+
+        # User-provided callback or default logging
+        if callback is not None:
+            callback(iteration, y, current_nll)
+        else:
+            print(f"Iteration {iteration}: NLL = {float(current_nll):.6f}")
+
+        # Take one optimization step
+        y, state, aux = step(y=y, state=state)
+        done, result = terminate(y=y, state=state)
+        iteration += 1
+
+    # Final evaluation and logging
+    final_nll, _ = wrapped_nll(y, args)
+    if callback is not None:
+        callback(iteration, y, final_nll)
+    else:
+        print(f"Final iteration {iteration}: NLL = {float(final_nll):.6f}")
+
+    # Warn if optimization didn't succeed
+    if result != optx.RESULTS.successful:
+        print(f"Warning: Optimization ended with result code: {result}")
+
+    # Postprocess the solution
+    y_final, aux_final, _ = solver.postprocess(
+        wrapped_nll, y, aux, args, options, state, tags, result
+    )
+    # Return a Solution object compatible with optx.minimise
+    return optx.Solution(value=y_final, result=result, aux=aux_final, stats={}, state=state)
 
 
 def _fit(
@@ -127,7 +187,7 @@ def _fit(
         full_pytree = full_bounded_state.to_pytree()
 
         # Call user's nll_fn with params + additional args/kwargs
-        return nll_fn(full_pytree, *args, **kwargs)
+        return nll_fn(full_pytree, *args, **kwargs), None
 
     # Set up solver
     if solver is None:
@@ -169,7 +229,7 @@ def _fit(
 
     # Get the final NLL value by evaluating wrapped_nll at the solution
     # (wrapped_nll already handles transformation internally)
-    final_nll = wrapped_nll(solution.value, None)
+    final_nll, _ = wrapped_nll(solution.value, None)
 
     return FitResult(
         params=fitted_pytree,

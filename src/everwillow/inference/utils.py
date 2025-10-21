@@ -56,7 +56,7 @@ def _resolve_keys(
 
 def _build_param_updates(
     state: sl.FlatState[tp.Any],
-    param_values: dict[str, tp.Any],
+    param_values: tp.Mapping[str | tuple[tp.Any, ...], float],
 ) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
     """Build canonical parameter updates from name-value pairs.
 

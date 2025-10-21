@@ -9,6 +9,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import typing as tp
 from functools import partial
 
 import jax
@@ -756,11 +757,14 @@ class TestInteractiveFixedParamFit:
         def nll(params):
             return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
 
-        param_values = {"mu": 1.5}
+        param_values: tp.Mapping[str | tuple[tp.Any, ...], float] = {"mu": 1.5}
         initial = {"mu": 0.0, "sigma": 0.5}
 
         result_interactive = ew.ifixed_param_fit(
-            param_values, nll, initial, max_steps=100
+            param_values,
+            nll,
+            initial,
+            max_steps=100,
         )
         result_standard = ew.fixed_param_fit(param_values, nll, initial)
 

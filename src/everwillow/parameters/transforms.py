@@ -228,9 +228,7 @@ class SoftPlusTransform(AbstractParameterTransformation):
         """Apply the inverse softplus, validating positivity and finiteness."""
         value = float_array(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
-        value = eqx.error_if(
-            value, value <= 0, f"expected positive inputs to {self}."
-        )
+        value = eqx.error_if(value, value <= 0, f"expected positive inputs to {self}.")
         return jnp.log(-jnp.expm1(-value)) + value
 
     def wrap(self, value: ArrayLike) -> ArrayLike:

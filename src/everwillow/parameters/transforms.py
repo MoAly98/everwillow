@@ -203,7 +203,7 @@ class OneSidedLogTransform(AbstractParameterTransformation):
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Convert an unconstrained value back into the one-sided bounded space."""
-        value = jnp.asarray(value)
+        value = float_array(value)
         if self.direction == "lower":
             return self.bound + jnp.exp(value)
         return self.bound - jnp.exp(value)

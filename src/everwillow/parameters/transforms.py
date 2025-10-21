@@ -3,12 +3,13 @@ Abstract base and implementations of parameter space transforms.
 """
 
 import abc
-import math
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
+from jaxtyping import ArrayLike
+
+from everwillow.util import float_array
 
 __all__ = [
     "AbstractParameterTransformation",
@@ -65,30 +66,32 @@ class MinuitTransform(AbstractParameterTransformation):
     Reference: https://root.cern.ch/download/minuit.pdf (Sec. 1.2.1).
     """
 
-    lower: float = eqx.field(static=True)
-    upper: float = eqx.field(static=True)
+    lower: ArrayLike
+    upper: ArrayLike
 
-    def __name__(self) -> str:
-        return "MinuitTransform"
-
-    # check for finite boundaries
     def __post_init__(self):
-        if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            message = f"{self.__name__} requires finite lower/upper bounds."
-            raise ValueError(message)
-        if self.lower >= self.upper:
-            message = (
-                f"{self.__name__} requires lower bound to be strictly less than "
-                "upper bound."
-            )
-            raise ValueError(message)
+        self.lower = eqx.error_if(
+            float_array(self.lower),
+            ~jnp.isfinite(self.lower),
+            "lower bound must be finite.",
+        )
+        self.upper = eqx.error_if(
+            float_array(self.upper),
+            ~jnp.isfinite(self.upper),
+            "upper bound must be finite.",
+        )
+        self.lower, self.upper = eqx.error_if(
+            (self.lower, self.upper),
+            self.lower >= self.upper,
+            f"{self} requires lower bound to be strictly less than upper bound.",
+        )
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
-        value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
+        value = float_array(value)
+        value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
         error_msg = (
-            f"Value passed to {self.__name__} is exactly at or outside the boundaries "
+            f"value passed to {self} is exactly at or outside the boundaries "
             f"[{self.lower}, {self.upper}]."
         )
         value = eqx.error_if(value, value <= self.lower, error_msg)
@@ -116,30 +119,33 @@ class SigmoidTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    lower: float = eqx.field(static=True)
-    upper: float = eqx.field(static=True)
-
-    def __name__(self) -> str:
-        return "SigmoidTransform"
+    lower: ArrayLike
+    upper: ArrayLike
 
     # check for finite boundaries
     def __post_init__(self):
-        if not math.isfinite(self.lower) or not math.isfinite(self.upper):
-            message = f"{self.__name__} requires finite lower/upper bounds."
-            raise ValueError(message)
-        if self.lower >= self.upper:
-            message = (
-                f"{self.__name__} requires lower bound to be strictly less than "
-                "upper bound."
-            )
-            raise ValueError(message)
+        self.lower = eqx.error_if(
+            float_array(self.lower),
+            ~jnp.isfinite(self.lower),
+            "lower bound must be finite.",
+        )
+        self.upper = eqx.error_if(
+            float_array(self.upper),
+            ~jnp.isfinite(self.upper),
+            "upper bound must be finite.",
+        )
+        self.lower, self.upper = eqx.error_if(
+            (self.lower, self.upper),
+            self.lower >= self.upper,
+            f"{self} requires lower bound to be strictly less than upper bound.",
+        )
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a bounded value into an unconstrained representation."""
-        value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
+        value = float_array(value)
+        value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
         error_msg = (
-            f"Value passed to {self.__name__} is exactly at or outside the boundaries "
+            f"value passed to {self} is exactly at or outside the boundaries "
             f"[{self.lower}, {self.upper}]."
         )
         value = eqx.error_if(value, value <= self.lower, error_msg)
@@ -166,40 +172,38 @@ class OneSidedLogTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    bound: float = eqx.field(static=True)
+    bound: ArrayLike
     direction: str = eqx.field(static=True)  # 'lower' or 'upper'
-
-    def __name__(self) -> str:
-        return "OneSidedLogTransform"
 
     # check for finite lower boundary
     def __post_init__(self):
         if self.direction not in ("lower", "upper"):
-            message = f"Unsupported direction {self.direction!r} for {self.__name__}."
+            message = f"unsupported direction {self.direction!r} for {self}."
             raise ValueError(message)
-        if not math.isfinite(self.bound):
-            message = f"{self.__name__} requires a finite bound."
-            raise ValueError(message)
+        self.bound = eqx.error_if(
+            float_array(self.bound), ~jnp.isfinite(self.bound), "bound must be finite."
+        )
 
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Convert a single-sided bounded value into an unconstrained representation."""
-        value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
+        value = float_array(value)
+        value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
         if self.direction == "lower":
             error_msg = (
-                f"Value passed to {self.__name__} must be greater than lower bound "
-                f"{self.bound}."
+                f"value passed to {self} must be greater than lower bound {self.bound}."
             )
             value = eqx.error_if(value, value <= self.bound, error_msg)
             return jnp.log(value - self.bound)
 
-        error_msg = f"Value passed to {self.__name__} must be less than upper bound {self.bound}."
+        error_msg = (
+            f"value passed to {self} must be less than upper bound {self.bound}."
+        )
         value = eqx.error_if(value, value >= self.bound, error_msg)
         return jnp.log(self.bound - value)
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Convert an unconstrained value back into the one-sided bounded space."""
-        value = jnp.asarray(value)
+        value = float_array(value)
         if self.direction == "lower":
             return self.bound + jnp.exp(value)
         return self.bound - jnp.exp(value)
@@ -220,16 +224,11 @@ class SoftPlusTransform(AbstractParameterTransformation):
         Array(True, dtype=bool)
     """
 
-    def __name__(self) -> str:
-        return "SoftPlusTransform"
-
     def unwrap(self, value: ArrayLike) -> ArrayLike:
         """Apply the inverse softplus, validating positivity and finiteness."""
-        value = jnp.asarray(value)
-        value = eqx.error_if(value, ~jnp.isfinite(value), "Value must be finite.")
-        value = eqx.error_if(
-            value, value < 0, "Expected positive inputs to inv_softplus."
-        )
+        value = float_array(value)
+        value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
+        value = eqx.error_if(value, value <= 0, f"expected positive inputs to {self}.")
         return jnp.log(-jnp.expm1(-value)) + value
 
     def wrap(self, value: ArrayLike) -> ArrayLike:

@@ -228,7 +228,6 @@ def fit(
     if solver is None:
         solver = optx.BFGS(rtol=1e-5, atol=1e-5)
 
-    # Initial values for free parameters (in same order as free_keys)
     # Minimize
     solution = optx.minimise(
         wrapped_nll,

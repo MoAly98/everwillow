@@ -226,6 +226,12 @@ class TestSoftPlusTransform:
         with pytest.raises(ValueError, match="expected positive inputs"):
             transform.unwrap(-0.1)
 
+    def test_raises_on_zero_input(self):
+        """unwrap enforces non-negative inputs."""
+        transform = transforms.SoftPlusTransform()
+        with pytest.raises(ValueError, match="expected positive inputs"):
+            transform.unwrap(0.0)
+
 
 class TestInternalHelpers:
     """Validate behaviour of module-private helpers."""

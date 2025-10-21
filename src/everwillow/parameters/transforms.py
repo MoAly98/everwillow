@@ -229,7 +229,7 @@ class SoftPlusTransform(AbstractParameterTransformation):
         value = float_array(value)
         value = eqx.error_if(value, ~jnp.isfinite(value), "value must be finite.")
         value = eqx.error_if(
-            value, value < 0, "expected positive inputs to inv_softplus."
+            value, value <= 0, f"expected positive inputs to {self}."
         )
         return jnp.log(-jnp.expm1(-value)) + value
 

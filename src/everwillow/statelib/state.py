@@ -21,19 +21,19 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 import jax.tree_util as jtu
+from jaxtyping import ArrayLike, PyTree, PyTreeDef
 
 from .key_paths import canonical_key, derive_key_path, ensure_public_key
 
 KeyPath: tp.TypeAlias = tuple[tp.Any, ...]
-V = tp.TypeVar("V")
+V = tp.TypeVar("V", bound=ArrayLike)
 
-PyTree: tp.TypeAlias = tp.Any
 SegmentKeyPaths: tp.TypeAlias = tp.Mapping[KeyPath, KeyPath]
 TreeFlattenMetadata: tp.TypeAlias = tuple[
     tuple[KeyPath, ...],
     object,
-    tp.Mapping[object, jtu.PyTreeDef | None],
-    dict[object, frozenset[KeyPath]],
+    tp.Mapping[object, PyTreeDef | None],
+    tp.Mapping[object, frozenset[KeyPath]],
     tp.Mapping[object, SegmentKeyPaths],
 ]
 TreeFlattenResult: tp.TypeAlias = tuple[
@@ -45,13 +45,13 @@ TreeFlattenResult: tp.TypeAlias = tuple[
 
 @dataclasses.dataclass(slots=True, frozen=True)
 class _SegmentRecord(tp.Generic[V]):
-    """Internal bookkeeping for a single segment of the flat state."""
+    """Lightweight container describing a single flattened segment."""
 
-    treedef: jtu.PyTreeDef | None
+    treedef: PyTreeDef | None
     keys: frozenset[KeyPath]
     values: dict[KeyPath, V]
     key_paths: dict[KeyPath, KeyPath]
-    full_key_order: tuple[KeyPath, ...] | None
+    order: tuple[KeyPath, ...]
 
     def copy(self) -> _SegmentRecord[V]:
         return _SegmentRecord(
@@ -59,8 +59,41 @@ class _SegmentRecord(tp.Generic[V]):
             frozenset(self.keys),
             dict(self.values),
             dict(self.key_paths),
-            self.full_key_order,
+            tuple(self.order),
         )
+
+
+class _SegmentKeyPathsView(Mapping[KeyPath, KeyPath]):
+    """Immutable view over stored key-path metadata with ordering information."""
+
+    __slots__ = ("_data", "order")
+
+    def __init__(
+        self,
+        key_paths: tp.Mapping[KeyPath, KeyPath],
+        order: tuple[KeyPath, ...] | None,
+    ) -> None:
+        normalized_paths = {key: tuple(path) for key, path in key_paths.items()}
+        self._data = types.MappingProxyType(normalized_paths)
+        self.order = tuple(order) if order is not None else None
+
+    def __getitem__(self, key: KeyPath) -> KeyPath:
+        return self._data[key]
+
+    def __iter__(self) -> tp.Iterator[KeyPath]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def items(self) -> tp.ItemsView[KeyPath, KeyPath]:
+        return self._data.items()
+
+    def keys(self) -> tp.KeysView[KeyPath]:
+        return self._data.keys()
+
+    def values(self) -> tp.ValuesView[KeyPath]:
+        return self._data.values()
 
 
 class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
@@ -107,7 +140,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         mapping: tp.Mapping[KeyPath, V] | tp.Any,
         /,
         *,
-        treedef: jtu.PyTreeDef | None = None,
+        treedef: PyTreeDef | None = None,
         key_paths: tp.Mapping[KeyPath, KeyPath] | None = None,
     ) -> FlatState[V]:
         """Construct a ``FlatState`` from a mapping of canonical key tuples.
@@ -155,7 +188,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         key_order = tuple(slice_map.keys())
         segment = _SegmentRecord(
             treedef,
-            frozenset(slice_map.keys()),
+            frozenset(slice_map),
             slice_map,
             path_map,
             key_order,
@@ -189,7 +222,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return types.MappingProxyType(self._mapping)
 
     @property
-    def treedefs(self) -> tp.Mapping[object, jtu.PyTreeDef | None]:
+    def treedefs(self) -> tp.Mapping[object, PyTreeDef | None]:
         """Mapping of segment identifiers to JAX treedefs."""
         data = {
             segment_id: self._segments[segment_id].treedef
@@ -209,7 +242,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
     def is_partitioned(self) -> bool:
         """Return True when any segment is missing keys from its original order."""
         return any(
-            len(record.values) != len(_segment_key_order(record))
+            len(record.values) != len(record.order)
             for record in self._segments.values()
         )
 
@@ -323,7 +356,7 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
             path_map[public_key] = tuple(path)
         return cls._new(mapping_dict, treedef=treedef, key_paths=path_map)
 
-    def to_pytree(self, treedef: jtu.PyTreeDef | None = None) -> PyTree:
+    def to_pytree(self, treedef: PyTreeDef | None = None) -> PyTree:
         """Rebuild the original pytree representation of the state.
 
         Args:
@@ -363,35 +396,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         return jtu.tree_unflatten(treedef, self._mapping.values())
 
     def tree_flatten(self) -> TreeFlattenResult:
-        """Return the flattened values and accompanying metadata.
-
-        Returns:
-            Tuple containing the flattened values, metadata required for
-            ``tree_unflatten``, and the ordered keys.
-        """
-        keys = tuple(self._mapping)
-        treedefs_map = {
-            segment_id: self._segments[segment_id].treedef
-            for segment_id in self._segment_order
-        }
-        own_keys_map = {
-            segment_id: self._segments[segment_id].keys
-            for segment_id in self._segment_order
-        }
-        key_paths_map = {
-            segment_id: types.MappingProxyType(
-                dict(self._segments[segment_id].key_paths),
-            )
-            for segment_id in self._segment_order
-        }
-        metadata: TreeFlattenMetadata = (
-            keys,
-            self._primary_segment,
-            types.MappingProxyType(treedefs_map),
-            {segment_id: frozenset(own) for segment_id, own in own_keys_map.items()},
-            types.MappingProxyType(key_paths_map),
-        )
-        return ([self[key] for key in keys], metadata, keys)
+        """Compatibility wrapper delegating to :func:`tree_flatten`."""
+        return tree_flatten(self)
 
     @classmethod
     def tree_unflatten(
@@ -399,53 +405,8 @@ class FlatState(Mapping[KeyPath, V], tp.Generic[V]):
         metadata: TreeFlattenMetadata,
         children: Iterable[V],
     ) -> FlatState[V]:
-        """Reconstruct a ``FlatState`` from flatten metadata.
-
-        Args:
-            metadata: Metadata tuple produced by ``tree_flatten``.
-            children: Iterable of values matching the flattened order.
-
-        Returns:
-            Reconstructed ``FlatState``.
-
-        Raises:
-            ValueError: If the number of provided children does not match the
-                metadata.
-        """
-        keys, primary_segment, treedefs, own_keys, key_paths = metadata
-        value_list = list(children)
-        if len(value_list) != len(keys):
-            message = "Tree flatten metadata has mismatched lengths"
-            raise ValueError(message)
-        flat_mapping: dict[KeyPath, V] = dict(zip(keys, value_list, strict=True))
-        flat_state = object.__new__(cls)
-        flat_state._primary_segment = primary_segment
-        flat_state._segment_order = list(own_keys.keys())
-        flat_state._segments = {}
-        for segment_id, keys_set in own_keys.items():
-            record_treedef = treedefs[segment_id]
-            key_set = frozenset(keys_set)
-            values = {key: flat_mapping[key] for key in key_set}
-            stored_key_paths = key_paths.get(segment_id)
-            if stored_key_paths is None:
-                segment_key_paths = {key: derive_key_path(key) for key in key_set}
-            else:
-                segment_key_paths = {
-                    key: tuple(path) for key, path in stored_key_paths.items()
-                }
-                for key in key_set:
-                    segment_key_paths.setdefault(key, derive_key_path(key))
-            segment_order = tuple(key for key in keys if key in key_set)
-            flat_state._segments[segment_id] = _SegmentRecord(
-                record_treedef,
-                key_set,
-                values,
-                segment_key_paths,
-                segment_order,
-            )
-        flat_state._rebuild_mapping()
-        _validate_state(flat_state)
-        return flat_state
+        """Compatibility wrapper delegating to :func:`tree_unflatten`."""
+        return tree_unflatten(metadata, children, cls=cls)
 
 
 def map_state(
@@ -582,6 +543,10 @@ def update_state(
         {'a': 42, 'b': 2}
     """
     new_state = state.copy()
+
+    if len(updates) == 0:
+        return new_state
+
     for raw_key, value in updates.items():
         key: KeyPath = ensure_public_key(raw_key)
         found = False
@@ -602,20 +567,13 @@ def update_state(
     return new_state
 
 
-def _segment_key_order(record: _SegmentRecord[V]) -> tuple[KeyPath, ...]:
-    order = record.full_key_order
-    if order is not None:
-        return order
-    return tuple(record.values.keys())
-
-
 def _subset_segment(
     record: _SegmentRecord[V],
     keys: tp.AbstractSet[KeyPath],
 ) -> _SegmentRecord[V]:
-    order = _segment_key_order(record)
-    values: dict[KeyPath, V] = {
-        key: record.values[key] for key in order if key in record.values and key in keys
+    order = record.order
+    values = {
+        key: record.values[key] for key in order if key in keys and key in record.values
     }
     key_paths = {key: record.key_paths[key] for key in values}
     return _SegmentRecord(
@@ -638,8 +596,8 @@ def _merge_partition_records(
         )
         raise ValueError(message)
 
-    order_first = _segment_key_order(first)
-    order_second = _segment_key_order(second)
+    order_first = first.order
+    order_second = second.order
     if order_first != order_second:
         message = (
             "Partitions carry mismatched key-order metadata. Recreate them from "
@@ -676,11 +634,7 @@ def _merge_partition_records(
             continue
 
     return _SegmentRecord(
-        first.treedef,
-        frozenset(values),
-        values,
-        key_paths,
-        order_first,
+        first.treedef, frozenset(values), values, key_paths, order_first
     )
 
 
@@ -861,9 +815,87 @@ def _gather_leaf_key_paths(state: FlatState[V]) -> dict[KeyPath, KeyPath]:
     return {key: _key_path_for(state, key) for key in state._mapping}
 
 
+def tree_flatten(state: FlatState[V]) -> TreeFlattenResult:
+    """Return flattened values and metadata for a ``FlatState`` instance."""
+    keys = tuple(state._mapping)
+    treedefs_map: dict[object, PyTreeDef | None] = {}
+    own_keys_map: dict[object, frozenset[KeyPath]] = {}
+    key_paths_map: dict[object, _SegmentKeyPathsView] = {}
+    for segment_id in state._segment_order:
+        record = state._segments[segment_id]
+        treedefs_map[segment_id] = record.treedef
+        own_keys_map[segment_id] = record.keys
+        key_paths_map[segment_id] = _SegmentKeyPathsView(record.key_paths, record.order)
+
+    metadata: TreeFlattenMetadata = (
+        keys,
+        state._primary_segment,
+        types.MappingProxyType(treedefs_map),
+        types.MappingProxyType(own_keys_map),
+        types.MappingProxyType(key_paths_map),
+    )
+    return ([state[key] for key in keys], metadata, keys)
+
+
+def tree_unflatten(
+    metadata: TreeFlattenMetadata,
+    children: Iterable[V],
+    *,
+    cls: type[FlatState[V]] = FlatState,
+) -> FlatState[V]:
+    """Reconstruct a ``FlatState`` from flatten metadata."""
+    keys, primary_segment, treedefs, own_keys, key_paths = metadata
+
+    values_list = list(children)
+    if len(values_list) != len(keys):
+        message = "Tree flatten metadata has mismatched lengths"
+        raise ValueError(message)
+
+    flat_mapping: dict[KeyPath, V] = dict(zip(keys, values_list, strict=True))
+    flat_state = tp.cast(FlatState[V], object.__new__(cls))
+    flat_state._primary_segment = primary_segment
+    flat_state._segment_order = list(own_keys.keys())
+    flat_state._segments = {}
+
+    for segment_id in flat_state._segment_order:
+        owned_keys = own_keys[segment_id]
+        record_treedef = treedefs[segment_id]
+
+        stored_key_paths = key_paths.get(segment_id)
+        if stored_key_paths is None:
+            segment_key_paths = {key: derive_key_path(key) for key in owned_keys}
+            stored_order: tuple[KeyPath, ...] | None = None
+        else:
+            segment_key_paths = {
+                key: tuple(path) for key, path in stored_key_paths.items()
+            }
+            for key in owned_keys:
+                segment_key_paths.setdefault(key, derive_key_path(key))
+            stored_order = getattr(stored_key_paths, "order", None)
+
+        if stored_order is not None:
+            order = tuple(stored_order)
+        else:
+            order = tuple(key for key in keys if key in owned_keys)
+
+        segment_values = {key: flat_mapping[key] for key in order if key in owned_keys}
+        flat_state._segments[segment_id] = _SegmentRecord(
+            record_treedef,
+            frozenset(owned_keys),
+            segment_values,
+            segment_key_paths,
+            order,
+        )
+
+    flat_state._rebuild_mapping()
+    _validate_state(flat_state)
+    return flat_state
+
+
 def _flatstate_flatten(state: FlatState[V]) -> tuple[list[V], TreeFlattenMetadata]:
     """Wrapper used by JAX pytree registration."""
-    values, metadata, _ = state.tree_flatten()
+
+    values, metadata, _ = tree_flatten(state)
     return values, metadata
 
 
@@ -871,7 +903,7 @@ def _flatstate_flatten_with_keys(
     state: FlatState[V],
 ) -> tuple[list[tuple[KeyPath, V]], TreeFlattenMetadata]:
     """Return flattened pairs of key paths and values for JAX."""
-    values, metadata, keys = state.tree_flatten()
+    values, metadata, keys = tree_flatten(state)
     key_lookup = _gather_leaf_key_paths(state)
     key_children = [
         (key_lookup[key], value) for key, value in zip(keys, values, strict=True)
@@ -884,7 +916,7 @@ def _flatstate_unflatten(
     children: Iterable[V],
 ) -> FlatState[V]:
     """Inverse of :func:`_flatstate_flatten` for JAX pytree support."""
-    return FlatState.tree_unflatten(metadata, children)
+    return tree_unflatten(metadata, children, cls=FlatState)
 
 
 # Register FlatState as a JAX pytree node

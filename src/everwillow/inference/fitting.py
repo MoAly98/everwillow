@@ -3,23 +3,23 @@
 from __future__ import annotations
 
 import typing as tp
-from dataclasses import dataclass
 
-import jax.numpy as jnp
+import equinox as eqx
+import jax
 import optimistix as optx
+from jaxtyping import PyTree
 
 import everwillow.parameters.bounds as bounds_module
 import everwillow.statelib as sl
 
 
-@dataclass(frozen=True)
-class FitResult:
+class FitResult(eqx.Module):
     """Result of a fit operation."""
 
-    params: tp.Any  #: Fitted parameter pytree (same structure as input).
-    nll: float  #: Negative log-likelihood at the optimum.
-    success: bool  #: Whether the optimisation converged.
-    solver_result: tp.Any = None  #: Raw solver result (optional).
+    params: PyTree  #: Fitted parameter pytree.
+    nll: jax.Array  #: Negative log-likelihood at the optimum.
+    success: jax.Array  #: Whether the optimisation converged.
+    solver_result: PyTree  #: Raw solver result.
 
 
 def _resolve_fixed_keys(
@@ -114,17 +114,15 @@ def _resolve_name_keys(
 
 
 def fit(
-    nll_fn: tp.Callable[..., float],
-    params: tp.Any,
+    nll_fn: tp.Callable[[PyTree], float],
+    params: PyTree,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
-    **solver_kwargs,
+    **minimise_kwargs,
 ) -> FitResult:
     """Perform an unconditional maximum-likelihood fit.
 
@@ -153,10 +151,7 @@ def fit(
             fixed. This is evaluated in addition to ``fixed`` when provided.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
-            pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**solver_kwargs``: Additional keyword arguments forwarded to
+        ``**minimise_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:
@@ -169,10 +164,12 @@ def fit(
         >>> result = fit(my_nll, {"mu": 0.0, "sigma": 0.5})
         >>> result.params["mu"]  # Should be close to 2.0
 
-        >>> # With additional arguments
+        >>> # With additional arguments (partial)
+        >>> from functools import partial
+        >>>
         >>> def my_nll(params, data, templates, *, config):
         ...     return compute_loss(params, data, templates, config)
-        >>> result = fit(my_nll, initial_params, args=(data, templates), kwargs={"config": cfg})
+        >>> result = fit(partial(my_nll, data, templates, config=cfg), initial_params)
 
         >>> # Fix background while fitting mu and sigma
         >>> def my_nll(params):
@@ -200,116 +197,76 @@ def fit(
     # Convert to FlatState for manipulation
     param_state = sl.FlatState.from_pytree(params)
 
-    resolved_bounds: dict[str | tuple[tp.Any, ...], bounds_module.TransformSpec] = (
-        {} if bounds is None else dict(bounds)
-    )
+    if bounds is None:
+        bounds = {}
 
-    (
-        unbounded_param_state,
-        _unwrap_transforms,
-        wrap_transforms,
-    ) = bounds_module.apply_bounds_transform(param_state, resolved_bounds)
+    # Apply bounds transformations and get inverse transform map `wrap` for later
+    param_state_t, _, wrap = bounds_module.apply_bounds_transform(param_state, bounds)
 
-    fixed_keys = _resolve_fixed_keys(unbounded_param_state, fixed, fixed_predicate)
+    fixed_keys = _resolve_fixed_keys(param_state_t, fixed, fixed_predicate)
 
-    if fixed_keys:
-        fixed_state, free_state = sl.partition_state(
-            unbounded_param_state, keys=fixed_keys
-        )
-    else:
-        fixed_state = None
-        free_state = unbounded_param_state
-
-    # Get keys for free parameters in consistent order
-    free_keys = list(free_state.raw_mapping.keys())
-
-    # Handle kwargs default
-    kwargs = kwargs or {}
+    # Partition state into fixed and free components
+    fixed_state, free_state = sl.partition_state(param_state_t, keys=fixed_keys)
 
     # Wrap nll to only take free parameters (as flat array)
-    def wrapped_nll(free_values, _args):
-        # Update free state with new values (in unbounded space)
-        updates = dict(zip(free_keys, free_values, strict=True))
-        updated_free = sl.update_state(free_state, updates)
+    def wrapped_nll(new_state, args):
+        (fixed_state,) = args
 
         # Combine partitions back together (still in unbounded space)
-        full_unbounded_state = (
-            updated_free
-            if fixed_state is None
-            else sl.combine_partitions(fixed_state, updated_free)
-        )
+        full_state_t = sl.combine_partitions(fixed_state, new_state)
 
         # Transform back to bounded space for NLL evaluation
-        if wrap_transforms:
-            full_bounded_state = sl.apply_transformations(
-                full_unbounded_state, wrap_transforms
-            )
-        else:
-            full_bounded_state = full_unbounded_state
+        full_state = sl.apply_transformations(full_state_t, wrap)
 
         # Convert to pytree for user's nll_fn
-        full_pytree = full_bounded_state.to_pytree()
+        full_pytree = full_state.to_pytree()
 
         # Call user's nll_fn with params + additional args/kwargs
-        return nll_fn(full_pytree, *args, **kwargs)
+        return nll_fn(full_pytree)
 
     # Set up solver
     if solver is None:
         solver = optx.BFGS(rtol=1e-5, atol=1e-5)
 
     # Initial values for free parameters (in same order as free_keys)
-    y0 = jnp.array([free_state[k] for k in free_keys])
-
     # Minimize
-    solution = optx.minimise(wrapped_nll, solver, y0=y0, **solver_kwargs)
-
-    # Reconstruct fitted parameters (in unbounded space)
-    fitted_updates = dict(zip(free_keys, solution.value, strict=True))
-    fitted_free = sl.update_state(free_state, fitted_updates)
-
-    # Combine with fixed partition if one existed (still in unbounded space)
-    fitted_full_unbounded_state = (
-        fitted_free
-        if fixed_state is None
-        else sl.combine_partitions(fixed_state, fitted_free)
+    solution = optx.minimise(
+        wrapped_nll,
+        solver,
+        y0=free_state,
+        args=(fixed_state,),
+        **minimise_kwargs,
     )
 
+    # Combine with fixed partition if one existed (still in unbounded space)
+    fitted_full_state_t = sl.combine_partitions(fixed_state, solution.value)
+
     # Transform back to bounded space for final result
-    if wrap_transforms:
-        fitted_full_state = sl.apply_transformations(
-            fitted_full_unbounded_state, wrap_transforms
-        )
-    else:
-        fitted_full_state = fitted_full_unbounded_state
+    fitted_full_state = sl.apply_transformations(fitted_full_state_t, wrap)
 
     # Convert back to original pytree structure
-    fitted_pytree = fitted_full_state.to_pytree()
+    fitted_params = fitted_full_state.to_pytree()
 
-    # Get the final NLL value by evaluating wrapped_nll at the solution
-    # (wrapped_nll already handles transformation internally)
-    final_nll = wrapped_nll(solution.value, None)
-
+    # Return result
     return FitResult(
-        params=fitted_pytree,
-        nll=float(final_nll),
-        success=True,  # TODO: Check convergence
+        params=fitted_params,
+        nll=solution.state.f_info.f,
+        success=solution.result == optx.RESULTS.successful,
         solver_result=solution,
     )
 
 
 def fixed_param_fit(
-    param_values: dict[str, float],
+    param_values: PyTree,
     nll_fn: tp.Callable[..., float],
-    params: tp.Any,
+    params: PyTree,
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
     *,
     bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
     | None = None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
     solver: optx.AbstractMinimiser | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
-    **solver_kwargs,
+    **minimise_kwargs,
 ) -> FitResult:
     """
     Perform a profile-likelihood style fit with selected parameters frozen.
@@ -336,10 +293,7 @@ def fixed_param_fit(
             as fixed.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
-        args: Positional arguments forwarded to ``nll_fn`` after the parameter
-            pytree.
-        kwargs: Keyword arguments forwarded to ``nll_fn``.
-        ``**solver_kwargs``: Additional keyword arguments forwarded to
+        ``**minimise_kwargs``: Additional keyword arguments forwarded to
             :func:`optimistix.minimise`.
 
     Returns:
@@ -386,7 +340,5 @@ def fixed_param_fit(
         bounds=bounds,
         fixed_predicate=fixed_predicate,
         solver=solver,
-        args=args,
-        kwargs=kwargs,
-        **solver_kwargs,
+        **minimise_kwargs,
     )

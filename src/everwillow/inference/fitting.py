@@ -489,7 +489,7 @@ def ifit(
 
 
 def fixed_param_fit(
-    param_values: dict[str, float],
+    param_values: tp.Mapping[str | tuple[tp.Any, ...], float],
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
     *,
@@ -574,7 +574,7 @@ def fixed_param_fit(
 
 
 def ifixed_param_fit(
-    param_values: dict[str, float],
+    param_values: tp.Mapping[str | tuple[tp.Any, ...], float],
     nll_fn: tp.Callable[..., float],
     params: tp.Any,
     *,

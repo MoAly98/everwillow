@@ -77,7 +77,7 @@ def _build_param_updates(
 
 def _prepare_fixed_param_state(
     params: tp.Any,
-    param_values: dict[str, tp.Any],
+    param_values: tp.Mapping[str | tuple[tp.Any, ...], float],
     fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
     fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
 ) -> tuple[tp.Any, list[tuple[tp.Any, ...]]]:

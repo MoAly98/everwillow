@@ -41,7 +41,7 @@ test = ["pytest >=7", "pytest-cov >=3", "coverage[toml]"]
 docs = [
     "sphinx>=7",
     "furo",
-    "myst-parser<4",
+    "myst-parser<5",
     "sphinx-design",
     "sphinx-togglebutton",
     "sphinx-copybutton",

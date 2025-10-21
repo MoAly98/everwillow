@@ -43,7 +43,7 @@ def _resolve_keys(
                 message = f"Parameter not found in state: {entry}"
                 raise KeyError(message)
             if len(matches) > 1:
-                matches_str = ", ".join(str(k) for k in matches)
+                matches_str = ", ".join(str(k) for k in sorted(matches, key=str))
                 message = (
                     f"Ambiguous parameter name '{entry}' matches multiple keys: "
                     f"{matches_str}. Use the full tuple key to disambiguate."

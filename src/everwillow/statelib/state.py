@@ -916,6 +916,7 @@ def _flatstate_unflatten(
     children: Iterable[V],
 ) -> FlatState[V]:
     """Inverse of :func:`_flatstate_flatten` for JAX pytree support."""
+    # this should not be hardcoded to FlatState if we want to support subclasses
     return tree_unflatten(metadata, children, cls=FlatState)
 
 

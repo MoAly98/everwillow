@@ -201,12 +201,16 @@ def fit(
         bounds = {}
 
     # Apply bounds transformations and get inverse transform map `wrap` for later
-    param_state_t, _, wrap = bounds_module.apply_bounds_transform(param_state, bounds)
+    param_state_transformed, _, wrap = bounds_module.apply_bounds_transform(
+        param_state, bounds
+    )
 
-    fixed_keys = _resolve_fixed_keys(param_state_t, fixed, fixed_predicate)
+    fixed_keys = _resolve_fixed_keys(param_state_transformed, fixed, fixed_predicate)
 
     # Partition state into fixed and free components
-    fixed_state, free_state = sl.partition_state(param_state_t, keys=fixed_keys)
+    fixed_state, free_state = sl.partition_state(
+        param_state_transformed, keys=fixed_keys
+    )
 
     # Wrap nll to only take free parameters (as flat array)
     def wrapped_nll(new_state, args):

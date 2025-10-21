@@ -327,7 +327,7 @@ def fit(
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            arguments supplied via ``fn_args``/``fn_kwargs``.
         params: Initial parameter values organized as a pytree (e.g. mapping or
             nested containers).
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
@@ -424,7 +424,7 @@ def ifit(
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            arguments supplied via ``fn_args``/``fn_kwargs``.
         params: Initial parameter values organized as a pytree (e.g. mapping or
             nested containers).
         fixed: Optional sequence of leaf names (``str``) or canonical key tuples
@@ -517,7 +517,7 @@ def fixed_param_fit(
             injected prior to optimization.
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            arguments supplied via ``fn_args``/``fn_kwargs``.
         params: Initial parameter values organized as a pytree.
         fixed: Additional parameters to hold fixed, expressed as leaf names or
             canonical key tuples.
@@ -604,7 +604,7 @@ def ifixed_param_fit(
             injected prior to optimization.
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            arguments supplied via ``fn_args``/``fn_kwargs``.
         params: Initial parameter values organized as a pytree.
         fixed: Additional parameters to hold fixed, expressed as leaf names or
             canonical key tuples.

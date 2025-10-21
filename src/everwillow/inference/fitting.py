@@ -290,8 +290,7 @@ def _fit(
 
     # Get the final NLL value by evaluating wrapped_nll at the solution
     # (wrapped_nll already handles transformation internally)
-    final_eval = wrapped_nll(solution.value, None)
-    final_nll = final_eval[0] if isinstance(final_eval, tuple) else final_eval
+    final_nll = wrapped_nll(solution.value, None)
 
     return FitResult(
         params=fitted_pytree,

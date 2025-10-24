@@ -1,19 +1,20 @@
 """Minimal wrapper around the evermore reference example."""
 
 from collections.abc import Mapping
+from functools import partial
+from typing import NamedTuple
 
-import equinox as eqx
 import evermore as evm
 import jax
 import jax.numpy as jnp
 import optimistix as optx
+from flax import nnx
+from model_config import DEFAULT_DATA, ModelData, expected_components
 
-from .model_config import DEFAULT_DATA, ModelData, expected_components
-
-jax.config.update("jax_enable_x64", True)
+import everwillow as ew
 
 
-class Params(eqx.Module):
+class Params(NamedTuple):
     mu: evm.Parameter
     norm1: evm.NormalParameter
     norm2: evm.NormalParameter
@@ -75,14 +76,13 @@ def model(params: Params, hists: dict[str, dict[str, jnp.ndarray]]):
     return expectations
 
 
-@eqx.filter_jit
+@nnx.jit
 def loss(
     dynamic: Params,
-    static: Params,
-    hists: dict[str, dict[str, jnp.ndarray]],
-    observation: jnp.ndarray,
+    args: tuple,
 ) -> jnp.ndarray:
-    params = evm.tree.combine(dynamic, static)
+    graphdef, static, hists, observation = args
+    params = nnx.merge(graphdef, dynamic, static)
     expectations = model(params, hists)
     constraints = evm.loss.get_log_probs(params)
     log_prob = (
@@ -90,78 +90,49 @@ def loss(
         .log_prob(observation)
         .sum()
     )
-    log_prob += evm.util.sum_over_leaves(constraints)
+    log_prob += evm.util.sum_over_leaves(jax.tree.map(jnp.sum, constraints))
     return -jnp.sum(log_prob)
 
 
 def fit_with_optimistix(
-    data: ModelData = DEFAULT_DATA,
+    components,
     max_steps: int = 10_000,
 ):
-    params, hists, observation = build_components(data)
-    dynamic, static = evm.tree.partition(params)
-
-    def optx_loss(dynamic_params, args):
-        static_params, hists_, obs_ = args
-        return loss(dynamic_params, static_params, hists_, obs_)
+    params, hists, observation = components
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
 
     solver = optx.BFGS(rtol=1e-5, atol=1e-7)
     result = optx.minimise(
-        optx_loss,
+        loss,
         solver,
         dynamic,
         has_aux=False,
-        args=(static, hists, observation),
+        args=(graphdef, static, hists, observation),
         max_steps=max_steps,
     )
 
-    best = evm.tree.combine(result.value, static)
-    nll = float(loss(result.value, static, hists, observation))
+    best = result.value.to_pure_dict()
+    nll = result.state.f_info.f
 
-    return (
-        {
-            "mu": float(best.mu.value),
-            "norm1": float(best.norm1.value),
-            "norm2": float(best.norm2.value),
-            "shape1": float(best.shape1.value),
-        },
-        nll,
-    )
+    return best, nll
 
 
 def fit_with_everwillow(
-    data: ModelData = DEFAULT_DATA,
+    components,
     max_steps: int = 150,
 ):
-    import everwillow as ew
+    params, hists, observation = components
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
 
-    params, hists, observation = build_components(data)
-    dynamic, static = evm.tree.partition(params)
-
-    def nll(param_dict: Mapping[str, float]) -> jnp.ndarray:
-        updated = evm.tree.update_values(
-            dynamic,
-            values=Params(
-                mu=param_dict["mu"],
-                norm1=param_dict["norm1"],
-                norm2=param_dict["norm2"],
-                shape1=param_dict["shape1"],
-            ),
-        )
-        return loss(updated, static, hists, observation)
+    args = (graphdef, static, hists, observation)
 
     result = ew.fit(
-        nll,
-        {
-            "mu": float(params.mu.value),
-            "norm1": float(params.norm1.value),
-            "norm2": float(params.norm2.value),
-            "shape1": float(params.shape1.value),
-        },
+        partial(loss, args=args),
+        params=dynamic,
         max_steps=max_steps,
     )
 
-    return dict(result.params), float(result.nll)
+    return result.params.to_pure_dict(), result.nll
 
 
 def summarise_evermore_fit(params: Mapping[str, float], data: ModelData = DEFAULT_DATA):

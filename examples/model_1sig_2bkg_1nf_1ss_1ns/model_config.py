@@ -4,8 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import jax.numpy as jnp
-
-from .utils import log_normal_modifier, shape_interpolate
+from utils import log_normal_modifier, shape_interpolate
 
 
 @dataclass(frozen=True)

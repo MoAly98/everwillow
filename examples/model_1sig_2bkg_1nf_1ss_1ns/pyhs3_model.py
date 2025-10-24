@@ -2,22 +2,22 @@
 
 from collections.abc import Mapping
 
+import jax
 import jax.numpy as jnp
 import pyhs3
-from pyhs3.data import PointData
-from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
-from pyhs3.functions import GenericFunction
-from pyhs3.metadata import Metadata
-from pyhs3.parameter_points import ParameterPoint, ParameterSet
-
-from .model_config import (
+from model_config import (
     DEFAULT_DATA,
     ModelData,
     default_initial_params,
     expected_components,
     gaussian_constraint_width,
 )
-from .utils import jaxify_distribution
+from pyhs3.data import PointData
+from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
+from pyhs3.functions import GenericFunction
+from pyhs3.metadata import Metadata
+from pyhs3.parameter_points import ParameterPoint, ParameterSet
+from utils import jaxify_distribution
 
 
 def build_pyhs3(
@@ -50,6 +50,7 @@ def build_pyhs3(
     }
     fixed_values = {point.name: float(point.value) for point in workspace.data}
 
+    @jax.jit
     def nll(params: Mapping[str, float]) -> jnp.ndarray:
         merged = {**fixed_values, **params}
         ordered = [merged[var.name] for var in inputs]

@@ -153,7 +153,7 @@ def fit_with_everwillow(
     slices: dict[str, slice],
     *,
     max_steps: int = 150,
-) -> tuple[jnp.ndarray, float]:
+) -> tuple[dict[str, float], float]:
     import everwillow as ew
 
     nll = nll_fn(model, data_vector)
@@ -162,5 +162,5 @@ def fit_with_everwillow(
     return vector_to_dict(params, slices), float(result.nll)
 
 
-def summarise_pyhf(params: jnp.ndarray, data: ModelData = DEFAULT_DATA):
+def summarise_pyhf(params: dict[str, float], data: ModelData = DEFAULT_DATA):
     return expected_components(params, data=data)

@@ -74,6 +74,10 @@ def apply_transformations(
     if not isinstance(state, FlatState):
         message = "'state' must be a FlatState instance"
         raise TypeError(message)
+
+    if len(transformations) == 0:
+        return state.copy()
+
     state_instance = tp.cast(FlatState[ValueT], state)
     normalized_transformations: dict[KeyPath, Transform[ValueT]] = {
         ensure_public_key(key): transform for key, transform in transformations.items()

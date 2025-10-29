@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import typing as tp
 
+import jax.tree_util as jtu
 import pytest
 
 import everwillow.statelib as sl
@@ -85,6 +86,19 @@ class TestFlatStateConstruction:
             key_paths[tag] = {}  # type: ignore[index]
         with pytest.raises(TypeError):
             path_map[first_key] = ()  # type: ignore[index]
+
+    def test_jax_flatten_roundtrip_preserves_state(self) -> None:
+        """JAX flatten/unflatten returns an equal but new ``FlatState``."""
+        state: sl.FlatState[int] = sl.FlatState.from_pytree(
+            {"mu": 0.0, "sigma": 0.5, "nested": {"value": (1, 2)}}
+        )
+
+        leaves, treedef = jtu.tree_flatten(state)
+        rebuilt = jtu.tree_unflatten(treedef, leaves)
+
+        assert rebuilt == state
+        assert rebuilt is not state
+        assert state.to_pytree() == rebuilt.to_pytree()
 
 
 class TestMergeStates:

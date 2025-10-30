@@ -1,6 +1,7 @@
 """Utility helpers shared by the example implementations."""
 
 from collections.abc import Callable, Sequence
+import warnings
 
 import jax.numpy as jnp
 import pyhs3
@@ -11,6 +12,7 @@ from pytensor.graph.basic import graph_inputs
 from pytensor.graph.fg import FunctionGraph
 from pytensor.link.jax.dispatch import jax_funcify
 
+warnings.filterwarnings("ignore", category=UserWarning, module="pytensor")
 
 def jaxify_distribution(
     model: pyhs3.Model,

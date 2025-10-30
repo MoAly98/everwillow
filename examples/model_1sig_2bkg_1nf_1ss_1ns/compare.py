@@ -32,7 +32,7 @@ from pyhs3_model import fit_with_scipy as fit_pyhs3_with_scipy
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=UserWarning, module="pytensor")
 jax.config.update("jax_enable_x64", True)
 
 
@@ -393,7 +393,10 @@ def plot_benchmark_grid(
 
     # Get unique models and optimizers
     models = sorted({p[0] for p in parsed})
-    optimizers = sorted({p[1] for p in parsed})
+    # Fixed order for optimizers: everwillow, optimistix, iminuit, scipy
+    optimizer_order = ["everwillow", "optimistix", "iminuit", "scipy.minimizer"]
+    all_optimizers = {p[1] for p in parsed}
+    optimizers = [o for o in optimizer_order if o in all_optimizers]
 
     # Create model->idx and optimizer->idx mappings
     model_idx = {m: i for i, m in enumerate(models)}
@@ -590,11 +593,20 @@ def plot_parameter_deviations(
             model, optimizer = parts[0].strip(), parts[1].strip()
             parsed.append((model, optimizer, b))
 
-    # Sort by model first, then optimizer
-    parsed.sort(key=lambda x: (x[0], x[1]))
+    # Fixed order for optimizers: everwillow, optimistix, iminuit, scipy
+    optimizer_order = ["everwillow", "optimistix", "iminuit", "scipy.minimizer"]
 
-    # Get unique optimizers
-    optimizers = sorted({p[1] for p in parsed})
+    # Sort by model first, then by optimizer order
+    def sort_key(item):
+        model, optimizer, _ = item
+        opt_idx = optimizer_order.index(optimizer) if optimizer in optimizer_order else 999
+        return (model, opt_idx)
+
+    parsed.sort(key=sort_key)
+
+    # Get unique optimizers in specified order
+    all_optimizers = {p[1] for p in parsed}
+    optimizers = [o for o in optimizer_order if o in all_optimizers]
 
     # Base colors for models (one per model framework)
     model_colors = {

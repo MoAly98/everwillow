@@ -166,7 +166,7 @@ def fit_with_iminuit(
     minuit = iminuit.Minuit(
         nll_array,
         init_array,
-        # grad=grad_nll_array,
+        grad=grad_nll_array,
     )
     minuit.errordef = iminuit.Minuit.LIKELIHOOD
     minuit.strategy = 2

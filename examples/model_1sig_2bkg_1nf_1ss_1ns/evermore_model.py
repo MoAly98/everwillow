@@ -210,7 +210,7 @@ def fit_with_iminuit(
     minuit.tol = 1e-8
 
     # minimize
-    minuit.migrad(ncall=1_000, use_simplex=False)
+    minuit.migrad(ncall=max_steps, use_simplex=False)
     bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
     return bestfit.to_pure_dict(), minuit.fval
 

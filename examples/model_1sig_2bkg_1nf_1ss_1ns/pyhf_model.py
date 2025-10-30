@@ -1,13 +1,14 @@
 """Compact pyhf example helpers."""
 
-import numpy as np
 import jax
-jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 import jax.numpy as jnp
+import numpy as np
 import pyhf
 from model_config import DEFAULT_DATA, ModelData, expected_components
 
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 pyhf.set_backend("jax")
+
 
 def _workspace(data: ModelData) -> pyhf.Workspace:
     return pyhf.Workspace(
@@ -121,6 +122,7 @@ def nll_fn(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
 
     return nll
 
+
 def nll_fn_np(model: pyhf.pdf.Model, data_vector: np.ndarray):
     def nll(theta: np.ndarray) -> np.ndarray:
         return -np.sum(model.logpdf(theta, data_vector))
@@ -136,7 +138,6 @@ def fit_with_pyhf_native(
     *,
     maxiter: int | None = None,
 ) -> jnp.ndarray:
-
     kwargs = {}
     if maxiter is not None:
         kwargs["maxiter"] = maxiter
@@ -163,7 +164,10 @@ def fit_with_pyhf_native_minuit(
     *,
     maxiter: int | None = None,
 ) -> np.ndarray:
-    pyhf.set_backend("jax", pyhf.optimize.minuit_optimizer(tolerance=1e-8, verbose=0, strategy=2),)
+    pyhf.set_backend(
+        "jax",
+        pyhf.optimize.minuit_optimizer(tolerance=1e-8, verbose=0, strategy=2),
+    )
     kwargs = {}
     if maxiter is not None:
         kwargs["maxiter"] = maxiter

@@ -1,17 +1,17 @@
 """Minimal wrapper around the evermore reference example."""
 
+import typing as tp
 from collections.abc import Mapping
 from functools import partial
-import typing as tp
 from typing import NamedTuple
 
 import evermore as evm
 import iminuit
 import jax
-from jaxtyping import Array, Float, PyTree
 import jax.numpy as jnp
 import optimistix as optx
 from flax import nnx
+from jaxtyping import Array, Float, PyTree
 from model_config import DEFAULT_DATA, ModelData, expected_components
 
 import everwillow as ew
@@ -20,18 +20,19 @@ import everwillow as ew
 F64: tp.TypeAlias = Float[Array, ""]
 
 # histograms / templates
-Hist1D: tp.TypeAlias = Float[Array, "nbins"]
+Hist1D: tp.TypeAlias = Float[Array, "nbins"]  # noqa: F821
 Hists1D: tp.TypeAlias = PyTree[Hist1D]
 
 # negative log-likelihood implementation
 Args: tp.TypeAlias = tuple[
-  nnx.GraphDef, # graphdef from `nnx.split`
-  nnx.State,    # static state from `nnx.split`
-  Hists1D,      # initial expectations for the histograms / templates
-  Hist1D,       # observation: 𝑑
+    nnx.GraphDef,  # graphdef from `nnx.split`
+    nnx.State,  # static state from `nnx.split`
+    Hists1D,  # initial expectations for the histograms / templates
+    Hist1D,  # observation: d
 ]
 
 jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
+
 
 class Params(NamedTuple):
     mu: evm.Parameter
@@ -135,6 +136,7 @@ def fit_with_optimistix(
 
     return best, nll
 
+
 def fit_with_iminuit(
     components,
     max_steps: int = 10_000,
@@ -163,7 +165,7 @@ def fit_with_iminuit(
 
     # Wrapper for iminuit (operates on flat array)
     def iminuit_loss(
-        pars: Float[Array, "n_params"],
+        pars: Float[Array, "n_params"],  # noqa: F821
         *,
         dynamic: nnx.State = dynamic,
         args: Args = args,
@@ -175,7 +177,6 @@ def fit_with_iminuit(
 
         # Compute loss
         return loss(updated_dynamic, args)
-
 
     class FcnPartial:
         def __init__(self, fn, dynamic, args):
@@ -194,7 +195,6 @@ def fit_with_iminuit(
             args = (graphdef, static, hists, observation)
             return self.fn(flat_values, dynamic=dynamic, args=args)
 
-
     fcn = FcnPartial(iminuit_loss, dynamic, args).__call__
 
     # Setup Minuit
@@ -209,7 +209,7 @@ def fit_with_iminuit(
 
     # minimize
     minuit.migrad(ncall=1_000, use_simplex=False)
-    bestfit  = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
+    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
     return bestfit.to_pure_dict(), minuit.fval
 
 

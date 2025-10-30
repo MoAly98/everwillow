@@ -6,15 +6,18 @@ from functools import partial
 from typing import NamedTuple
 
 import evermore as evm
+import everwillow as ew
 import iminuit
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optimistix as optx
 from flax import nnx
 from jaxtyping import Array, Float, PyTree
 from model_config import DEFAULT_DATA, ModelData, expected_components
+from scipy.optimize import minimize
 
-import everwillow as ew
+
 
 # Float64 scalar
 F64: tp.TypeAlias = Float[Array, ""]
@@ -211,6 +214,94 @@ def fit_with_iminuit(
     minuit.migrad(ncall=1_000, use_simplex=False)
     bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
     return bestfit.to_pure_dict(), minuit.fval
+
+
+def fit_with_scipy(
+    components,
+    max_steps: int = 10_000,
+):
+
+    params, hists, observation = components
+    params.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    args = (graphdef, static, hists, observation)
+
+    # update helper
+    def _update(path, param, value):
+        del path  # unused
+        return param.replace(value=value)
+
+    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
+        return jax.tree.map_with_path(
+            _update,
+            dynamic,
+            new_state,
+            is_leaf=evm.filter.is_parameter,
+            is_leaf_takes_path=True,
+        )
+
+    values = nnx.pure(dynamic)
+    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
+
+    # Wrapper for scipy (operates on flat array), similar to iminuit wrapper
+    def scipy_loss(
+        pars: Float[Array, "n_params"],  # noqa: F821
+        *,
+        dynamic: nnx.State = dynamic,
+        args: Args = args,
+    ) -> F64:
+        flat_values = pars
+
+        # Reconstruct nested parameter state
+        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
+
+        # Compute loss
+        return loss(updated_dynamic, args)
+
+    class FcnPartial:
+        def __init__(self, fn, dynamic, args):
+            self.fn = fn
+            self.dynamic = dynamic
+            self.args = args
+
+        def __call__(self, flat_values):
+            # make a shallow copy of args to modify
+            (graphdef, static, hists, observation) = self.args
+            graphdef, dynamic, static = nnx.split(
+                nnx.merge(graphdef, self.dynamic, static, copy=True),
+                evm.filter.is_parameter,
+                ...,
+            )
+            args = (graphdef, static, hists, observation)
+            # Convert from numpy to jax if needed
+            if isinstance(flat_values, np.ndarray):
+                flat_values = jnp.array(flat_values)
+            return self.fn(flat_values, dynamic=dynamic, args=args)
+
+    fcn = FcnPartial(scipy_loss, dynamic, args).__call__
+
+    # Gradient function using nnx.grad (similar to iminuit)
+    grad_fcn = nnx.grad(fcn)
+
+    def grad_wrapper(flat_params):
+        # Convert gradient to numpy for scipy
+        return np.array(grad_fcn(flat_params))
+
+    # Convert initial values to numpy
+    init_numpy = np.array(flat_values)
+
+    # Minimize using scipy
+    result = minimize(
+        lambda x: float(fcn(x)),  # Ensure scalar return
+        init_numpy,
+        method="SLSQP",
+        jac=grad_wrapper,
+        options={"maxiter": max_steps, "ftol": 1e-8},
+    )
+
+    # Convert result back to parameter dict
+    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(result.x)))
+    return bestfit.to_pure_dict(), float(result.fun)
 
 
 def fit_with_everwillow(

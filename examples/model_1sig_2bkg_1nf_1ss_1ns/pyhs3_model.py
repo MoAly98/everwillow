@@ -62,6 +62,154 @@ def build_pyhs3(
     return nll, initial
 
 
+def fit_with_everwillow(
+    nll: callable,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 150,
+) -> tuple[dict[str, float], float]:
+    """Fit using everwillow optimizer."""
+    import everwillow as ew
+
+    result = ew.fit(nll, initial, max_steps=max_steps)
+    params = dict(result.params)
+    return params, result.nll
+
+
+def fit_with_optimistix(
+    nll: callable,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using optimistix BFGS optimizer."""
+    import optimistix as optx
+
+    # Convert dict params to array for optimistix
+    param_names = sorted(initial.keys())
+    init_array = jnp.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array: jnp.ndarray, args: tuple) -> jnp.ndarray:
+        params_dict = {name: params_array[i] for i, name in enumerate(param_names)}
+        return nll(params_dict)
+
+    solver = optx.BFGS(rtol=1e-5, atol=1e-7)
+    result = optx.minimise(
+        nll_array,
+        solver,
+        init_array,
+        args=(),
+        has_aux=False,
+        max_steps=max_steps,
+    )
+
+    # Convert result back to dict
+    best_params_array = result.value
+    best_params = {
+        name: best_params_array[i] for i, name in enumerate(param_names)
+    }
+    nll_value = result.state.f_info.f
+
+    return best_params, nll_value
+
+
+def fit_with_iminuit(
+    nll: callable,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using iminuit optimizer."""
+    import iminuit
+    import numpy as np
+
+    # Convert dict params to array for iminuit
+    param_names = sorted(initial.keys())
+    init_array = np.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array):
+        params_dict = {name: float(params_array[i]) for i, name in enumerate(param_names)}
+        return nll(params_dict)
+
+    # Gradient function using JAX
+    def grad_nll_array(params_array):
+        # Convert to jax array
+        jax_array = jnp.array(params_array)
+
+        # Create dict and compute gradient
+        def nll_for_grad(arr):
+            params_dict = {name: arr[i] for i, name in enumerate(param_names)}
+            return nll(params_dict)
+
+        grad_jax = jax.grad(nll_for_grad)(jax_array)
+        return np.array(grad_jax)
+
+    # Setup Minuit
+    minuit = iminuit.Minuit(
+        nll_array,
+        init_array,
+        grad=grad_nll_array,
+    )
+    minuit.errordef = iminuit.Minuit.LIKELIHOOD
+    minuit.strategy = 2
+    minuit.tol = 1e-8
+
+    # Minimize
+    minuit.migrad(ncall=max_steps)
+
+    # Convert result back to dict
+    best_params = {name: minuit.values[i] for i, name in enumerate(param_names)}
+    return best_params, minuit.fval
+
+
+def fit_with_scipy(
+    nll: callable,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using scipy.optimize.minimize with SLSQP."""
+    import numpy as np
+    from scipy.optimize import minimize
+
+    # Convert dict params to array for scipy
+    param_names = sorted(initial.keys())
+    init_array = np.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array):
+        params_dict = {name: float(params_array[i]) for i, name in enumerate(param_names)}
+        return nll(params_dict)
+
+    # Gradient function using JAX
+    def grad_nll_array(params_array):
+        # Convert to jax array
+        jax_array = jnp.array(params_array)
+
+        # Create dict and compute gradient
+        def nll_for_grad(arr):
+            params_dict = {name: arr[i] for i, name in enumerate(param_names)}
+            return nll(params_dict)
+
+        grad_jax = jax.grad(nll_for_grad)(jax_array)
+        return np.array(grad_jax)
+
+    # Minimize using scipy
+    result = minimize(
+        nll_array,
+        init_array,
+        method="SLSQP",
+        jac=grad_nll_array,
+        options={"maxiter": max_steps, "ftol": 1e-8},
+    )
+
+    # Convert result back to dict
+    best_params = {name: result.x[i] for i, name in enumerate(param_names)}
+    return best_params, result.fun
+
+
 def summarise_pyhs3_fit(
     params: Mapping[str, float],
     data: ModelData = DEFAULT_DATA,

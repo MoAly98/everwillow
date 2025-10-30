@@ -8,21 +8,24 @@ from typing import Any, NamedTuple
 import jax
 import matplotlib.pyplot as plt
 import numpy as np
-from evermore_model import (
-    build_components,
-    fit_with_iminuit,
-    fit_with_optimistix,
-    summarise_evermore_fit,
-)
+# Evermore model
+from evermore_model import (build_components,summarise_evermore_fit)
 from evermore_model import fit_with_everwillow as fit_evermore_with_everwillow
-from pyhf_model import (
-    build_pyhf,
-    fit_with_pyhf_native,
-    fit_with_pyhf_native_minuit,
-    summarise_pyhf,
-)
+from evermore_model import fit_with_optimistix as fit_evermore_with_optimistix
+from evermore_model import fit_with_scipy as fit_evermore_with_scipy
+from evermore_model import fit_with_iminuit as fit_evermore_with_iminuit
+# PyHF model
+from pyhf_model import (build_pyhf,summarise_pyhf)
 from pyhf_model import fit_with_everwillow as fit_pyhf_with_everwillow
+from pyhf_model import fit_with_optimistix as fit_pyhf_with_optimistix
+from pyhf_model import fit_with_pyhf_native as fit_pyhf_with_scipy
+from pyhf_model import fit_with_pyhf_native_minuit as fit_pythf_with_iminuit
+# PyHS3 model
 from pyhs3_model import build_pyhs3, summarise_pyhs3_fit
+from pyhs3_model import fit_with_everwillow as fit_pyhs3_with_everwillow
+from pyhs3_model import fit_with_optimistix as fit_pyhs3_with_optimistix
+from pyhs3_model import fit_with_iminuit as fit_pyhs3_with_iminuit
+from pyhs3_model import fit_with_scipy as fit_pyhs3_with_scipy
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 
@@ -81,17 +84,15 @@ class Benchmark(NamedTuple):
 N_STEPS = 1000
 
 
-def benchmark_pyhs3():
+def benchmark_pyhs3_everwillow():
     nll, initial = build_pyhs3()
 
+    @jax.jit
     def fun():
-        return ew.fit(jax.jit(nll), initial, max_steps=N_STEPS)
+        return fit_pyhs3_with_everwillow(nll, initial, max_steps=N_STEPS)
 
     # Cold run
-    runtime_cold, fit = time_and_run(fun)
-    params = dict(fit.params)
-    nll_value = float(fit.nll)
-
+    runtime_cold, (params, nll_value) = time_and_run(fun)
     expected_yields = summarise_pyhs3_fit(params)
 
     # Hot run
@@ -107,9 +108,82 @@ def benchmark_pyhs3():
     )
 
 
+def benchmark_pyhs3_optimistix():
+    nll, initial = build_pyhs3()
+
+    # @jax.jit  # FIXME: JIT causes issues with optimistix
+    def fun():
+        return fit_pyhs3_with_optimistix(nll, initial, max_steps=N_STEPS)
+
+    # Cold run
+    runtime_cold, (params, nll_value) = time_and_run(fun)
+    expected_yields = summarise_pyhs3_fit(params)
+
+    # Hot run
+    runtime_hot, _ = time_and_run(fun)
+
+    return Benchmark(
+        name="pyhs3 + optimistix",
+        params=params,
+        expected_yields=expected_yields,
+        nll=nll_value,
+        runtime_cold=runtime_cold,
+        runtime_hot=runtime_hot,
+    )
+
+
+def benchmark_pyhs3_iminuit():
+    nll, initial = build_pyhs3()
+
+    # can't be jitted due to iminuit
+    @jax.jit
+    def fun():
+        return fit_pyhs3_with_iminuit(nll, initial, max_steps=N_STEPS)
+
+    # Cold run
+    runtime_cold, (params, nll_value) = time_and_run(fun)
+    expected_yields = summarise_pyhs3_fit(params)
+
+    # Hot run
+    runtime_hot, _ = time_and_run(fun)
+
+    return Benchmark(
+        name="pyhs3 + iminuit",
+        params=params,
+        expected_yields=expected_yields,
+        nll=nll_value,
+        runtime_cold=runtime_cold,
+        runtime_hot=runtime_hot,
+    )
+
+
+def benchmark_pyhs3_scipy():
+    nll, initial = build_pyhs3()
+
+    @jax.jit
+    def fun():
+        return fit_pyhs3_with_scipy(nll, initial, max_steps=N_STEPS)
+
+    # Cold run
+    runtime_cold, (params, nll_value) = time_and_run(fun)
+    expected_yields = summarise_pyhs3_fit(params)
+
+    # Hot run
+    runtime_hot, _ = time_and_run(fun)
+
+    return Benchmark(
+        name="pyhs3 + scipy.minimizer",
+        params=params,
+        expected_yields=expected_yields,
+        nll=nll_value,
+        runtime_cold=runtime_cold,
+        runtime_hot=runtime_hot,
+    )
+
+
 def benchmark_evermore_native():
     components = build_components()
-    fun = jax.jit(lambda: fit_with_optimistix(components, max_steps=N_STEPS))
+    fun = jax.jit(lambda: fit_evermore_with_optimistix(components, max_steps=N_STEPS))
     # Cold run
     runtime_cold, (params, nll) = time_and_run(fun)
     expected_yields = summarise_evermore_fit(params)
@@ -152,7 +226,7 @@ def benchmark_evermore_iminuit():
 
     # @jax.jit
     def fun():
-        return fit_with_iminuit(components, max_steps=N_STEPS)
+        return fit_evermore_with_iminuit(components, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll) = time_and_run(fun)
@@ -169,12 +243,35 @@ def benchmark_evermore_iminuit():
     )
 
 
+def benchmark_evermore_scipy():
+
+    components = build_components()
+
+    # can't be jitted due to scipy
+    def fun():
+        return fit_evermore_with_scipy(components, max_steps=N_STEPS)
+
+    # Cold run
+    runtime_cold, (params, nll) = time_and_run(fun)
+    expected_yields = summarise_evermore_fit(params)
+    # Hot run
+    runtime_hot, _ = time_and_run(fun)
+    return Benchmark(
+        name="evermore + scipy.minimizer",
+        params=params,
+        expected_yields=expected_yields,
+        nll=nll,
+        runtime_cold=runtime_cold,
+        runtime_hot=runtime_hot,
+    )
+
+
 def benchmark_pyhf_native():
     pyhf_model, pyhf_data, pyhf_init, pyhf_slices = build_pyhf()
-    # can't be jitted due to pyhf internals
 
+    # can't be jitted due to pyhf internals
     def fun():
-        return fit_with_pyhf_native(
+        return fit_pyhf_with_scipy(
             pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS
         )
 
@@ -197,10 +294,10 @@ def benchmark_pyhf_native():
 
 def benchmark_pyhf_native_minuit():
     pyhf_model, pyhf_data, pyhf_init, pyhf_slices = build_pyhf()
-    # can't be jitted due to pyhf internals
 
+    # can't be jitted due to pyhf internals
     def fun():
-        return fit_with_pyhf_native_minuit(
+        return fit_pythf_with_iminuit(
             pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS
         )
 
@@ -213,6 +310,31 @@ def benchmark_pyhf_native_minuit():
     runtime_hot, _ = time_and_run(fun)
     return Benchmark(
         name="pyhf + iminuit",
+        params=params,
+        nll=nll_value,
+        expected_yields=expected_yields,
+        runtime_cold=runtime_cold,
+        runtime_hot=runtime_hot,
+    )
+
+
+def benchmark_pyhf_optimistix():
+
+    pyhf_model, pyhf_data, pyhf_init, pyhf_slices = build_pyhf()
+
+    @jax.jit
+    def fun():
+        return fit_pyhf_with_optimistix(
+            pyhf_model, pyhf_data, pyhf_init, pyhf_slices, max_steps=N_STEPS
+        )
+
+    # Cold run
+    runtime_cold, (params, nll_value) = time_and_run(fun)
+    expected_yields = summarise_pyhf(params)
+    # Hot run
+    runtime_hot, _ = time_and_run(fun)
+    return Benchmark(
+        name="pyhf + optimistix",
         params=params,
         nll=nll_value,
         expected_yields=expected_yields,
@@ -622,10 +744,25 @@ def main() -> None:
 
     benchmarks = []
 
+    console.print("Running [i]pyhs3 + optimistix[/i]...")
+    pyhs3_optimistix_benchmark = benchmark_pyhs3_optimistix()
+    console.print(pyhs3_optimistix_benchmark)
+    benchmarks.append(pyhs3_optimistix_benchmark)
+
+    console.print("Running [i]pyhs3 + iminuit[/i]...")
+    pyhs3_iminuit_benchmark = benchmark_pyhs3_iminuit()
+    console.print(pyhs3_iminuit_benchmark)
+    benchmarks.append(pyhs3_iminuit_benchmark)
+
     console.print("Running [i]pyhs3 + everwillow[/i]...")
-    pyhs3_benchmark = benchmark_pyhs3()
-    console.print(pyhs3_benchmark)
-    benchmarks.append(pyhs3_benchmark)
+    pyhs3_everwillow_benchmark = benchmark_pyhs3_everwillow()
+    console.print(pyhs3_everwillow_benchmark)
+    benchmarks.append(pyhs3_everwillow_benchmark)
+
+    console.print("Running [i]pyhs3 + scipy.minimizer[/i]...")
+    pyhs3_scipy_benchmark = benchmark_pyhs3_scipy()
+    console.print(pyhs3_scipy_benchmark)
+    benchmarks.append(pyhs3_scipy_benchmark)
 
     console.print("Running [i]evermore + optimistix[/i]...")
     evermore_native_benchmark = benchmark_evermore_native()
@@ -642,12 +779,22 @@ def main() -> None:
     console.print(evermore_ew_benchmark)
     benchmarks.append(evermore_ew_benchmark)
 
+    console.print("Running [i]evermore + scipy.minimizer[/i]...")
+    evermore_scipy_benchmark = benchmark_evermore_scipy()
+    console.print(evermore_scipy_benchmark)
+    benchmarks.append(evermore_scipy_benchmark)
+
+    console.print("Running [i]pyhf + optimistix[/i]...")
+    pyhf_optimistix_benchmark = benchmark_pyhf_optimistix()
+    console.print(pyhf_optimistix_benchmark)
+    benchmarks.append(pyhf_optimistix_benchmark)
+
     console.print("Running [i]pyhf + scipy.minimizer[/i]...")
     pyhf_native_benchmark = benchmark_pyhf_native()
     console.print(pyhf_native_benchmark)
     benchmarks.append(pyhf_native_benchmark)
 
-    console.print("Running [i]pyhf + native (minuit)[/i]...")
+    console.print("Running [i]pyhf + iminuit[/i]...")
     pyhf_native_minuit_benchmark = benchmark_pyhf_native_minuit()
     console.print(pyhf_native_minuit_benchmark)
     benchmarks.append(pyhf_native_minuit_benchmark)

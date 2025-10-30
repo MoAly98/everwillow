@@ -1,8 +1,10 @@
 """Compact pyhf example helpers."""
 
+import everwillow as ew
 import jax
 import jax.numpy as jnp
 import numpy as np
+import optimistix as optx
 import pyhf
 from model_config import DEFAULT_DATA, ModelData, expected_components
 
@@ -122,13 +124,12 @@ def nll_fn(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
 
     return nll
 
-
-def nll_fn_np(model: pyhf.pdf.Model, data_vector: np.ndarray):
-    def nll(theta: np.ndarray) -> np.ndarray:
-        return -np.sum(model.logpdf(theta, data_vector))
+def nll_fn_optx(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
+    @jax.jit
+    def nll(theta: jnp.ndarray, args: tuple) -> jnp.ndarray:
+        return -jnp.sum(model.logpdf(theta, data_vector))
 
     return nll
-
 
 def fit_with_pyhf_native(
     model: pyhf.pdf.Model,
@@ -193,12 +194,36 @@ def fit_with_everwillow(
     *,
     max_steps: int = 150,
 ) -> tuple[dict[str, float], float]:
-    import everwillow as ew
 
     nll = nll_fn(model, data_vector)
     result = ew.fit(nll, init, max_steps=max_steps)
     params = jnp.asarray(result.params, dtype=jnp.float64)
     return vector_to_dict(params, slices), result.nll
+
+
+def fit_with_optimistix(
+    model: pyhf.pdf.Model,
+    data_vector: jnp.ndarray,
+    init: jnp.ndarray,
+    slices: dict[str, slice],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+
+    nll = nll_fn_optx(model, data_vector)
+
+    solver = optx.BFGS(rtol=1e-5, atol=1e-7)
+    result = optx.minimise(
+        nll,
+        solver,
+        init,
+        has_aux=False,
+        max_steps=max_steps,
+    )
+
+    params = jnp.asarray(result.value, dtype=jnp.float64)
+    nll_value = result.state.f_info.f
+    return vector_to_dict(params, slices), nll_value
 
 
 def summarise_pyhf(params: dict[str, float], data: ModelData = DEFAULT_DATA):

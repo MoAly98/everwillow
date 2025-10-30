@@ -1,12 +1,13 @@
 """Compact pyhf example helpers."""
 
-import everwillow as ew
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optimistix as optx
 import pyhf
 from model_config import DEFAULT_DATA, ModelData, expected_components
+
+import everwillow as ew
 
 jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 pyhf.set_backend("jax")
@@ -124,12 +125,6 @@ def nll_fn(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
 
     return nll
 
-def nll_fn_optx(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
-    @jax.jit
-    def nll(theta: jnp.ndarray, args: tuple) -> jnp.ndarray:
-        return -jnp.sum(model.logpdf(theta, data_vector))
-
-    return nll
 
 def fit_with_pyhf_native(
     model: pyhf.pdf.Model,
@@ -194,7 +189,6 @@ def fit_with_everwillow(
     *,
     max_steps: int = 150,
 ) -> tuple[dict[str, float], float]:
-
     nll = nll_fn(model, data_vector)
     result = ew.fit(nll, init, max_steps=max_steps)
     params = jnp.asarray(result.params, dtype=jnp.float64)
@@ -209,14 +203,18 @@ def fit_with_optimistix(
     *,
     max_steps: int = 10_000,
 ) -> tuple[dict[str, float], float]:
+    nll = nll_fn(model, data_vector)
 
-    nll = nll_fn_optx(model, data_vector)
+    # Wrapper that adapts nll(theta) to optimistix's nll(theta, args) signature
+    def nll_optx(theta: jnp.ndarray, args: tuple) -> jnp.ndarray:
+        return nll(theta)
 
     solver = optx.BFGS(rtol=1e-5, atol=1e-7)
     result = optx.minimise(
-        nll,
+        nll_optx,
         solver,
         init,
+        args=(),
         has_aux=False,
         max_steps=max_steps,
     )

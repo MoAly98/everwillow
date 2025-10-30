@@ -6,7 +6,6 @@ from functools import partial
 from typing import NamedTuple
 
 import evermore as evm
-import everwillow as ew
 import iminuit
 import jax
 import jax.numpy as jnp
@@ -17,7 +16,7 @@ from jaxtyping import Array, Float, PyTree
 from model_config import DEFAULT_DATA, ModelData, expected_components
 from scipy.optimize import minimize
 
-
+import everwillow as ew
 
 # Float64 scalar
 F64: tp.TypeAlias = Float[Array, ""]
@@ -220,7 +219,6 @@ def fit_with_scipy(
     components,
     max_steps: int = 10_000,
 ):
-
     params, hists, observation = components
     params.mu.set_metadata(frozen=True)
     graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)

@@ -8,31 +8,35 @@ from typing import Any, NamedTuple
 import jax
 import matplotlib.pyplot as plt
 import numpy as np
+
 # Evermore model
-from evermore_model import (build_components,summarise_evermore_fit)
+from evermore_model import build_components, summarise_evermore_fit
 from evermore_model import fit_with_everwillow as fit_evermore_with_everwillow
+from evermore_model import fit_with_iminuit as fit_evermore_with_iminuit
 from evermore_model import fit_with_optimistix as fit_evermore_with_optimistix
 from evermore_model import fit_with_scipy as fit_evermore_with_scipy
-from evermore_model import fit_with_iminuit as fit_evermore_with_iminuit
+
 # PyHF model
-from pyhf_model import (build_pyhf,summarise_pyhf)
+from pyhf_model import build_pyhf, summarise_pyhf
 from pyhf_model import fit_with_everwillow as fit_pyhf_with_everwillow
 from pyhf_model import fit_with_optimistix as fit_pyhf_with_optimistix
 from pyhf_model import fit_with_pyhf_native as fit_pyhf_with_scipy
 from pyhf_model import fit_with_pyhf_native_minuit as fit_pythf_with_iminuit
+
 # PyHS3 model
 from pyhs3_model import build_pyhs3, summarise_pyhs3_fit
 from pyhs3_model import fit_with_everwillow as fit_pyhs3_with_everwillow
-from pyhs3_model import fit_with_optimistix as fit_pyhs3_with_optimistix
 from pyhs3_model import fit_with_iminuit as fit_pyhs3_with_iminuit
+from pyhs3_model import fit_with_optimistix as fit_pyhs3_with_optimistix
 from pyhs3_model import fit_with_scipy as fit_pyhs3_with_scipy
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 
-import everwillow as ew
-
 warnings.filterwarnings("ignore")
 jax.config.update("jax_enable_x64", True)
+
+
+N_STEPS = 10_000
 
 
 def _format(value: float, sign: bool = False, unit: None = None) -> str:
@@ -81,15 +85,14 @@ class Benchmark(NamedTuple):
         yield table
 
 
-N_STEPS = 1000
-
-
 def benchmark_pyhs3_everwillow():
-    nll, initial = build_pyhs3()
+    inputs, jaxified, fixed_values, initial = build_pyhs3()
 
     @jax.jit
     def fun():
-        return fit_pyhs3_with_everwillow(nll, initial, max_steps=N_STEPS)
+        return fit_pyhs3_with_everwillow(
+            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
+        )
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -109,11 +112,13 @@ def benchmark_pyhs3_everwillow():
 
 
 def benchmark_pyhs3_optimistix():
-    nll, initial = build_pyhs3()
+    inputs, jaxified, fixed_values, initial = build_pyhs3()
 
-    # @jax.jit  # FIXME: JIT causes issues with optimistix
+    @jax.jit
     def fun():
-        return fit_pyhs3_with_optimistix(nll, initial, max_steps=N_STEPS)
+        return fit_pyhs3_with_optimistix(
+            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
+        )
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -133,12 +138,14 @@ def benchmark_pyhs3_optimistix():
 
 
 def benchmark_pyhs3_iminuit():
-    nll, initial = build_pyhs3()
+    inputs, jaxified, fixed_values, initial = build_pyhs3()
 
     # can't be jitted due to iminuit
-    @jax.jit
+    # @jax.jit
     def fun():
-        return fit_pyhs3_with_iminuit(nll, initial, max_steps=N_STEPS)
+        return fit_pyhs3_with_iminuit(
+            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
+        )
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -158,11 +165,13 @@ def benchmark_pyhs3_iminuit():
 
 
 def benchmark_pyhs3_scipy():
-    nll, initial = build_pyhs3()
+    inputs, jaxified, fixed_values, initial = build_pyhs3()
 
-    @jax.jit
+    # @jax.jit
     def fun():
-        return fit_pyhs3_with_scipy(nll, initial, max_steps=N_STEPS)
+        return fit_pyhs3_with_scipy(
+            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
+        )
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -244,7 +253,6 @@ def benchmark_evermore_iminuit():
 
 
 def benchmark_evermore_scipy():
-
     components = build_components()
 
     # can't be jitted due to scipy
@@ -319,7 +327,6 @@ def benchmark_pyhf_native_minuit():
 
 
 def benchmark_pyhf_optimistix():
-
     pyhf_model, pyhf_data, pyhf_init, pyhf_slices = build_pyhf()
 
     @jax.jit
@@ -513,7 +520,7 @@ def plot_benchmark_grid(
 
     # Extend axis limits to prevent bubble overlap with borders
     ax.set_xlim(-0.4, len(models) - 1 + 0.4)
-    ax.set_ylim(-0.6, len(optimizers) - 1 + 0.6)
+    ax.set_ylim(-0.6, len(optimizers) - 1 + 2.0)
 
     ax.set_xlabel("Model Framework", fontsize=13, weight="bold")
     ax.set_ylabel("Optimizer", fontsize=13, weight="bold")

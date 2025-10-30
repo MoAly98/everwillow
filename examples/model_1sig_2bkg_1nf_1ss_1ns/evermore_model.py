@@ -2,10 +2,13 @@
 
 from collections.abc import Mapping
 from functools import partial
+import typing as tp
 from typing import NamedTuple
 
 import evermore as evm
+import iminuit
 import jax
+from jaxtyping import Array, Float, PyTree
 import jax.numpy as jnp
 import optimistix as optx
 from flax import nnx
@@ -13,6 +16,22 @@ from model_config import DEFAULT_DATA, ModelData, expected_components
 
 import everwillow as ew
 
+# Float64 scalar
+F64: tp.TypeAlias = Float[Array, ""]
+
+# histograms / templates
+Hist1D: tp.TypeAlias = Float[Array, "nbins"]
+Hists1D: tp.TypeAlias = PyTree[Hist1D]
+
+# negative log-likelihood implementation
+Args: tp.TypeAlias = tuple[
+  nnx.GraphDef, # graphdef from `nnx.split`
+  nnx.State,    # static state from `nnx.split`
+  Hists1D,      # initial expectations for the histograms / templates
+  Hist1D,       # observation: 𝑑
+]
+
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 
 class Params(NamedTuple):
     mu: evm.Parameter
@@ -115,6 +134,83 @@ def fit_with_optimistix(
     nll = result.state.f_info.f
 
     return best, nll
+
+def fit_with_iminuit(
+    components,
+    max_steps: int = 10_000,
+):
+    params, hists, observation = components
+    params.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    args = (graphdef, static, hists, observation)
+
+    # update helper
+    def _update(path, param, value):
+        del path  # unused
+        return param.replace(value=value)
+
+    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
+        return jax.tree.map_with_path(
+            _update,
+            dynamic,
+            new_state,
+            is_leaf=evm.filter.is_parameter,
+            is_leaf_takes_path=True,
+        )
+
+    values = nnx.pure(dynamic)
+    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
+
+    # Wrapper for iminuit (operates on flat array)
+    def iminuit_loss(
+        pars: Float[Array, "n_params"],
+        *,
+        dynamic: nnx.State = dynamic,
+        args: Args = args,
+    ) -> F64:
+        flat_values = pars
+
+        # Reconstruct nested parameter state
+        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
+
+        # Compute loss
+        return loss(updated_dynamic, args)
+
+
+    class FcnPartial:
+        def __init__(self, fn, dynamic, args):
+            self.fn = fn
+            self.dynamic = dynamic
+            self.args = args
+
+        def __call__(self, flat_values):
+            # make a shallow copy of args to modify
+            (graphdef, static, hists, observation) = self.args
+            graphdef, dynamic, static = nnx.split(
+                nnx.merge(graphdef, self.dynamic, static, copy=True),
+                evm.filter.is_parameter,
+                ...,
+            )
+            args = (graphdef, static, hists, observation)
+            return self.fn(flat_values, dynamic=dynamic, args=args)
+
+
+    fcn = FcnPartial(iminuit_loss, dynamic, args).__call__
+
+    # Setup Minuit
+    minuit = iminuit.Minuit(
+        fcn,
+        flat_values,
+        grad=nnx.grad(fcn),  # analytical gradient
+    )
+    minuit.errordef = iminuit.Minuit.LIKELIHOOD
+    minuit.strategy = 2
+    minuit.tol = 1e-8
+
+    # minimize
+    minuit.migrad(ncall=1_000, use_simplex=False)
+    bestfit  = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
+    return bestfit.to_pure_dict(), minuit.fval
 
 
 def fit_with_everwillow(

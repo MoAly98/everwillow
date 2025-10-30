@@ -19,6 +19,7 @@ from pyhs3.metadata import Metadata
 from pyhs3.parameter_points import ParameterPoint, ParameterSet
 from utils import jaxify_distribution
 
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 
 def build_pyhs3(
     data: ModelData = DEFAULT_DATA,

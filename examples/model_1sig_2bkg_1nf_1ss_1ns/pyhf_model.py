@@ -1,12 +1,13 @@
 """Compact pyhf example helpers."""
 
+import numpy as np
 import jax
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 import jax.numpy as jnp
 import pyhf
 from model_config import DEFAULT_DATA, ModelData, expected_components
 
 pyhf.set_backend("jax")
-
 
 def _workspace(data: ModelData) -> pyhf.Workspace:
     return pyhf.Workspace(
@@ -101,7 +102,7 @@ def build_pyhf(
 
 
 def vector_to_dict(theta: jnp.ndarray, slices: dict[str, slice]) -> dict[str, float]:
-    return {name: float(theta[slice_][0]) for name, slice_ in slices.items()}
+    return {name: theta[slice_][0] for name, slice_ in slices.items()}
 
 
 def dict_to_vector(
@@ -120,6 +121,12 @@ def nll_fn(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
 
     return nll
 
+def nll_fn_np(model: pyhf.pdf.Model, data_vector: np.ndarray):
+    def nll(theta: np.ndarray) -> np.ndarray:
+        return -np.sum(model.logpdf(theta, data_vector))
+
+    return nll
+
 
 def fit_with_pyhf_native(
     model: pyhf.pdf.Model,
@@ -129,9 +136,11 @@ def fit_with_pyhf_native(
     *,
     maxiter: int | None = None,
 ) -> jnp.ndarray:
+
     kwargs = {}
     if maxiter is not None:
         kwargs["maxiter"] = maxiter
+    kwargs["tolerance"] = 1e-8
     params = jnp.asarray(
         pyhf.infer.mle.fit(
             data_vector,
@@ -143,7 +152,33 @@ def fit_with_pyhf_native(
         dtype=jnp.float64,
     )
     nll = nll_fn(model, data_vector)
-    return vector_to_dict(params, slices), float(nll(params))
+    return vector_to_dict(params, slices), nll(params)
+
+
+def fit_with_pyhf_native_minuit(
+    model: pyhf.pdf.Model,
+    data_vector: jnp.ndarray,
+    init: jnp.ndarray,
+    slices: dict[str, slice],
+    *,
+    maxiter: int | None = None,
+) -> np.ndarray:
+    pyhf.set_backend("jax", pyhf.optimize.minuit_optimizer(tolerance=1e-8, verbose=0, strategy=2),)
+    kwargs = {}
+    if maxiter is not None:
+        kwargs["maxiter"] = maxiter
+    params = np.asarray(
+        pyhf.infer.mle.fit(
+            data_vector,
+            model,
+            init_pars=init.tolist(),
+            par_bounds=model.config.suggested_bounds(),
+            **kwargs,
+        ),
+        dtype=np.float64,
+    )
+    nll = nll_fn(model, data_vector)
+    return vector_to_dict(params, slices), nll(params)
 
 
 def fit_with_everwillow(
@@ -159,7 +194,7 @@ def fit_with_everwillow(
     nll = nll_fn(model, data_vector)
     result = ew.fit(nll, init, max_steps=max_steps)
     params = jnp.asarray(result.params, dtype=jnp.float64)
-    return vector_to_dict(params, slices), float(result.nll)
+    return vector_to_dict(params, slices), result.nll
 
 
 def summarise_pyhf(params: dict[str, float], data: ModelData = DEFAULT_DATA):

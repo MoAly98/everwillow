@@ -64,9 +64,10 @@ def fit(
 
     Examples:
         >>> # Simple case: nll_fn takes only params
+        >>> import everwillow as ew
         >>> def my_nll(params):
         ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> result = fit(my_nll, {"mu": 0.0, "sigma": 0.5})
+        >>> result = ew.fit(my_nll, {"mu": 0.0, "sigma": 0.5})
         >>> result.params["mu"]  # Should be close to 2.0
 
         >>> # With additional arguments (partial)
@@ -74,15 +75,15 @@ def fit(
         >>>
         >>> def my_nll(params, data, templates, *, config):
         ...     return compute_loss(params, data, templates, config)
-        >>> result = fit(partial(my_nll, data, templates, config=cfg), initial_params)
+        >>> result = ew.fit(partial(my_nll, data, templates, config=cfg), initial_params)
 
         >>> # Fix background while fitting mu and sigma
         >>> def my_nll(params):
         ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> result = fit(
+        >>> result = ew.fit(
         ...     my_nll,
         ...     {"mu": 0.0, "sigma": 0.5, "background": 50.0},
-        ...     fixed=["background"],
+        ...     fixed={"background": ...},
         ... )
         >>> result.params["background"]  # Remains fixed
         50.0
@@ -91,7 +92,7 @@ def fit(
         >>> def my_nll(params):
         ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
         >>> from everwillow.parameters.transforms import MinuitTransform
-        >>> result = fit(
+        >>> result = ew.fit(
         ...     my_nll,
         ...     {"mu": 0.5, "sigma": 0.1},
         ...     bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},

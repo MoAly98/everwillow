@@ -1,4 +1,4 @@
-"""Model abstractions built on :class:`~everwillow.statelib.state.FlatState`."""
+"""Model abstractions built on :class:`~everwillow.statelib.state.State`."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ __all__ = ["CombinedModel", "Model"]
 import dataclasses
 import typing as tp
 
-from .state import FlatState, PyTree, split_state
+from jaxtyping import PyTree
 
-P = tp.ParamSpec("P")
+from everwillow.statelib.state import KeyPath, MergeMetadata, State, split
 
 
 @dataclasses.dataclass(frozen=True)
@@ -19,32 +19,27 @@ class Model:
     Examples:
         >>> scale = 0.5
         >>> model = Model(logpdf=lambda tree: -(tree["a"] ** 2 + tree["b"] ** 2) * scale)
-        >>> params = FlatState.from_pytree({"a": 1.0, "b": 2.0})
+        >>> params = State.from_pytree({"a": 1.0, "b": 2.0})
         >>> model(params)
         -2.5
     """
 
     logpdf: tp.Callable[[PyTree], float]  #: Evaluates the log-density for the pytree.
 
-    def __call__(
-        self,
-        parameters: PyTree | FlatState,
-    ) -> float:
+    def __call__(self, parameters: tp.Any) -> float:
         """Evaluate the wrapped log-density function.
 
         Args:
-            parameters: Either a ``FlatState`` produced by
-                ``FlatState.from_pytree`` or a raw pytree compatible with
-                ``logpdf``.
+            parameters: a ``State`` produced by ``State.from_pytree``
 
         Returns:
             Log-density computed by ``logpdf``.
         """
 
-        if isinstance(parameters, FlatState):
-            pytree = parameters.to_pytree()
-        else:
-            pytree = parameters
+        if not isinstance(parameters, State):
+            msg = "parameters must be a State"
+            raise TypeError(msg)
+        pytree = parameters.to_pytree()
         return self.logpdf(pytree)
 
 
@@ -71,48 +66,28 @@ class CombinedModel:
 
     def __call__(
         self,
-        parameters: FlatState | tp.Any,
+        parameters: tp.Mapping[KeyPath, tp.Any],
+        merge_metadata: tp.Any,
     ) -> float:
         """Evaluate all models on the provided merged state.
 
         Args:
-            parameters: Merged ``FlatState`` containing one internal state per
+            parameters: Merged ``State`` containing one internal state per
                 model in the construction order.
 
         Returns:
             Sum of the log-density values returned by each model.
         """
-
-        states = self._normalize_states(parameters)
-        return sum(
-            model(state) for model, state in zip(self.models, states, strict=True)
-        )
-
-    def _normalize_states(
-        self,
-        parameters: FlatState | tp.Any,
-    ) -> tuple[FlatState, ...]:
-        """Split and validate the merged state before evaluation.
-
-        Args:
-            parameters: Merged ``FlatState`` expected to contain one segment per
-                model.
-
-        Returns:
-            Tuple of per-model ``FlatState`` instances.
-
-        Raises:
-            TypeError: If ``parameters`` is not a ``FlatState``.
-            ValueError: If the number of segments does not match the number of models.
-        """
-        if not isinstance(parameters, FlatState):
-            message = "parameters must be a FlatState"
+        if not isinstance(merge_metadata, MergeMetadata):
+            message = "merge_metadata must be a MergeMetadata instance"
             raise TypeError(message)
-        parameters_state = tp.cast(FlatState, parameters)
-        states = split_state(parameters_state)
+
+        states = split(parameters, metadata=merge_metadata)
         if len(states) != len(self.models):
-            expected = len(self.models)
-            received = len(states)
-            message = f"Expected {expected} states, received {received}"
-            raise ValueError(message)
-        return states
+            msg = f"Expected {len(self.models)} states, received {len(states)}"
+            raise ValueError(msg)
+
+        total = 0.0
+        for model, state in zip(self.models, states, strict=True):
+            total += model(state)
+        return total

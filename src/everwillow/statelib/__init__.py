@@ -1,25 +1,31 @@
 __all__ = [
     "CombinedModel",
-    "FlatState",
+    "KeyPath",
+    "MergeMetadata",
     "Model",
+    "PartitionedMapping",
+    "State",
     "Transform",
     "apply_transformations",
+    "canonicalize_key",
     "combine_partitions",
-    "map_state",
-    "merge_states",
-    "partition_state",
-    "split_state",
-    "update_state",
+    "merge",
+    "partition",
+    "split",
+    "update",
 ]
 
 from .model import CombinedModel, Model
 from .state import (
-    FlatState,
+    KeyPath,
+    MergeMetadata,
+    PartitionedMapping,
+    State,
+    canonicalize_key,
     combine_partitions,
-    map_state,
-    merge_states,
-    partition_state,
-    split_state,
-    update_state,
+    merge,
+    partition,
+    split,
+    update,
 )
 from .transform import Transform, apply_transformations

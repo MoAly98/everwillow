@@ -6,18 +6,11 @@ __all__ = ["Transform", "apply_transformations"]
 
 import dataclasses
 import typing as tp
-from typing import TYPE_CHECKING
 
-from .key_paths import KeyPath, derive_key_path, ensure_public_key
-from .state import FlatState, _validate_state
-
-if TYPE_CHECKING:
-    from .state import _SegmentRecord
-
-ValueT = tp.TypeVar("ValueT")
+from everwillow.statelib.state import KeyPath, LeafT, State
 
 
-def _identity(key: KeyPath, value: ValueT) -> ValueT:
+def _identity(key: KeyPath, value: LeafT) -> LeafT:
     """Return the value unchanged.
 
     Args:
@@ -32,7 +25,7 @@ def _identity(key: KeyPath, value: ValueT) -> ValueT:
 
 
 @dataclasses.dataclass(frozen=True)
-class Transform(tp.Generic[ValueT]):
+class Transform(tp.Generic[LeafT]):
     """Describe how a single key/value pair should be rewritten.
 
     Examples:
@@ -42,93 +35,53 @@ class Transform(tp.Generic[ValueT]):
     """
 
     new_key: KeyPath  #: Replacement key tuple used in the transformed state.
-    value_fn: tp.Callable[[KeyPath, ValueT], ValueT] = dataclasses.field(
+    value_fn: tp.Callable[[KeyPath, LeafT], LeafT] = dataclasses.field(
         default=_identity
     )  #: Callable applied to derive the transformed value.
 
 
 def apply_transformations(
-    state: FlatState[ValueT] | tp.Any,
-    transformations: tp.Mapping[KeyPath, Transform[ValueT]],
-) -> FlatState[ValueT]:
-    """Rewrite selected entries in a ``FlatState``.
+    state: State[LeafT] | tp.Any,
+    transformations: tp.Mapping[KeyPath, Transform[LeafT]],
+) -> State[LeafT]:
+    """Rewrite selected entries in a ``State``.
 
     Args:
         state: Original state whose segments will be updated.
         transformations: Mapping from existing keys to ``Transform`` objects.
 
     Returns:
-        New ``FlatState`` instance containing the transformed key/value pairs.
+        New ``State`` instance containing the transformed key/value pairs.
 
     Raises:
-        TypeError: If ``state`` is not a ``FlatState`` instance.
+        TypeError: If ``state`` is not a ``State`` instance.
         KeyError: If transformations reference keys not present in ``state``.
         ValueError: If multiple transformations target the same destination key.
 
     Examples:
-        >>> base = FlatState.from_pytree({"a": 1, "b": 2})
+        >>> base = State.from_pytree({"a": 1, "b": 2})
         >>> transform = {("a",): Transform(new_key=("alpha",))}
         >>> apply_transformations(base, transform).to_dict()
         {('alpha',): 1, ('b',): 2}
     """
-    if not isinstance(state, FlatState):
-        message = "'state' must be a FlatState instance"
+    if not isinstance(state, State):
+        message = "'state' must be a State instance"
         raise TypeError(message)
 
     if len(transformations) == 0:
-        return state.copy()
+        return state
 
-    state_instance = tp.cast(FlatState[ValueT], state)
-    normalized_transformations: dict[KeyPath, Transform[ValueT]] = {
-        ensure_public_key(key): transform for key, transform in transformations.items()
-    }
-    state_keys = set(state_instance)
-    if set(normalized_transformations) - state_keys:
-        missing_keys = set(normalized_transformations) - state_keys
-        message = f"Transformations contain keys not in state: {missing_keys!r}"
-        raise KeyError(message)
-
-    flat_state = state_instance.copy()
-
-    new_records: dict[object, _SegmentRecord[ValueT]] = {}
-    for segment_id in flat_state._segment_order:
-        record = flat_state._segments[segment_id]
-        updated_keys: set[KeyPath] = set()
-        new_values: dict[KeyPath, ValueT] = {}
-        new_key_paths: dict[KeyPath, KeyPath] = {}
-        for key, value in record.values.items():
-            transform = normalized_transformations.get(key)
-            if transform is None:
-                target_key = key
-                transformed_value = value
-                key_path = record.key_paths[key]
-            else:
-                target_key = ensure_public_key(transform.new_key)
-                transformed_value = transform.value_fn(key, value)
-                key_path = derive_key_path(
-                    target_key,
-                    template=record.key_paths.get(key),
-                )
-            if target_key in new_values:
-                message = (
-                    "Transformations produce duplicate target key "
-                    f"{target_key!r}; ensure new_key values are unique per segment"
-                )
+    new_data: dict[KeyPath, LeafT] = {}
+    for key, value in state.items():
+        if key in transformations:
+            transform = transformations[key]
+            new_key = transform.new_key
+            new_value = transform.value_fn(key, value)
+            if new_key in new_data:
+                message = f"multiple transformations target the same key: {new_key}"
                 raise ValueError(message)
-            updated_keys.add(target_key)
-            new_values[target_key] = transformed_value
-            new_key_paths[target_key] = key_path
-        record_cls = type(record)
-        new_records[segment_id] = record_cls(
-            record.treedef,
-            frozenset(updated_keys),
-            new_values,
-            new_key_paths,
-            tuple(new_values.keys()),
-        )
+            new_data[new_key] = new_value
+        else:
+            new_data[key] = value
 
-    flat_state._segments = new_records
-    flat_state._rebuild_mapping()
-
-    _validate_state(flat_state)
-    return flat_state
+    return State(mapping=new_data, treedef=state.treedef)

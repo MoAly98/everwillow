@@ -7,61 +7,51 @@ import pytest
 import everwillow.statelib as sl
 
 
-class TestModel:
-    """Unit tests around the ``Model`` wrapper."""
+def test_model_requires_state_instance() -> None:
+    """``Model`` only accepts ``State`` inputs."""
+    model = sl.Model(logpdf=lambda tree: tree["a"])  # type: ignore[index]
 
-    def test_accepts_flat_state_and_pytree(self) -> None:
-        """A ``Model`` can consume either a ``FlatState`` or a raw pytree."""
+    state = sl.State.from_pytree({"a": 3.0})
+    assert model(state) == 3.0
 
-        def logpdf(tree: dict[str, object]) -> int:
-            return tree["a"] + tree["b"]["c"]  # type: ignore[index]
-
-        model = sl.Model(logpdf=logpdf)
-        state: sl.FlatState[int] = sl.FlatState.from_pytree({"a": 1, "b": {"c": 2}})
-
-        assert model(state) == 3
-        assert model({"a": 1, "b": {"c": 2}}) == 3
+    with pytest.raises(TypeError, match="must be a State"):
+        model({"a": 3.0})  # type: ignore[arg-type]
 
 
-class TestCombinedModel:
-    """Behavioural checks for ``CombinedModel`` aggregation."""
+def test_combined_model_sums_components() -> None:
+    """Combined models evaluate each segment and sum the results."""
+    model_x = sl.Model(logpdf=lambda tree: tree["x"])  # type: ignore[index]
+    model_y = sl.Model(logpdf=lambda tree: tree["y"][0])  # type: ignore[index]
 
-    def test_sums_component_models(self) -> None:
-        """Evaluating a combined model sums the individual contributions."""
+    state_x = sl.State.from_pytree({"x": 1.0})
+    state_y = sl.State.from_pytree({"y": (2.0, 3.0)})
 
-        model1 = sl.Model(logpdf=lambda tree: tree["x"])
-        model2 = sl.Model(logpdf=lambda tree: tree["y"][0])  # type: ignore[index]
+    merged_mapping, metadata = sl.merge(state_x, state_y)
+    combined = sl.CombinedModel.combine(model_x, model_y)
 
-        state1: sl.FlatState[int] = sl.FlatState.from_pytree({"x": 1})
-        state2: sl.FlatState[int] = sl.FlatState.from_pytree({"y": (2, 3)})
+    expected = model_x(state_x) + model_y(state_y)
+    assert combined(merged_mapping, metadata) == expected
 
-        merged = sl.merge_states(state1, state2)
-        combined = sl.CombinedModel.combine(model1, model2)
 
-        assert combined(merged) == model1(state1) + model2(state2)
+def test_combined_model_validates_metadata_type() -> None:
+    """Metadata must be produced by :func:`everwillow.statelib.state.merge`."""
+    model = sl.Model(logpdf=lambda tree: tree["a"])  # type: ignore[index]
+    state = sl.State.from_pytree({"a": 1.0})
+    merged_mapping, _ = sl.merge(state)
 
-    def test_requires_matching_state_count(self) -> None:
-        """Mismatch between segments and component models raises ``ValueError``."""
+    combined = sl.CombinedModel.combine(model)
+    with pytest.raises(TypeError, match="MergeMetadata"):
+        combined(merged_mapping, merge_metadata=None)  # type: ignore[arg-type]
 
-        model1 = sl.Model(logpdf=lambda tree: tree["x"])
-        model2 = sl.Model(logpdf=lambda tree: tree["y"][0])  # type: ignore[index]
-        state: sl.FlatState[int] = sl.FlatState.from_pytree({"x": 1})
 
-        combined = sl.CombinedModel.combine(model1, model2)
+def test_combined_model_detects_segment_mismatch() -> None:
+    """Mismatch between models and merged segments raises ``ValueError``."""
+    model_x = sl.Model(logpdf=lambda tree: tree["x"])  # type: ignore[index]
+    model_y = sl.Model(logpdf=lambda tree: tree["y"])  # type: ignore[index]
 
-        with pytest.raises(ValueError, match="Expected 2 states"):
-            combined(state)
+    state = sl.State.from_pytree({"x": 1.0})
+    merged_mapping, metadata = sl.merge(state)
 
-    def test_rejects_non_flat_state(self) -> None:
-        """Passing a plain mapping instead of ``FlatState`` raises ``TypeError``."""
-
-        model1 = sl.Model(logpdf=lambda tree: tree["x"])
-        model2 = sl.Model(logpdf=lambda tree: tree["y"][0])  # type: ignore[index]
-
-        state1: sl.FlatState[int] = sl.FlatState.from_pytree({"x": 1})
-        state2: sl.FlatState[int] = sl.FlatState.from_pytree({"y": (2, 3)})
-
-        merged = sl.merge_states(state1, state2)
-        combined = sl.CombinedModel.combine(model1, model2)
-        with pytest.raises(TypeError, match="parameters must be a FlatState"):
-            combined(merged.to_dict())  # type: ignore[arg-type]
+    combined = sl.CombinedModel.combine(model_x, model_y)
+    with pytest.raises(ValueError, match="Expected 2 states"):
+        combined(merged_mapping, metadata)

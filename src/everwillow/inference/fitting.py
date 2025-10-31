@@ -116,7 +116,7 @@ def fit(
 
     # Partition state into fixed and free components
     fixed_state, free_state = sl.partition(
-        param_state_transformed,
+        param_state_transformed.mapping,
         predicate=lambda key, _value: key in fixed,
     )
 

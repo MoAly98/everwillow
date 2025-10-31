@@ -7,5 +7,4 @@
    statelib/state
    statelib/transform
    statelib/model
-   statelib/key_paths
 ```

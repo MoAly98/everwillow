@@ -7,10 +7,10 @@ __all__ = ["Transform", "apply_transformations"]
 import dataclasses
 import typing as tp
 
-from everwillow.statelib.state import K, State, T
+from everwillow.statelib.state import K, State, V
 
 
-def _identity(key: K, value: T) -> T:
+def _identity(key: K, value: V) -> V:
     """Return the value unchanged.
 
     Args:
@@ -25,7 +25,7 @@ def _identity(key: K, value: T) -> T:
 
 
 @dataclasses.dataclass(frozen=True)
-class Transform(tp.Generic[T]):
+class Transform(tp.Generic[V]):
     """Describe how a single key/value pair should be rewritten.
 
     Examples:
@@ -35,15 +35,15 @@ class Transform(tp.Generic[T]):
     """
 
     new_key: K  #: Replacement key tuple used in the transformed state.
-    value_fn: tp.Callable[[K, T], T] = dataclasses.field(
+    value_fn: tp.Callable[[K, V], V] = dataclasses.field(
         default=_identity
     )  #: Callable applied to derive the transformed value.
 
 
 def apply_transformations(
-    state: State[T],
-    transformations: tp.Mapping[K, Transform[T]],
-) -> State[T]:
+    state: State[V],
+    transformations: tp.Mapping[K, Transform[V]],
+) -> State[V]:
     """Rewrite selected entries in a ``State``.
 
     Args:
@@ -71,7 +71,7 @@ def apply_transformations(
     if len(transformations) == 0:
         return state
 
-    new_data: tp.MutableMapping[K, T] = {}
+    new_data: tp.MutableMapping[K, V] = {}
     for key, value in state.items():
         if key in transformations:
             transform = transformations[key]

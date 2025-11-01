@@ -15,7 +15,7 @@ import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree, PyTreeDef
 
 K: tp.TypeAlias = str | tuple[str, ...]
-T = tp.TypeVar("T", bound=ArrayLike)
+V = tp.TypeVar("V", bound=ArrayLike)
 
 
 @tp.overload
@@ -71,8 +71,8 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
 
 
 def FrozenChainMap(
-    *mappings: tp.Mapping[K, T],
-) -> tp.ChainMap[K, T]:
+    *mappings: tp.Mapping[K, V],
+) -> tp.ChainMap[K, V]:
     """Create a read-only ChainMap from multiple mappings.
 
     Args:
@@ -84,7 +84,7 @@ def FrozenChainMap(
     return tp.ChainMap(*map(MappingProxyType, mappings))  # type: ignore[arg-type]
 
 
-class BaseMapping(tp.Mapping[K, T], tp.Generic[T]):
+class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
     """Read-only mapping facade used by the state containers.
 
     This class wraps an immutable mapping and exposes the standard mapping
@@ -102,7 +102,7 @@ class BaseMapping(tp.Mapping[K, T], tp.Generic[T]):
 
     _mapping: MappingProxyType
 
-    def __getitem__(self, key: K) -> T:
+    def __getitem__(self, key: K) -> V:
         return self._mapping[key]
 
     def __iter__(self) -> tp.Iterator[K]:
@@ -111,11 +111,11 @@ class BaseMapping(tp.Mapping[K, T], tp.Generic[T]):
     def __len__(self) -> int:
         return len(self._mapping)
 
-    def to_dict(self) -> dict[K, T]:
+    def to_dict(self) -> dict[K, V]:
         return dict(self._mapping)
 
     @property
-    def mapping(self) -> MappingProxyType[K, T]:
+    def mapping(self) -> MappingProxyType[K, V]:
         """Read-only view of the underlying mapping.
 
         Returns:
@@ -131,7 +131,7 @@ class BaseMapping(tp.Mapping[K, T], tp.Generic[T]):
 
 
 @jtu.register_pytree_with_keys_class
-class State(BaseMapping[T]):
+class State(BaseMapping[V]):
     """Container that stores flattened pytrees keyed by canonical tuples.
 
     The state keeps track of the pytree definition so it can be converted back
@@ -147,7 +147,7 @@ class State(BaseMapping[T]):
 
     def __init__(
         self,
-        mapping: tp.Mapping[K, T],
+        mapping: tp.Mapping[K, V],
         *,
         treedef: PyTreeDef | None = None,
     ) -> None:
@@ -166,7 +166,7 @@ class State(BaseMapping[T]):
         self._treedef = treedef
 
     @classmethod
-    def from_pytree(cls, pytree: PyTree[T], *, sep: str | None = None) -> State[T]:
+    def from_pytree(cls, pytree: PyTree[V], *, sep: str | None = None) -> State[V]:
         """Build a :class:`State` instance from an arbitrary pytree.
 
         Args:
@@ -226,8 +226,8 @@ class State(BaseMapping[T]):
     def tree_unflatten(
         cls,
         aux_data: tuple[PyTreeDef | None],
-        children: tuple[tp.Mapping[K, T], ...],
-    ) -> State[T]:
+        children: tuple[tp.Mapping[K, V], ...],
+    ) -> State[V]:
         (treedef,) = aux_data
         (mapping,) = children
         return cls(mapping, treedef=treedef)
@@ -250,8 +250,8 @@ class MergeMetadata:
 
     def split(
         self,
-        chain_map: tp.ChainMap[K, T],
-    ) -> tuple[State[T], ...]:
+        chain_map: tp.ChainMap[K, V],
+    ) -> tuple[State[V], ...]:
         """Partition a merged ChainMap back into individual states.
 
         Args:
@@ -272,7 +272,7 @@ class MergeMetadata:
         )
 
 
-def merge(*states: State[T]) -> tuple[tp.ChainMap[K, T], MergeMetadata]:
+def merge(*states: State[V]) -> tuple[tp.ChainMap[K, V], MergeMetadata]:
     """Combine several :class:`State` objects into a single mapping.
 
     Args:
@@ -298,9 +298,9 @@ def merge(*states: State[T]) -> tuple[tp.ChainMap[K, T], MergeMetadata]:
 
 
 def split(
-    mapping: tp.ChainMap[K, T],
+    mapping: tp.ChainMap[K, V],
     metadata: MergeMetadata,
-) -> tuple[State[T], ...]:
+) -> tuple[State[V], ...]:
     """Split a merged mapping back into its original states.
 
     Args:
@@ -321,7 +321,7 @@ def split(
 
 
 @jtu.register_pytree_with_keys_class
-class PartitionedMapping(BaseMapping[T]):
+class PartitionedMapping(BaseMapping[V]):
     """Read-only mapping that remembers which object it was partitioned from.
 
     Each partition stores the ``id`` of the original mapping so that only
@@ -336,7 +336,7 @@ class PartitionedMapping(BaseMapping[T]):
 
     def __init__(
         self,
-        mapping: tp.Mapping[K, T],
+        mapping: tp.Mapping[K, V],
         *,
         origin: int,
     ) -> None:
@@ -365,17 +365,17 @@ class PartitionedMapping(BaseMapping[T]):
     def tree_unflatten(
         cls,
         aux_data: tuple[int],
-        children: tuple[tp.Mapping[K, T], ...],
-    ) -> PartitionedMapping[T]:
+        children: tuple[tp.Mapping[K, V], ...],
+    ) -> PartitionedMapping[V]:
         (mapping,) = children
         (origin,) = aux_data
         return cls(mapping, origin=origin)
 
 
 def partition(
-    mapping: tp.Mapping[K, T],
-    predicate: tp.Callable[[K, T], bool],
-) -> tuple[PartitionedMapping[T], PartitionedMapping[T]]:
+    mapping: tp.Mapping[K, V],
+    predicate: tp.Callable[[K, V], bool],
+) -> tuple[PartitionedMapping[V], PartitionedMapping[V]]:
     """Split a mapping into two partitions based on a predicate.
 
     Args:
@@ -410,9 +410,9 @@ def partition(
 
 
 def combine_partitions(
-    left: PartitionedMapping[T],
-    right: PartitionedMapping[T],
-) -> tp.ChainMap[K, T]:
+    left: PartitionedMapping[V],
+    right: PartitionedMapping[V],
+) -> tp.ChainMap[K, V]:
     """Merge two partitions that originated from the same mapping.
 
     Args:
@@ -439,9 +439,9 @@ def combine_partitions(
 
 
 def update(
-    state: State[T],
-    updates: tp.Mapping[K, T],
-) -> State[T]:
+    state: State[V],
+    updates: tp.Mapping[K, V],
+) -> State[V]:
     """Return a new state with specific entries replaced.
 
     Args:
@@ -463,7 +463,7 @@ def update(
     """
     if not isinstance(state, State):
         msg = "Can only update State types"  # type: ignore[unreachable]
-        raise ValueError(msg)
+        raise TypeError(msg)
 
     data = dict(state.mapping)
     for key, value in updates.items():
@@ -481,7 +481,7 @@ __all__ = [
     "MergeMetadata",
     "PartitionedMapping",
     "State",
-    "T",
+    "V",
     "canonicalize_key",
     "combine_partitions",
     "merge",

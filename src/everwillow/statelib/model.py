@@ -9,7 +9,7 @@ import typing as tp
 
 from jaxtyping import PyTree
 
-from everwillow.statelib.state import K, MergeMetadata, State, V, split
+from everwillow.statelib.state import FrozenChainMap, MergeMetadata, State, V, split
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,7 +66,7 @@ class CombinedModel:
 
     def __call__(
         self,
-        parameters: tp.ChainMap[K, V],
+        parameters: FrozenChainMap[V],
         merge_metadata: MergeMetadata,
     ) -> float:
         """Evaluate all models on the provided merged state.

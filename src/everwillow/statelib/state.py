@@ -64,24 +64,10 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
             result.append(entry.key)
         else:
             msg = f"Unrecognised key path entry: {entry}"
-            raise ValueError(msg)
+            raise TypeError(msg)
     if sep is not None:
         return sep.join(map(str, result))
     return tuple(result)
-
-
-def FrozenChainMap(
-    *mappings: tp.Mapping[K, V],
-) -> tp.ChainMap[K, V]:
-    """Create a read-only ChainMap from multiple mappings.
-
-    Args:
-        *mappings: Ordered sequence of mappings to combine.
-
-    Returns:
-        A read-only ChainMap containing the combined mappings.
-    """
-    return tp.ChainMap(*map(MappingProxyType, mappings))  # type: ignore[arg-type]
 
 
 class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
@@ -100,7 +86,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         1.0
     """
 
-    _mapping: MappingProxyType
+    _mapping: tp.Mapping[K, V]
 
     def __getitem__(self, key: K) -> V:
         return self._mapping[key]
@@ -115,7 +101,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         return dict(self._mapping)
 
     @property
-    def mapping(self) -> MappingProxyType[K, V]:
+    def mapping(self) -> tp.Mapping[K, V]:
         """Read-only view of the underlying mapping.
 
         Returns:
@@ -128,6 +114,29 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         """
 
         return self._mapping
+
+
+class FrozenChainMap(BaseMapping[V]):
+    """Create a read-only ChainMap from multiple mappings.
+
+    Args:
+        *mappings: Ordered sequence of mappings to combine.
+
+    Returns:
+        A read-only ChainMap containing the combined mappings.
+        In contrast to ``collections.ChainMap``, this class is immutable.
+    """
+
+    def __init__(self, *mappings: tp.Mapping[K, V]) -> None:
+        self._mapping = tp.ChainMap(*map(MappingProxyType, mappings))  # type: ignore[arg-type]
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.to_dict()!r})"
+
+    @property
+    def maps(self) -> tuple[tp.Mapping[K, V], ...]:
+        # forward from ChainMap
+        return self._mapping.maps  # type: ignore[attr-defined]
 
 
 @jtu.register_pytree_with_keys_class
@@ -162,7 +171,10 @@ class State(BaseMapping[V]):
             >>> State(mapping={("a",): 1}, treedef=None).to_dict()
             {('a',): 1}
         """
-        self._mapping = MappingProxyType(mapping)
+        # Ensure the mapping is immutable
+        if isinstance(mapping, tp.MutableMapping):
+            mapping = MappingProxyType(mapping)
+        self._mapping = mapping
         self._treedef = treedef
 
     @classmethod
@@ -172,7 +184,7 @@ class State(BaseMapping[V]):
         Args:
             pytree: Nested structure supported by :mod:`jax.tree_util`.
             sep: Optional separator used to join key entries when constructing
-                public keys. The default forward slash mirrors filesystem paths.
+                public keys. When ``None`` (default), keys are returned as tuples.
 
         Returns:
             New :class:`State` representing ``pytree``.
@@ -250,12 +262,12 @@ class MergeMetadata:
 
     def split(
         self,
-        chain_map: tp.ChainMap[K, V],
+        chain_map: FrozenChainMap[V],
     ) -> tuple[State[V], ...]:
-        """Partition a merged ChainMap back into individual states.
+        """Partition a merged FrozenChainMap back into individual states.
 
         Args:
-            chain_map: ChainMap produced by :func:`merge`.
+            chain_map: FrozenChainMap produced by :func:`merge`.
 
         Returns:
             Tuple of :class:`State` objects restoring the original order.
@@ -272,7 +284,7 @@ class MergeMetadata:
         )
 
 
-def merge(*states: State[V]) -> tuple[tp.ChainMap[K, V], MergeMetadata]:
+def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMetadata]:
     """Combine several :class:`State` objects into a single mapping.
 
     Args:
@@ -280,6 +292,10 @@ def merge(*states: State[V]) -> tuple[tp.ChainMap[K, V], MergeMetadata]:
 
     Returns:
         Tuple containing the merged mapping and the metadata required to split it.
+
+    Note:
+        When multiple states contain the same key, the value from the first state
+        in ``*states`` takes precedence due to :class:`~collections.ChainMap` semantics.
 
     Examples:
         >>> first = State.from_pytree({"a": 1})
@@ -298,7 +314,7 @@ def merge(*states: State[V]) -> tuple[tp.ChainMap[K, V], MergeMetadata]:
 
 
 def split(
-    mapping: tp.ChainMap[K, V],
+    mapping: FrozenChainMap[V],
     metadata: MergeMetadata,
 ) -> tuple[State[V], ...]:
     """Split a merged mapping back into its original states.
@@ -412,7 +428,7 @@ def partition(
 def combine_partitions(
     left: PartitionedMapping[V],
     right: PartitionedMapping[V],
-) -> tp.ChainMap[K, V]:
+) -> FrozenChainMap[V]:
     """Merge two partitions that originated from the same mapping.
 
     Args:
@@ -435,7 +451,7 @@ def combine_partitions(
         msg = "partitions must originate from the same original mapping"
         raise ValueError(msg)
     # this order is important here to preserve original mapping order
-    return FrozenChainMap(right.mapping, left.mapping)
+    return FrozenChainMap(left.mapping, right.mapping)
 
 
 def update(

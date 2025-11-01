@@ -1,6 +1,9 @@
 """
 Example
 -------
+>>> import jax.numpy as jnp
+>>> from everwillow import statelib as sl
+>>> from everwillow.parameters import transforms
 >>> state = sl.State.from_pytree({"mu": 0.3})
 >>> transform_map = {("mu",): transforms.MinuitTransform(lower=0.0, upper=1.0)}
 >>> unwrapped = unwrap(state, transform_map)
@@ -31,8 +34,7 @@ def unwrap(
 
     new_mapping = dict(state.mapping)
     for key, transform in transform_mapping.items():
-        if key in new_mapping:
-            new_mapping[key] = transform.unwrap(new_mapping[key])
+        new_mapping[key] = transform.unwrap(new_mapping[key])
     return State(new_mapping, treedef=state.treedef)
 
 
@@ -49,6 +51,5 @@ def wrap(
 
     new_mapping = dict(state.mapping)
     for key, transform in transform_mapping.items():
-        if key in new_mapping:
-            new_mapping[key] = transform.wrap(new_mapping[key])
+        new_mapping[key] = transform.wrap(new_mapping[key])
     return State(new_mapping, treedef=state.treedef)

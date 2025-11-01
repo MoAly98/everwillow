@@ -64,12 +64,17 @@ def test_partition_and_combine_roundtrip() -> None:
         predicate=lambda key, _value: "a" in key,
     )
 
-    assert dict(left.mapping) == {("a", "x"): 1.0}
-    assert dict(right.mapping) == {("b",): 2.0}
+    assert left.mapping == {("a", "x"): 1.0}
+    assert right.mapping == {("b",): 2.0}
 
     combined = sl.combine_partitions(left, right)
-    rebuilt = sl.State(mapping=dict(combined), treedef=state.treedef)
-    assert rebuilt.to_pytree() == state.to_pytree()
+    rebuilt_correct_order = sl.update(state, combined)
+    assert rebuilt_correct_order.to_pytree() == state.to_pytree()
+
+    # also test combining without preserving order,
+    # .to_pytree() fails if order is wrong
+    rebuilt = sl.State(mapping=combined, treedef=state.treedef)
+    assert rebuilt.to_pytree() != state.to_pytree()
 
 
 def test_partition_origin_mismatch_raises() -> None:

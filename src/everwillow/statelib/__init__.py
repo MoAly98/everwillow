@@ -1,10 +1,11 @@
 __all__ = [
     "CombinedModel",
-    "KeyPath",
+    "K",
     "MergeMetadata",
     "Model",
     "PartitionedMapping",
     "State",
+    "T",
     "Transform",
     "apply_transformations",
     "canonicalize_key",
@@ -17,10 +18,11 @@ __all__ = [
 
 from .model import CombinedModel, Model
 from .state import (
-    KeyPath,
+    K,
     MergeMetadata,
     PartitionedMapping,
     State,
+    T,
     canonicalize_key,
     combine_partitions,
     merge,

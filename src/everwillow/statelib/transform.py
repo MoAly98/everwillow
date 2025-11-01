@@ -7,10 +7,10 @@ __all__ = ["Transform", "apply_transformations"]
 import dataclasses
 import typing as tp
 
-from everwillow.statelib.state import KeyPath, LeafT, State
+from everwillow.statelib.state import K, State, T
 
 
-def _identity(key: KeyPath, value: LeafT) -> LeafT:
+def _identity(key: K, value: T) -> T:
     """Return the value unchanged.
 
     Args:
@@ -25,7 +25,7 @@ def _identity(key: KeyPath, value: LeafT) -> LeafT:
 
 
 @dataclasses.dataclass(frozen=True)
-class Transform(tp.Generic[LeafT]):
+class Transform(tp.Generic[T]):
     """Describe how a single key/value pair should be rewritten.
 
     Examples:
@@ -34,16 +34,16 @@ class Transform(tp.Generic[LeafT]):
         ('scale',)
     """
 
-    new_key: KeyPath  #: Replacement key tuple used in the transformed state.
-    value_fn: tp.Callable[[KeyPath, LeafT], LeafT] = dataclasses.field(
+    new_key: K  #: Replacement key tuple used in the transformed state.
+    value_fn: tp.Callable[[K, T], T] = dataclasses.field(
         default=_identity
     )  #: Callable applied to derive the transformed value.
 
 
 def apply_transformations(
-    state: State[LeafT] | tp.Any,
-    transformations: tp.Mapping[KeyPath, Transform[LeafT]],
-) -> State[LeafT]:
+    state: State[T],
+    transformations: tp.Mapping[K, Transform[T]],
+) -> State[T]:
     """Rewrite selected entries in a ``State``.
 
     Args:
@@ -65,13 +65,13 @@ def apply_transformations(
         {('alpha',): 1, ('b',): 2}
     """
     if not isinstance(state, State):
-        message = "'state' must be a State instance"
+        message = "'state' must be a State instance"  # type: ignore[unreachable]
         raise TypeError(message)
 
     if len(transformations) == 0:
         return state
 
-    new_data: dict[KeyPath, LeafT] = {}
+    new_data: tp.MutableMapping[K, T] = {}
     for key, value in state.items():
         if key in transformations:
             transform = transformations[key]

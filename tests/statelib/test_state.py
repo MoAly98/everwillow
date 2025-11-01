@@ -8,11 +8,13 @@ import pytest
 
 import everwillow.statelib as sl
 
+FState: tp.TypeAlias = sl.State[float]
+
 
 def test_state_roundtrip_preserves_structure() -> None:
     """Flattening and rehydrating a pytree keeps the same layout."""
     tree = {"a": 1.0, "b": {"c": 2.0}}
-    state = sl.State.from_pytree(tree, sep=None)
+    state: FState = sl.State.from_pytree(tree, sep=None)
 
     assert dict(state.mapping) == {("a",): 1.0, ("b", "c"): 2.0}
     assert state.to_pytree() == tree
@@ -20,7 +22,7 @@ def test_state_roundtrip_preserves_structure() -> None:
 
 def test_state_behaves_like_mapping() -> None:
     """``State`` exposes mapping operations for convenience."""
-    state = sl.State.from_pytree({"x": {"y": 3.0}}, sep=None)
+    state: FState = sl.State.from_pytree({"x": {"y": 3.0}}, sep=None)
 
     assert ("x", "y") in state
     assert state["x", "y"] == 3.0
@@ -29,8 +31,8 @@ def test_state_behaves_like_mapping() -> None:
 
 def test_merge_and_split_restore_inputs() -> None:
     """Merged mappings can be split back into the original states."""
-    state_a = sl.State.from_pytree({"a": 1.0}, sep=None)
-    state_b = sl.State.from_pytree({"b": {"c": 2.0}}, sep=None)
+    state_a: FState = sl.State.from_pytree({"a": 1.0}, sep=None)
+    state_b: FState = sl.State.from_pytree({"b": {"c": 2.0}}, sep=None)
 
     merged_mapping, metadata = sl.merge(state_a, state_b)
     assert merged_mapping["a",] == 1.0
@@ -43,7 +45,7 @@ def test_merge_and_split_restore_inputs() -> None:
 
 def test_update_replaces_only_existing_keys() -> None:
     """Updating a state yields a new instance with selected keys replaced."""
-    state = sl.State.from_pytree({"a": 1.0, "b": 2.0}, sep=None)
+    state: FState = sl.State.from_pytree({"a": 1.0, "b": 2.0}, sep=None)
 
     updated = sl.update(state, {("b",): 99.0})
     assert updated["b",] == 99.0
@@ -55,11 +57,11 @@ def test_update_replaces_only_existing_keys() -> None:
 
 def test_partition_and_combine_roundtrip() -> None:
     """Partitioning a mapping and recombining yields the same data."""
-    state = sl.State.from_pytree({"a": {"x": 1.0}, "b": 2.0}, sep=None)
+    state: FState = sl.State.from_pytree({"a": {"x": 1.0}, "b": 2.0}, sep=None)
 
     left, right = sl.partition(
         state,
-        predicate=lambda key, _value: "a" in tp.cast(tuple, key),
+        predicate=lambda key, _value: "a" in key,
     )
 
     assert dict(left.mapping) == {("a", "x"): 1.0}
@@ -72,8 +74,8 @@ def test_partition_and_combine_roundtrip() -> None:
 
 def test_partition_origin_mismatch_raises() -> None:
     """Merging partitions originating from different mappings is rejected."""
-    state_one = sl.State.from_pytree({"a": 1.0, "b": 2.0})
-    state_two = sl.State.from_pytree({"a": 5.0, "c": 6.0})
+    state_one: FState = sl.State.from_pytree({"a": 1.0, "b": 2.0})
+    state_two: FState = sl.State.from_pytree({"a": 5.0, "c": 6.0})
 
     left_one, _right_one = sl.partition(
         state_one,

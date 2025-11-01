@@ -85,7 +85,7 @@ class TestFitResult:
     def test_fitresult_creation(self):
         """Test creating a FitResult with all fields."""
         params = {"mu": 1.0, "sigma": 0.5}
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params=params,
             nll=jnp.asarray(5.5),
             success=jnp.asarray(True),
@@ -99,7 +99,7 @@ class TestFitResult:
 
     def test_fitresult_frozen(self):
         """Test that FitResult is immutable (frozen dataclass)."""
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params={},
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),
@@ -111,7 +111,7 @@ class TestFitResult:
 
     def test_fitresult_allows_none_solver_result(self):
         """Test that solver_result accepts ``None``."""
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params={},
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),

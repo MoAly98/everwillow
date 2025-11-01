@@ -9,7 +9,7 @@ import typing as tp
 
 from jaxtyping import PyTree
 
-from everwillow.statelib.state import KeyPath, MergeMetadata, State, split
+from everwillow.statelib.state import K, MergeMetadata, State, T, split
 
 
 @dataclasses.dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Model:
 
     logpdf: tp.Callable[[PyTree], float]  #: Evaluates the log-density for the pytree.
 
-    def __call__(self, parameters: tp.Any) -> float:
+    def __call__(self, parameters: State) -> float:
         """Evaluate the wrapped log-density function.
 
         Args:
@@ -37,7 +37,7 @@ class Model:
         """
 
         if not isinstance(parameters, State):
-            msg = "parameters must be a State"
+            msg = "parameters must be a State"  # type: ignore[unreachable]
             raise TypeError(msg)
         pytree = parameters.to_pytree()
         return self.logpdf(pytree)
@@ -66,8 +66,8 @@ class CombinedModel:
 
     def __call__(
         self,
-        parameters: tp.Mapping[KeyPath, tp.Any],
-        merge_metadata: tp.Any,
+        parameters: tp.ChainMap[K, T],
+        merge_metadata: MergeMetadata,
     ) -> float:
         """Evaluate all models on the provided merged state.
 
@@ -79,7 +79,7 @@ class CombinedModel:
             Sum of the log-density values returned by each model.
         """
         if not isinstance(merge_metadata, MergeMetadata):
-            message = "merge_metadata must be a MergeMetadata instance"
+            message = "merge_metadata must be a MergeMetadata instance"  # type: ignore[unreachable]
             raise TypeError(message)
 
         states = split(parameters, metadata=merge_metadata)

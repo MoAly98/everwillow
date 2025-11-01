@@ -11,13 +11,13 @@ from jaxtyping import PyTree
 
 import everwillow.statelib as sl
 from everwillow.parameters import AbstractParameterTransformation, unwrap, wrap
-from everwillow.statelib import KeyPath
+from everwillow.statelib import K, T
 
 
-class FitResult(eqx.Module):
+class FitResult(eqx.Module, tp.Generic[T]):
     """Result of a fit operation."""
 
-    params: PyTree  #: Fitted parameter pytree.
+    params: PyTree[T]  #: Fitted parameter pytree.
     nll: jax.Array  #: Negative log-likelihood at the optimum.
     success: jax.Array  #: Whether the optimisation converged.
     solver_result: PyTree  #: Raw solver result.
@@ -25,13 +25,13 @@ class FitResult(eqx.Module):
 
 def fit(
     nll_fn: tp.Callable[[PyTree], float],
-    params: PyTree,
+    params: PyTree[T],
     *,
-    fixed: tp.Mapping[KeyPath, tp.Any] | None = None,
-    bounds: tp.Mapping[KeyPath, AbstractParameterTransformation] | None = None,
+    fixed: tp.Mapping[K, T] | None = None,
+    bounds: tp.Mapping[K, AbstractParameterTransformation] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     **minimise_kwargs,
-) -> FitResult:
+) -> FitResult[T]:
     """Perform an unconditional maximum-likelihood fit.
 
     The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
@@ -101,7 +101,7 @@ def fit(
         True
     """
     # Convert to State for manipulation
-    param_state = sl.State.from_pytree(params, sep="/")
+    param_state: sl.State[T] = sl.State.from_pytree(params, sep="/")
 
     if fixed is None:
         fixed = {}

@@ -2,9 +2,9 @@
 Example
 -------
 >>> state = sl.State.from_pytree({"mu": 0.3})
->>> transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
->>> unwrapped = unwrap(state, {("mu",): transform})
->>> jnp.isclose(wrap(unwrapped, {("mu",): transform)[("mu",)], state[("mu",)])
+>>> transform_map = {("mu",): transforms.MinuitTransform(lower=0.0, upper=1.0)}
+>>> unwrapped = unwrap(state, transform_map)
+>>> jnp.isclose(wrap(unwrapped, transform_map)[("mu",)], state[("mu",)])
 Array(True, dtype=bool)
 """
 

@@ -266,10 +266,10 @@ class MergeMetadata:
             >>> metadata.split(merged)[0].to_pytree()
             {'a': 1}
         """
-        states: list[State[T]] = []
-        for mapping, treedef in zip(chain_map.maps, self.treedefs, strict=True):
-            states.append(State(mapping, treedef=treedef))
-        return tuple(states)
+        return tuple(
+            State(mapping, treedef=treedef)
+            for mapping, treedef in zip(chain_map.maps, self.treedefs, strict=True)
+        )
 
 
 def merge(*states: State[T]) -> tuple[tp.ChainMap[K, T], MergeMetadata]:
@@ -367,8 +367,8 @@ class PartitionedMapping(BaseMapping[T]):
         aux_data: tuple[int],
         children: tuple[tp.Mapping[K, T], ...],
     ) -> PartitionedMapping[T]:
-        (origin,) = aux_data
         (mapping,) = children
+        (origin,) = aux_data
         return cls(mapping, origin=origin)
 
 

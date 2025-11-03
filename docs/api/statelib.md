@@ -6,5 +6,4 @@
 
    statelib/state
    statelib/transform
-   statelib/model
 ```

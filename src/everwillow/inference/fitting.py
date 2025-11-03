@@ -128,8 +128,8 @@ def fit(
         # Combine partitions back together (still in unbounded space)
         combined_mapping = sl.combine_partitions(fixed_state, new_state)
 
-        # Caution: using sl.update to preserve the original key order
-        full_state_t = sl.update(param_state_transformed, combined_mapping)
+        # Caution: using param_state.treedefmeta to preserve the original key order
+        full_state_t = sl.State(combined_mapping, treedefmeta=param_state.treedefmeta)
 
         # Transform back to bounded space for NLL evaluation
         full_state = wrap(full_state_t, bounds)

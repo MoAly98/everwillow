@@ -71,10 +71,9 @@ def test_partition_and_combine_roundtrip() -> None:
     rebuilt_correct_order = sl.update(state, combined)
     assert rebuilt_correct_order.to_pytree() == state.to_pytree()
 
-    # also test combining without preserving order,
-    # .to_pytree() fails if order is wrong
-    rebuilt = sl.State(mapping=combined, treedef=state.treedef)
-    assert rebuilt.to_pytree() != state.to_pytree()
+    # also test roundtrip through State constructor
+    rebuilt = sl.State(mapping=combined, treedefmeta=state.treedefmeta)
+    assert rebuilt.to_pytree() == state.to_pytree()
 
 
 def test_partition_origin_mismatch_raises() -> None:

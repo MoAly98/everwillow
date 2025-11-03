@@ -1,11 +1,12 @@
 __all__ = [
     "CombinedModel",
     "K",
-    "MergeMetadata",
+    "MergeMeta",
     "Model",
     "PartitionedMapping",
     "State",
     "Transform",
+    "TreeDefMeta",
     "V",
     "apply_transformations",
     "canonicalize_key",
@@ -16,10 +17,10 @@ __all__ = [
     "update",
 ]
 
+from .meta import MergeMeta, TreeDefMeta
 from .model import CombinedModel, Model
 from .state import (
     K,
-    MergeMetadata,
     PartitionedMapping,
     State,
     V,

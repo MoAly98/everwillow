@@ -23,7 +23,7 @@ def test_apply_transformations_rewrites_keys_and_values() -> None:
     transformed = sl.apply_transformations(state, transforms)
 
     assert dict(transformed.mapping) == {("alpha",): 2, ("beta",): 4}
-    assert transformed.treedef == state.treedef
+    assert transformed.treedefmeta == state.treedefmeta
 
 
 def test_apply_transformations_rejects_duplicate_targets() -> None:

@@ -44,7 +44,7 @@ def test_combined_model_validates_metadata_type() -> None:
     merged_mapping, _ = sl.merge(state)
 
     combined = sl.CombinedModel.combine(model)
-    with pytest.raises(TypeError, match="MergeMetadata"):
+    with pytest.raises(TypeError, match="MergeMeta"):
         combined(merged_mapping, merge_metadata=None)  # type: ignore[arg-type]
 
 

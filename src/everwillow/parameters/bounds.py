@@ -35,7 +35,7 @@ def unwrap(
     new_mapping = dict(state.mapping)
     for key, transform in transform_mapping.items():
         new_mapping[key] = transform.unwrap(new_mapping[key])
-    return State(new_mapping, treedef=state.treedef)
+    return State(new_mapping, treedefmeta=state.treedefmeta)
 
 
 def wrap(
@@ -52,4 +52,4 @@ def wrap(
     new_mapping = dict(state.mapping)
     for key, transform in transform_mapping.items():
         new_mapping[key] = transform.wrap(new_mapping[key])
-    return State(new_mapping, treedef=state.treedef)
+    return State(new_mapping, treedefmeta=state.treedefmeta)

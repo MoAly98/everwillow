@@ -104,7 +104,7 @@ flags, rest = sl.partition(
 )
 
 try:
-    sl.State(flags.mapping, treedef=state.treedef).to_pytree()
+    sl.State(flags.mapping, treedefmeta=state.treedefmeta).to_pytree()
 except ValueError:
     pass  # partitions are intentionally incomplete
 

@@ -84,4 +84,4 @@ def apply_transformations(
         else:
             new_data[key] = value
 
-    return State(mapping=new_data, treedef=state.treedef)
+    return State(mapping=new_data, treedefmeta=state.treedefmeta)

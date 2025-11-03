@@ -6,13 +6,27 @@ the canonical tuple keys JAX emits when flattening nested structures.
 
 from __future__ import annotations
 
-import dataclasses
 import typing as tp
-from functools import partial
 from types import MappingProxyType
 
 import jax.tree_util as jtu
-from jaxtyping import ArrayLike, PyTree, PyTreeDef
+from jaxtyping import ArrayLike, PyTree
+
+from everwillow.statelib.meta import MergeMeta, TreeDefMeta
+
+__all__ = [
+    "K",
+    "PartitionedMapping",
+    "State",
+    "V",
+    "canonicalize_key",
+    "combine_partitions",
+    "merge",
+    "partition",
+    "split",
+    "update",
+]
+
 
 K: tp.TypeAlias = str | tuple[str, ...]
 V = tp.TypeVar("V", bound=ArrayLike)
@@ -86,6 +100,8 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         1.0
     """
 
+    __slots__ = ("_mapping",)
+
     _mapping: tp.Mapping[K, V]
 
     def __getitem__(self, key: K) -> V:
@@ -154,11 +170,13 @@ class State(BaseMapping[V]):
         {'a': {'b': 2.0}}
     """
 
+    __slots__ = ("_treedefmeta",)
+
     def __init__(
         self,
         mapping: tp.Mapping[K, V],
         *,
-        treedef: PyTreeDef | None = None,
+        treedefmeta: TreeDefMeta,
     ) -> None:
         """Initialise a state from an existing mapping.
 
@@ -168,14 +186,16 @@ class State(BaseMapping[V]):
             treedef: Optional pytree definition used for reconstruction.
 
         Examples:
-            >>> State(mapping={("a",): 1}, treedef=None).to_dict()
+            >>> State(mapping={("a",): 1}, treedefmeta=None).to_dict()
             {('a',): 1}
         """
         # Ensure the mapping is immutable
-        if isinstance(mapping, tp.MutableMapping):
-            mapping = MappingProxyType(mapping)
-        self._mapping = mapping
-        self._treedef = treedef
+        self._mapping = MappingProxyType(mapping)
+
+        if not isinstance(treedefmeta, TreeDefMeta):
+            msg = "'treedefmeta' must be a TreeDefMeta instance. Use State.from_pytree() instead."  # type: ignore[unreachable]
+            raise TypeError(msg)
+        self._treedefmeta = treedefmeta
 
     @classmethod
     def from_pytree(cls, pytree: PyTree[V], *, sep: str | None = None) -> State[V]:
@@ -194,13 +214,20 @@ class State(BaseMapping[V]):
             mappingproxy({('a', 0): 1.0, ('a', 1): 2.0})
         """
 
-        # noop if it is already a state
+        # noop if it is already a state (do we want this?)
         if isinstance(pytree, State):
             return pytree
 
+        # flatten the pytree with paths to build canonical keys
         path_leaves, treedef = jtu.tree_flatten_with_path(pytree)
-        data = {canonicalize_key(path, sep=sep): leaf for path, leaf in path_leaves}
-        return cls(data, treedef=treedef)
+        data, keys = {}, []
+        for path, leaf in path_leaves:
+            key = canonicalize_key(path, sep=sep)
+            data[key] = leaf
+            keys.append(key)
+
+        treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys))
+        return cls(data, treedefmeta=treedefmeta)
 
     def to_pytree(self) -> PyTree:
         """Reconstruct the stored pytree using the cached tree definition.
@@ -217,123 +244,29 @@ class State(BaseMapping[V]):
             {'x': 1}
         """
 
-        if self.treedef is None:
-            msg = "can't convert to PyTree if there's no tree definition"
-            raise ValueError(msg)
-        return jtu.tree_unflatten(self.treedef, self.values())
+        return self.treedefmeta.to_pytree(self.mapping)
 
     @property
-    def treedef(self) -> PyTreeDef | None:
-        return self._treedef
+    def treedefmeta(self) -> TreeDefMeta:
+        return self._treedefmeta
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
 
     def tree_flatten_with_keys(self):
         children_with_keys = ((jtu.GetAttrKey("_mapping"), self._mapping),)
-        aux_data = (self._treedef,)
+        aux_data = (self._treedefmeta,)
         return children_with_keys, aux_data
 
     @classmethod
     def tree_unflatten(
         cls,
-        aux_data: tuple[PyTreeDef | None],
+        aux_data: tuple[TreeDefMeta, ...],
         children: tuple[tp.Mapping[K, V], ...],
     ) -> State[V]:
-        (treedef,) = aux_data
+        (treedefmeta,) = aux_data
         (mapping,) = children
-        return cls(mapping, treedef=treedef)
-
-
-@partial(
-    jtu.register_dataclass,
-    data_fields=[],
-    meta_fields=["treedefs"],
-)
-@dataclasses.dataclass(frozen=True)
-class MergeMetadata:
-    """Metadata retained when multiple :class:`State` objects are merged.
-
-    The metadata stores the treedef for each original state alongside the group
-    of keys that belong to that state so the merged mapping can be split later.
-    """
-
-    treedefs: tuple[PyTreeDef | None, ...]
-
-    def split(
-        self,
-        chain_map: FrozenChainMap[V],
-    ) -> tuple[State[V], ...]:
-        """Partition a merged FrozenChainMap back into individual states.
-
-        Args:
-            chain_map: FrozenChainMap produced by :func:`merge`.
-
-        Returns:
-            Tuple of :class:`State` objects restoring the original order.
-
-        Examples:
-            >>> state_a = State.from_pytree({"a": 1})
-            >>> merged, metadata = merge(state_a)
-            >>> metadata.split(merged)[0].to_pytree()
-            {'a': 1}
-        """
-        return tuple(
-            State(mapping, treedef=treedef)
-            for mapping, treedef in zip(chain_map.maps, self.treedefs, strict=True)
-        )
-
-
-def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMetadata]:
-    """Combine several :class:`State` objects into a single mapping.
-
-    Args:
-        *states: Ordered sequence of states to merge.
-
-    Returns:
-        Tuple containing the merged mapping and the metadata required to split it.
-
-    Note:
-        When multiple states contain the same key, the value from the first state
-        in ``*states`` takes precedence due to :class:`~collections.ChainMap` semantics.
-
-    Examples:
-        >>> first = State.from_pytree({"a": 1})
-        >>> second = State.from_pytree({"b": 2})
-        >>> merged, metadata = merge(first, second)
-        >>> merged["b",]
-        2
-    """
-
-    merged, treedefs = [], []
-    for state in states:
-        merged.append(state.mapping)
-        treedefs.append(state.treedef)
-    metadata = MergeMetadata(treedefs=tuple(treedefs))
-    return FrozenChainMap(*merged), metadata
-
-
-def split(
-    mapping: FrozenChainMap[V],
-    metadata: MergeMetadata,
-) -> tuple[State[V], ...]:
-    """Split a merged mapping back into its original states.
-
-    Args:
-        mapping: Mapping produced by :func:`merge`.
-        metadata: Metadata returned by :func:`merge` for the same merge call.
-
-    Returns:
-        Tuple containing one :class:`State` per merged input.
-
-    Examples:
-        >>> first = State.from_pytree({"a": 1})
-        >>> merged, metadata = merge(first)
-        >>> split(merged, metadata)[0].to_pytree()
-        {'a': 1}
-    """
-
-    return metadata.split(mapping)
+        return cls(mapping, treedefmeta=treedefmeta)
 
 
 @jtu.register_pytree_with_keys_class
@@ -350,12 +283,15 @@ class PartitionedMapping(BaseMapping[V]):
         {('a',): 1}
     """
 
+    __slots__ = ("_origin",)
+
     def __init__(
         self,
         mapping: tp.Mapping[K, V],
         *,
         origin: int,
     ) -> None:
+        # Ensure the mapping is immutable
         self._mapping = MappingProxyType(mapping)
         self._origin = origin
 
@@ -386,6 +322,58 @@ class PartitionedMapping(BaseMapping[V]):
         (mapping,) = children
         (origin,) = aux_data
         return cls(mapping, origin=origin)
+
+
+def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMeta]:
+    """Combine several :class:`State` objects into a single mapping.
+
+    Args:
+        *states: Ordered sequence of states to merge.
+
+    Returns:
+        Tuple containing the merged mapping and the mergemeta required to split it.
+
+    Note:
+        When multiple states contain the same key, the value from the first state
+        in ``*states`` takes precedence due to :class:`~collections.ChainMap` semantics.
+
+    Examples:
+        >>> first = State.from_pytree({"a": 1})
+        >>> second = State.from_pytree({"b": 2})
+        >>> merged, mergemeta = merge(first, second)
+        >>> merged["b",]
+        2
+    """
+
+    merged, treedefmetas = [], []
+    for state in states:
+        merged.append(state.mapping)
+        treedefmetas.append(state.treedefmeta)
+    mergemeta = MergeMeta(treedefmetas=tuple(treedefmetas))
+    return FrozenChainMap(*merged), mergemeta
+
+
+def split(
+    mapping: FrozenChainMap[V],
+    metadata: MergeMeta,
+) -> tuple[State[V], ...]:
+    """Split a merged mapping back into its original states.
+
+    Args:
+        mapping: Mapping produced by :func:`merge`.
+        metadata: Metadata returned by :func:`merge` for the same merge call.
+
+    Returns:
+        Tuple containing one :class:`State` per merged input.
+
+    Examples:
+        >>> first = State.from_pytree({"a": 1})
+        >>> merged, metadata = merge(first)
+        >>> split(merged, metadata)[0].to_pytree()
+        {'a': 1}
+    """
+
+    return metadata.split(mapping)
 
 
 def partition(
@@ -450,7 +438,6 @@ def combine_partitions(
     if left.origin != right.origin:
         msg = "partitions must originate from the same original mapping"
         raise ValueError(msg)
-    # this order is important here to preserve original mapping order
     return FrozenChainMap(left.mapping, right.mapping)
 
 
@@ -489,19 +476,4 @@ def update(
             msg = f"cannot update missing key {key}"
             raise KeyError(msg)
         data[key] = value
-    return State(data, treedef=state.treedef)
-
-
-__all__ = [
-    "K",
-    "MergeMetadata",
-    "PartitionedMapping",
-    "State",
-    "V",
-    "canonicalize_key",
-    "combine_partitions",
-    "merge",
-    "partition",
-    "split",
-    "update",
-]
+    return State(data, treedefmeta=state.treedefmeta)

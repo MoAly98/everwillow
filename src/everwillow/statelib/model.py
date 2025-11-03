@@ -9,7 +9,8 @@ import typing as tp
 
 from jaxtyping import PyTree
 
-from everwillow.statelib.state import FrozenChainMap, MergeMetadata, State, V, split
+from everwillow.statelib.meta import MergeMeta
+from everwillow.statelib.state import FrozenChainMap, State, V, split
 
 
 @dataclasses.dataclass(frozen=True)
@@ -67,7 +68,7 @@ class CombinedModel:
     def __call__(
         self,
         parameters: FrozenChainMap[V],
-        merge_metadata: MergeMetadata,
+        merge_metadata: MergeMeta,
     ) -> float:
         """Evaluate all models on the provided merged state.
 
@@ -78,8 +79,8 @@ class CombinedModel:
         Returns:
             Sum of the log-density values returned by each model.
         """
-        if not isinstance(merge_metadata, MergeMetadata):
-            message = "merge_metadata must be a MergeMetadata instance"  # type: ignore[unreachable]
+        if not isinstance(merge_metadata, MergeMeta):
+            message = "merge_metadata must be a MergeMeta instance"  # type: ignore[unreachable]
             raise TypeError(message)
 
         states = split(parameters, metadata=merge_metadata)

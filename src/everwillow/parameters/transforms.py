@@ -189,8 +189,8 @@ class OneSidedLogTransform(TransformBase):
         error_msg = (
             f"value passed to {self} must be less than upper bound {self.bound}."
         )
-        value = eqx.error_if(value, value >= self.bound, error_msg)
-        return jnp.log(self.bound - value)
+        value = eqx.error_if(value, value >= bound, error_msg)
+        return jnp.log(bound - value)
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Convert an unconstrained value back into the one-sided bounded space."""
@@ -225,4 +225,5 @@ class SoftPlusTransform(TransformBase):
 
     def wrap(self, value: ArrayLike) -> ArrayLike:
         """Apply the softplus function."""
+        value = float_array(value)
         return jax.nn.softplus(value)

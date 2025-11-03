@@ -144,6 +144,7 @@ class FrozenChainMap(BaseMapping[V]):
     """
 
     def __init__(self, *mappings: tp.Mapping[K, V]) -> None:
+        # Ensure all internal maps are immutable
         self._mapping = tp.ChainMap(*map(MappingProxyType, mappings))  # type: ignore[arg-type]
 
     def __repr__(self) -> str:
@@ -183,7 +184,8 @@ class State(BaseMapping[V]):
         Args:
             mapping: Mapping whose keys are canonical tuples and values are
                 pytree leaves.
-            treedef: Optional pytree definition used for reconstruction.
+            treedefmeta: TreeDefMeta instance containing the pytree definition
+                and (ordered) keys for reconstruction.
 
         Examples:
             >>> State(mapping={("a",): 1}, treedefmeta=None).to_dict()
@@ -253,8 +255,10 @@ class State(BaseMapping[V]):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
 
+    # jax.tree_util.register_pytree_with_keys_class methods
     def tree_flatten_with_keys(self):
-        children_with_keys = ((jtu.GetAttrKey("_mapping"), self._mapping),)
+        # .to_dict() because jax.tree_util already knows how to flatten dicts
+        children_with_keys = ((jtu.GetAttrKey("_mapping"), self.to_dict()),)
         aux_data = (self._treedefmeta,)
         return children_with_keys, aux_data
 
@@ -308,7 +312,9 @@ class PartitionedMapping(BaseMapping[V]):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r}, origin={self.origin})"
 
+    # jax.tree_util.register_pytree_with_keys_class methods
     def tree_flatten_with_keys(self):
+        # .to_dict() because jax.tree_util already knows how to flatten dicts
         children_with_keys = ((jtu.GetAttrKey("_mapping"), self.to_dict()),)
         aux_data = (self._origin,)
         return children_with_keys, aux_data

@@ -229,7 +229,7 @@ class State(BaseMapping[V]):
         treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys))
         return cls(data, treedefmeta=treedefmeta)
 
-    def to_pytree(self) -> PyTree:
+    def to_pytree(self) -> PyTree[V]:
         """Reconstruct the stored pytree using the cached tree definition.
 
         Returns:

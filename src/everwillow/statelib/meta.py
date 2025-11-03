@@ -5,7 +5,7 @@ import typing as tp
 from functools import partial
 
 import jax.tree_util as jtu
-from jaxtyping import PyTreeDef
+from jaxtyping import PyTree, PyTreeDef
 
 if tp.TYPE_CHECKING:
     from everwillow.statelib.state import FrozenChainMap, K, State, V
@@ -29,7 +29,7 @@ class TreeDefMeta:
     def to_pytree(
         self,
         mapping: tp.Mapping[K, V],
-    ) -> State[V]:
+    ) -> PyTree[V]:
         """Reconstruct a ``State`` from flattened values.
 
         Args:

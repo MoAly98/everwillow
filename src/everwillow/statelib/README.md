@@ -15,9 +15,12 @@ state_a = sl.State.from_pytree(tree_a)
 state_b = sl.State.from_pytree(tree_b)
 state_c = sl.State.from_pytree(tree_c)
 
-print(state_a.mapping)  # {('a', 'b'): 1.0}
-print(state_b.mapping)  # {('c', 'd'): 5.0, ('e', 'f'): 3.0}
-print(state_c.mapping)  # {('c', 'd'): 7.0, ('g', 'h'): 4.0}
+print(state_a.mapping)
+# {('a', 'b'): 1.0}
+print(state_b.mapping)
+# {('c', 'd'): 5.0, ('e', 'f'): 3.0}
+print(state_c.mapping)
+# {('c', 'd'): 7.0, ('g', 'h'): 4.0}
 
 # Align overlapping leaves by rewriting keys.
 aligned_b = sl.apply_transformations(
@@ -32,19 +35,24 @@ aligned_c = sl.apply_transformations(
 assert ("correlated",) in aligned_b.mapping
 assert ("correlated",) in aligned_c.mapping
 
-print(aligned_b.mapping)  # {('correlated',): 5.0, ('e', 'f'): 3.0}
-print(aligned_c.mapping)  # {('c', 'd'): 7.0, ('correlated',): 4.0}
+print(aligned_b.mapping)
+# {('correlated',): 5.0, ('e', 'f'): 3.0}
+print(aligned_c.mapping)
+# {('c', 'd'): 7.0, ('correlated',): 4.0}
 
 # Merge the aligned states into one mapping. Later segments overwrite earlier keys.
 merged_mapping, metadata = sl.merge(state_a, aligned_b, aligned_c)
 print(merged_mapping)
-# {('a', 'b'): 1.0, ('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
+# FrozenChainMap({('c', 'd'): 7.0, ('correlated',): 5.0, ('e', 'f'): 3.0, ('a', 'b'): 1.0})
 
 # Split the merged mapping back into the original states.
 seg_a, seg_b, seg_c = sl.split(merged_mapping, metadata)
-print(seg_a.to_pytree())  # {'a': {'b': 1.0}}
-print(seg_b.to_pytree())  # {'c': {'d': 4.0}, 'e': {'f': 3.0}}
-print(seg_c.to_pytree())  # {'c': {'d': 7.0}, 'g': {'h': 4.0}}
+print(seg_a.to_pytree())
+# {'a': {'b': 1.0}}
+print(seg_b.to_pytree())
+# {'c': {'d': 4.0}, 'e': {'f': 3.0}}
+print(seg_c.to_pytree())
+# {'c': {'d': 7.0}, 'g': {'h': 4.0}}
 
 # Partition the merged mapping and recombine it.
 first_partition, second_partition = sl.partition(
@@ -52,14 +60,14 @@ first_partition, second_partition = sl.partition(
     predicate=lambda key, _: "a" in key,
 )
 
-print(dict(first_partition.mapping))  # {('a', 'b'): 1.0}
-print(
-    dict(second_partition.mapping)
-)  # {('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
+print(first_partition)
+# PartitionedMapping({('a', 'b'): 1.0}, origin=4498835728)
+print(second_partition)
+# PartitionedMapping({('c', 'd'): 7.0, ('correlated',): 5.0, ('e', 'f'): 3.0}, origin=4498835728)
 
 recombined = sl.combine_partitions(first_partition, second_partition)
 print(recombined)
-# {('a', 'b'): 1.0, ('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
+# FrozenChainMap({('c', 'd'): 7.0, ('correlated',): 5.0, ('e', 'f'): 3.0, ('a', 'b'): 1.0})
 
 # Equality holds because both partitions came from the same mapping.
 assert recombined == merged_mapping

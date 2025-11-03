@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-
-from functools import partial
 import dataclasses
 import typing as tp
+from functools import partial
+
 import jax.tree_util as jtu
 from jaxtyping import PyTreeDef
 
 if tp.TYPE_CHECKING:
-    from everwillow.statelib.state import K, V, State, FrozenChainMap
+    from everwillow.statelib.state import FrozenChainMap, K, State, V
 
 
-__all__ = ["MergeMetadata", "TreeDefMeta"]
+__all__ = ["MergeMeta", "TreeDefMeta"]
 
 
 @partial(
@@ -40,8 +40,9 @@ class TreeDefMeta:
         """
         # can't reconstruct pytree with treedef=None
         if self.treedef is None:
-            raise ValueError("Cannot reconstruct pytree with treedef=None")
-        
+            msg = "Cannot reconstruct pytree with 'treedef=None'"
+            raise ValueError(msg)
+
         # can't convert to pytree if keys don't match
         if set(self.keys) != set(mapping.keys()):
             missing = set(self.keys) - set(mapping.keys())
@@ -51,8 +52,7 @@ class TreeDefMeta:
 
         # this order of keys is important here to preserve original pytree order
         return jtu.tree_unflatten(
-            treedef=self.treedef, 
-            leaves=(mapping[k] for k in self.keys)
+            treedef=self.treedef, leaves=(mapping[k] for k in self.keys)
         )
 
 
@@ -91,8 +91,9 @@ class MergeMeta:
         """
         from everwillow.statelib.state import State
 
-
         return tuple(
             State(mapping, treedefmeta=treedefmeta)
-            for mapping, treedefmeta in zip(chain_map.maps, self.treedefmetas, strict=True)
+            for mapping, treedefmeta in zip(
+                chain_map.maps, self.treedefmetas, strict=True
+            )
         )

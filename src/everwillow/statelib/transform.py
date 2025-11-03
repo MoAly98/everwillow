@@ -71,7 +71,7 @@ def apply_transformations(
     if len(transformations) == 0:
         return state
 
-    new_data: tp.MutableMapping[K, V] = {}
+    new_data, new_keys = {}, []
     for key, value in state.items():
         if key in transformations:
             transform = transformations[key]
@@ -81,7 +81,11 @@ def apply_transformations(
                 message = f"multiple transformations target the same key: {new_key}"
                 raise ValueError(message)
             new_data[new_key] = new_value
+            new_keys.append(new_key)
         else:
             new_data[key] = value
+            new_keys.append(key)
 
-    return State(mapping=new_data, treedefmeta=state.treedefmeta)
+    # Update treedefmeta to reflect new keys, returns a new instance
+    treedefmeta = dataclasses.replace(state.treedefmeta, keys=tuple(new_keys))
+    return State(mapping=new_data, treedefmeta=treedefmeta)

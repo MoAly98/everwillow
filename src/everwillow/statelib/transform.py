@@ -71,6 +71,10 @@ def apply_transformations(
     if len(transformations) == 0:
         return state
 
+    if missing_keys := set(transformations) - set(state.keys()):
+        msg = f"transformations reference keys not present in state: {missing_keys}"
+        raise KeyError(msg)
+
     new_data, new_keys = {}, []
     for key, value in state.items():
         if key in transformations:
@@ -78,11 +82,14 @@ def apply_transformations(
             new_key = transform.new_key
             new_value = transform.value_fn(key, value)
             if new_key in new_data:
-                message = f"multiple transformations target the same key: {new_key}"
-                raise ValueError(message)
+                msg = f"multiple transformations target the same key: {new_key}"
+                raise ValueError(msg)
             new_data[new_key] = new_value
             new_keys.append(new_key)
         else:
+            if key in new_data:
+                msg = f"transformation produced duplicate key: {key}"
+                raise ValueError(msg)
             new_data[key] = value
             new_keys.append(key)
 

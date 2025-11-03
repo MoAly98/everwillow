@@ -47,12 +47,12 @@ def test_update_replaces_only_existing_keys() -> None:
     """Updating a state yields a new instance with selected keys replaced."""
     state: FState = sl.State.from_pytree({"a": 1.0, "b": 2.0}, sep=None)
 
-    updated = sl.update(state, {("b",): 99.0})
+    updated = sl.update(state, updates={("b",): 99.0})
     assert updated["b",] == 99.0
     assert state["b",] == 2.0
 
     with pytest.raises(KeyError):
-        sl.update(state, {("missing",): 0.0})
+        sl.update(state, updates={("missing",): 0.0})
 
 
 def test_partition_and_combine_roundtrip() -> None:
@@ -68,7 +68,7 @@ def test_partition_and_combine_roundtrip() -> None:
     assert right.mapping == {("b",): 2.0}
 
     combined = sl.combine_partitions(left, right)
-    rebuilt_correct_order = sl.update(state, combined)
+    rebuilt_correct_order = sl.update(state, updates=combined)
     assert rebuilt_correct_order.to_pytree() == state.to_pytree()
 
     # also test roundtrip through State constructor

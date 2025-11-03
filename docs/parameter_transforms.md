@@ -25,13 +25,13 @@ The available transforms live in `everwillow.parameters.transforms`:
 | `OneSidedLogTransform` | Single-sided bounds via a log/exponential mapping. | `bound`, `direction="lower"|"upper"` |
 | `SoftPlusTransform` | Enforce positivity without an explicit bound. | none |
 
-All transforms subclass `AbstractParameterTransformation`, so you can mix them
+All transforms subclass `TransformBase`, so you can mix them
 freely in dictionaries keyed by leaf names or canonical key paths.
 
 ## Creating custom transforms
 
 To define a new transform, subclass
-``everwillow.parameters.transforms.AbstractParameterTransformation`` and
+``everwillow.parameters.transforms.TransformBase`` and
 implement ``unwrap`` and ``wrap`` using JAX-compatible operations. Mark
 static configuration (such as bounds) with ``equinox.field(static=True)``
 so that transform instances behave as pytrees.
@@ -39,10 +39,10 @@ so that transform instances behave as pytrees.
 ```python
 import equinox as eqx
 import jax.numpy as jnp
-from everwillow.parameters.transforms import AbstractParameterTransformation
+from everwillow.parameters.transforms import TransformBase
 
 
-class SquareTransform(AbstractParameterTransformation):
+class SquareTransform(TransformBase):
     scale: float = eqx.field(static=True)
 
     def unwrap(self, value):

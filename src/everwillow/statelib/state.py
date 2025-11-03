@@ -7,7 +7,7 @@ the canonical tuple keys JAX emits when flattening nested structures.
 from __future__ import annotations
 
 import typing as tp
-from types import MappingProxyType
+from types import EllipsisType, MappingProxyType
 
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree
@@ -200,11 +200,19 @@ class State(BaseMapping[V]):
         self._treedefmeta = treedefmeta
 
     @classmethod
-    def from_pytree(cls, pytree: PyTree[V], *, sep: str | None = None) -> State[V]:
+    def from_pytree(
+        cls,
+        pytree: PyTree[V],
+        *,
+        is_leaf: tp.Callable[[V], bool] | None = None,
+        sep: str | None = None,
+    ) -> State[V]:
         """Build a :class:`State` instance from an arbitrary pytree.
 
         Args:
             pytree: Nested structure supported by :mod:`jax.tree_util`.
+            is_leaf: Optional callable passed to :func:`jax.tree_util.tree_flatten_with_path`
+                to customize which nodes are treated as leaves.
             sep: Optional separator used to join key entries when constructing
                 public keys. When ``None`` (default), keys are returned as tuples.
 
@@ -216,12 +224,12 @@ class State(BaseMapping[V]):
             mappingproxy({('a', 0): 1.0, ('a', 1): 2.0})
         """
 
-        # noop if it is already a state (do we want this?)
         if isinstance(pytree, State):
-            return pytree
+            msg = f"{pytree=} is already a State instance"
+            raise TypeError(msg)
 
         # flatten the pytree with paths to build canonical keys
-        path_leaves, treedef = jtu.tree_flatten_with_path(pytree)
+        path_leaves, treedef = jtu.tree_flatten_with_path(pytree, is_leaf=is_leaf)
         data, keys = {}, []
         for path, leaf in path_leaves:
             key = canonicalize_key(path, sep=sep)
@@ -361,29 +369,30 @@ def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMeta]:
 
 def split(
     mapping: FrozenChainMap[V],
-    metadata: MergeMeta,
+    mergemeta: MergeMeta,
 ) -> tuple[State[V], ...]:
     """Split a merged mapping back into its original states.
 
     Args:
         mapping: Mapping produced by :func:`merge`.
-        metadata: Metadata returned by :func:`merge` for the same merge call.
+        mergemeta: MergeMeta returned by :func:`merge` for the same merge call.
 
     Returns:
         Tuple containing one :class:`State` per merged input.
 
     Examples:
         >>> first = State.from_pytree({"a": 1})
-        >>> merged, metadata = merge(first)
-        >>> split(merged, metadata)[0].to_pytree()
+        >>> merged, mergemeta = merge(first)
+        >>> split(merged, mergemeta)[0].to_pytree()
         {'a': 1}
     """
 
-    return metadata.split(mapping)
+    return mergemeta.split(mapping)
 
 
 def partition(
     mapping: tp.Mapping[K, V],
+    *,
     predicate: tp.Callable[[K, V], bool],
 ) -> tuple[PartitionedMapping[V], PartitionedMapping[V]]:
     """Split a mapping into two partitions based on a predicate.
@@ -449,7 +458,8 @@ def combine_partitions(
 
 def update(
     state: State[V],
-    updates: tp.Mapping[K, V],
+    *,
+    updates: tp.Mapping[K, V | EllipsisType],
 ) -> State[V]:
     """Return a new state with specific entries replaced.
 
@@ -473,6 +483,10 @@ def update(
     if not isinstance(state, State):
         msg = "Can only update State types"  # type: ignore[unreachable]
         raise TypeError(msg)
+
+    if missing := set(updates.keys()) - set(state.keys()):
+        msg = f"cannot update missing keys: {missing}"
+        raise KeyError(msg)
 
     data = dict(state.mapping)
     for key, value in updates.items():

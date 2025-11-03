@@ -1,12 +1,3 @@
-"""Unit tests for everwillow.inference module.
-
-Tests cover:
-- FitResult dataclass
-- fit() function with various parameter structures and options
-- fit() with parameter bounds
-- fixed_param_fit() function for profile likelihood
-"""
-
 from __future__ import annotations
 
 import typing as tp
@@ -19,6 +10,7 @@ import optimistix as optx
 import pytest
 
 import everwillow as ew
+import everwillow.statelib as sl
 from everwillow.inference import FitResult
 from everwillow.parameters.transforms import (
     MinuitTransform,
@@ -134,7 +126,9 @@ class TestFitBasic:
         def nll(params):
             return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
 
-        result = _fit_and_compare(nll, params={"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-4
@@ -148,7 +142,7 @@ class TestFitBasic:
         def nll(params):
             return (params["x"] - 5.0) ** 2
 
-        result = _fit_and_compare(nll, params={"x": 0.0})
+        result = _fit_and_compare(nll, params=sl.State.from_pytree({"x": 0.0}))
 
         assert abs(result.params["x"] - 5.0) < 1e-4
 
@@ -162,7 +156,9 @@ class TestFitBasic:
                 + (params["c"] - 3.0) ** 2
             )
 
-        result = _fit_and_compare(nll, params={"a": 0.0, "b": 0.0, "c": 0.0})
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"a": 0.0, "b": 0.0, "c": 0.0})
+        )
 
         assert result.params["a"] == 1.0
         assert abs(result.params["b"] - 2.0) < 1e-4
@@ -185,7 +181,9 @@ class TestFitPytreeStructures:
                 params["level1"]["sigma"] - 1.0
             ) ** 2
 
-        initial = {"level1": {"mu": 0.0, "sigma": 0.5}}
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"level1": {"mu": 0.0, "sigma": 0.5}}
+        )
         result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
@@ -197,7 +195,7 @@ class TestFitPytreeStructures:
         def nll(params):
             return (params["a"]["b"]["c"] - 5.0) ** 2
 
-        initial = {"a": {"b": {"c": 0.0}}}
+        initial: sl.State[float] = sl.State.from_pytree({"a": {"b": {"c": 0.0}}})
         result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["a"]["b"]["c"] - 5.0) < 1e-4
@@ -208,7 +206,9 @@ class TestFitPytreeStructures:
         def nll(params):
             return (params["flat"] - 1.0) ** 2 + (params["nested"]["value"] - 2.0) ** 2
 
-        initial = {"flat": 0.0, "nested": {"value": 0.0}}
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"flat": 0.0, "nested": {"value": 0.0}}
+        )
         result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["flat"] - 1.0) < 1e-4
@@ -235,8 +235,8 @@ class TestFitFixedParameters:
 
         result = _fit_and_compare(
             nll,
-            params={"mu": 0.0, "sigma": 0.5, "background": 50.0},
-            fixed={"background": ...},
+            params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5, "background": 50.0}),
+            fixed=sl.State.from_pytree({"background": ...}),
         )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
@@ -257,8 +257,8 @@ class TestFitFixedParameters:
 
         result = _fit_and_compare(
             nll,
-            params={"a": 0.0, "b": 10.0, "c": 20.0},
-            fixed={"b": ..., "c": ...},
+            params=sl.State.from_pytree({"a": 0.0, "b": 10.0, "c": 20.0}),
+            fixed=sl.State.from_pytree({"b": ..., "c": ...}),
         )
 
         assert abs(result.params["a"] - 1.0) < 1e-4
@@ -271,7 +271,12 @@ class TestFitFixedParameters:
         def nll(params):
             return (params["x"] - 5.0) ** 2
 
-        _fit_raises(nll, params={"x": 3.0}, exception=IndexError, fixed={"x": ...})
+        _fit_raises(
+            nll,
+            params=sl.State.from_pytree({"x": 3.0}),
+            exception=IndexError,
+            fixed=sl.State.from_pytree({"x": ...}),
+        )
 
     def test_fixed_none(self):
         """Test that fixed=None works (no fixed parameters)."""
@@ -279,7 +284,9 @@ class TestFitFixedParameters:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0}, fixed=None)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), fixed=None
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
@@ -289,7 +296,11 @@ class TestFitFixedParameters:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0}, fixed={})
+        result = _fit_and_compare(
+            nll,
+            params=sl.State.from_pytree({"mu": 0.0}),
+            fixed=sl.State.from_pytree({}),
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
@@ -301,11 +312,13 @@ class TestFitFixedParameters:
                 params["level1"]["sigma"] - 1.0
             ) ** 2
 
-        initial = {"level1": {"mu": 0.0, "sigma": 5.0}}
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"level1": {"mu": 0.0, "sigma": 5.0}}
+        )
         result = _fit_and_compare(
             nll,
             initial,
-            fixed={"level1/sigma": ...},
+            fixed=sl.State.from_pytree({"level1": {"sigma": ...}}),
         )
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
@@ -333,7 +346,9 @@ class TestFitAdditionalArguments:
         def wrapped(params):
             return nll(params, target_mu, target_sigma)
 
-        result = _fit_and_compare(wrapped, params={"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            wrapped, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 3.0) < 1e-4
         assert abs(result.params["sigma"] - 1.5) < 1e-4
@@ -347,7 +362,9 @@ class TestFitAdditionalArguments:
             ) ** 2
 
         wrapped = partial(nll, target_mu=4.0, target_sigma=0.8)
-        result = _fit_and_compare(wrapped, params={"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            wrapped, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 4.0) < 1e-4
         assert abs(result.params["sigma"] - 0.8) < 1e-4
@@ -363,7 +380,7 @@ class TestFitAdditionalArguments:
         def wrapped(params):
             return nll(params, target_mu, offset=offset)
 
-        result = _fit_and_compare(wrapped, params={"mu": 0.0})
+        result = _fit_and_compare(wrapped, params=sl.State.from_pytree({"mu": 0.0}))
 
         assert abs(result.params["mu"] - 2.5) < 1e-4
 
@@ -378,8 +395,8 @@ class TestFitAdditionalArguments:
 
         result = _fit_and_compare(
             wrapped,
-            params={"a": 0.0, "b": 5.0},
-            fixed={"b": ...},
+            params=sl.State.from_pytree({"a": 0.0, "b": 5.0}),
+            fixed=sl.State.from_pytree({"b": ...}),
         )
 
         assert abs(result.params["a"] - 7.0) < 1e-4
@@ -401,7 +418,9 @@ class TestFitSolverOptions:
             return (params["mu"] - 2.0) ** 2
 
         custom_solver: optx.AbstractMinimiser = optx.BFGS(rtol=1e-6, atol=1e-6)
-        result = _fit_and_compare(nll, params={"mu": 0.0}, solver=custom_solver)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), solver=custom_solver
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-5
 
@@ -411,7 +430,9 @@ class TestFitSolverOptions:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, params={"mu": 0.0}, max_steps=50)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), max_steps=50
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
@@ -436,7 +457,7 @@ class TestFitRealisticExamples:
         observed = 25.0
         result = _fit_and_compare(
             lambda params: poisson_nll(params, observed),
-            params={"mu": 1.0, "background": 10.0},
+            params=sl.State.from_pytree({"mu": 1.0, "background": 10.0}),
         )
 
         # MLE for Poisson: expected ≈ observed
@@ -457,7 +478,9 @@ class TestFitRealisticExamples:
 
             return main + constraint
 
-        result = _fit_and_compare(nll_with_constraint, params={"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            nll_with_constraint, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-3
@@ -480,8 +503,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 0.5},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+            sl.State.from_pytree({"mu": 0.5}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)}),
         )
 
         # Should hit the upper bound since true minimum is at 10
@@ -498,8 +521,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 2.0},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=10.0)},
+            sl.State.from_pytree({"mu": 2.0}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=10.0)}),
         )
 
         # Should hit the lower bound since true minimum is at -5
@@ -516,8 +539,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 1.0},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+            sl.State.from_pytree({"mu": 1.0}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)}),
         )
 
         # Should find true minimum
@@ -527,21 +550,21 @@ class TestFitWithBounds:
     @pytest.mark.parametrize(
         ("transform_factory", "target", "initial", "expected"),
         [
-            (partial(MinuitTransform, lower=0.0, upper=5.0), 2.5, 0.1, 2.5),
-            (partial(SigmoidTransform, lower=-2.0, upper=3.0), 2.0, -1.0, 2.0),
+            (MinuitTransform(lower=0.0, upper=5.0), 2.5, 0.1, 2.5),
+            (SigmoidTransform(lower=-2.0, upper=3.0), 2.0, -1.0, 2.0),
             (
-                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                OneSidedLogTransform(bound=0.0, direction="lower"),
                 -3.0,
                 1.0,
                 0.0,
             ),
             (
-                partial(OneSidedLogTransform, bound=5.0, direction="upper"),
+                OneSidedLogTransform(bound=5.0, direction="upper"),
                 8.0,
                 1.0,
                 5.0,
             ),
-            (partial(SoftPlusTransform), 1.5, 0.2, 1.5),
+            (SoftPlusTransform(), 1.5, 0.2, 1.5),
         ],
     )
     def test_fit_supports_all_transform_variants(
@@ -558,8 +581,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"x": initial},
-            bounds={"x": transform_factory()},
+            sl.State.from_pytree({"x": initial}),
+            bounds=sl.State.from_pytree({"x": transform_factory}),
         )
 
         assert jnp.isclose(result.params["x"], expected, atol=1e-2)
@@ -568,43 +591,43 @@ class TestFitWithBounds:
         ("transform_factory", "target", "initial", "check"),
         [
             (
-                partial(MinuitTransform, lower=0.0, upper=1.0),
+                MinuitTransform(lower=0.0, upper=1.0),
                 -2.0,
                 0.3,
                 _expect_close(0.0),
             ),
             (
-                partial(MinuitTransform, lower=0.0, upper=1.0),
+                MinuitTransform(lower=0.0, upper=1.0),
                 5.0,
                 0.7,
                 _expect_close(1.0),
             ),
             (
-                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                SigmoidTransform(lower=0.0, upper=1.0),
                 -5.0,
                 0.4,
                 _expect_close(0.0),
             ),
             (
-                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                SigmoidTransform(lower=0.0, upper=1.0),
                 5.0,
                 0.6,
                 _expect_close(1.0),
             ),
             (
-                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                OneSidedLogTransform(bound=0.0, direction="lower"),
                 -5.0,
                 0.8,
                 _expect_close(0.0),
             ),
             (
-                partial(OneSidedLogTransform, bound=2.0, direction="upper"),
+                OneSidedLogTransform(bound=2.0, direction="upper"),
                 10.0,
                 1.0,
                 _expect_close(2.0),
             ),
             (
-                partial(SoftPlusTransform),
+                SoftPlusTransform(),
                 -1.0,
                 0.5,
                 _expect_interval(lower=0.0, upper=5e-2),
@@ -625,8 +648,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            params={"x": initial},
-            bounds={"x": transform_factory()},
+            params=sl.State.from_pytree({"x": initial}),
+            bounds=sl.State.from_pytree({"x": transform_factory}),
         )
 
         check(float(result.params["x"]))

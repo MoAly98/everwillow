@@ -1,8 +1,6 @@
 __all__ = [
-    "CombinedModel",
     "K",
     "MergeMeta",
-    "Model",
     "PartitionedMapping",
     "State",
     "Transform",
@@ -18,7 +16,6 @@ __all__ = [
 ]
 
 from .meta import MergeMeta, TreeDefMeta
-from .model import CombinedModel, Model
 from .state import (
     K,
     PartitionedMapping,

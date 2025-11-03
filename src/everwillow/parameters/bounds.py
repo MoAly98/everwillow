@@ -17,13 +17,13 @@ __all__ = ["unwrap", "wrap"]
 
 import typing as tp
 
-from everwillow.parameters.transforms import AbstractParameterTransformation
+from everwillow.parameters.transforms import TransformBase
 from everwillow.statelib import K, State, V
 
 
 def unwrap(
     state: State[V],
-    transform_mapping: tp.Mapping[K, AbstractParameterTransformation],
+    transform_mapping: tp.Mapping[K, TransformBase],
 ) -> State[V]:
     if not transform_mapping:
         return state
@@ -40,7 +40,7 @@ def unwrap(
 
 def wrap(
     state: State[V],
-    transform_mapping: tp.Mapping[K, AbstractParameterTransformation],
+    transform_mapping: tp.Mapping[K, TransformBase],
 ) -> State[V]:
     if not transform_mapping:
         return state

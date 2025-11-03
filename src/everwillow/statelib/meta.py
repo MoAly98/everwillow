@@ -44,11 +44,15 @@ class TreeDefMeta:
             raise ValueError(msg)
 
         # can't convert to pytree if keys don't match
-        if set(self.keys) != set(mapping.keys()):
-            missing = set(self.keys) - set(mapping.keys())
-            extra = set(mapping.keys()) - set(self.keys)
+        self_keys = set(self.keys)
+        mapping_keys = set(mapping.keys())
+        if self_keys != mapping_keys:
+            missing = self_keys - mapping_keys
+            extra = mapping_keys - self_keys
             msg = f"Mapping keys do not match treedef keys. Missing: {missing}, Extra: {extra}"
             raise KeyError(msg)
+
+        del self_keys, mapping_keys  # unused after check
 
         # this order of keys is important here to preserve original pytree order
         return jtu.tree_unflatten(

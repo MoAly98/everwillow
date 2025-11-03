@@ -7,19 +7,19 @@ from __future__ import annotations
 
 from everwillow.parameters.bounds import unwrap, wrap
 from everwillow.parameters.transforms import (
-    AbstractParameterTransformation,
     MinuitTransform,
     OneSidedLogTransform,
     SigmoidTransform,
     SoftPlusTransform,
+    TransformBase,
 )
 
 __all__ = [
-    "AbstractParameterTransformation",
     "MinuitTransform",
     "OneSidedLogTransform",
     "SigmoidTransform",
     "SoftPlusTransform",
+    "TransformBase",
     "unwrap",
     "wrap",
 ]

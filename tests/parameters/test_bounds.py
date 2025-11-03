@@ -15,7 +15,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 FState: tp.TypeAlias = sl.State[tp.Any]
-TMapping: tp.TypeAlias = tp.Mapping[sl.K, transforms.AbstractParameterTransformation]
+TMapping: tp.TypeAlias = tp.Mapping[sl.K, transforms.TransformBase]
 
 
 class TestApplyBoundsTransform:

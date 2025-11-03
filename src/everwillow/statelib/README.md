@@ -126,24 +126,6 @@ rewritten = sl.apply_transformations(state, transformations)
 assert dict(rewritten.mapping)[("beta",)] == 20
 ```
 
-## Models
-
-- `Model(logpdf=...)` wraps a log-density callable so it can consume either pytree inputs or `State` instances.
-- `CombinedModel.combine(model_a, model_b, ...)` builds a model that expects a merged mapping with one segment per component and returns the sum of their evaluations.
-
-```python
-model = sl.Model(logpdf=lambda tree: -tree["a"] ** 2)
-combo = sl.CombinedModel.combine(model, model)
-
-merged_mapping, metadata = sl.merge(
-    sl.State.from_pytree({"a": 1}),
-    sl.State.from_pytree({"a": 2}),
-)
-assert combo(merged_mapping, metadata) == sum(
-    model(segment) for segment in sl.split(merged_mapping, metadata)
-)
-```
-
 ## Testing & Support
 
 The accompanying unit tests in `tests/statelib` cover the public API. If you encounter unexpected behaviour, try to reproduce it with the pytest suite before filing an issue.

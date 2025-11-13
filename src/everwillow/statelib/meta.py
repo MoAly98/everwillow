@@ -23,7 +23,7 @@ __all__ = ["MergeMeta", "TreeDefMeta"]
 class TreeDefMeta:
     """Metadata retaining the treedef of a pytree."""
 
-    treedef: PyTreeDef | None
+    treedef: PyTreeDef
     keys: tp.Sequence[K]
 
     def to_pytree(
@@ -38,11 +38,6 @@ class TreeDefMeta:
         Returns:
             Reconstructed ``State`` object.
         """
-        # can't reconstruct pytree with treedef=None
-        if self.treedef is None:
-            msg = "Cannot reconstruct pytree with 'treedef=None'"
-            raise ValueError(msg)
-
         # can't convert to pytree if keys don't match
         self_keys = set(self.keys)
         mapping_keys = set(mapping.keys())

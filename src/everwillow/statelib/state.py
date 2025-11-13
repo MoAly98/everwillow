@@ -37,7 +37,7 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> K: ...
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> tuple: ...
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> K: ...
 
 
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
@@ -186,10 +186,6 @@ class State(BaseMapping[V]):
                 pytree leaves.
             treedefmeta: TreeDefMeta instance containing the pytree definition
                 and (ordered) keys for reconstruction.
-
-        Examples:
-            >>> State(mapping={("a",): 1}, treedefmeta=None).to_dict()
-            {('a',): 1}
         """
         # Ensure the mapping is immutable
         self._mapping = MappingProxyType(mapping)

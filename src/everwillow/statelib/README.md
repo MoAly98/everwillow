@@ -40,7 +40,7 @@ print(aligned_b.mapping)
 print(aligned_c.mapping)
 # {('c', 'd'): 7.0, ('correlated',): 4.0}
 
-# Merge the aligned states into one mapping. Later segments overwrite earlier keys.
+# Merge the aligned states into one mapping. Earlier segments overwrite earlier keys (ChainMap semantics).
 merged_mapping, metadata = sl.merge(state_a, aligned_b, aligned_c)
 print(merged_mapping)
 # FrozenChainMap({('c', 'd'): 7.0, ('correlated',): 5.0, ('e', 'f'): 3.0, ('a', 'b'): 1.0})

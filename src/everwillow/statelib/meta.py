@@ -30,13 +30,13 @@ class TreeDefMeta:
         self,
         mapping: tp.Mapping[K, V],
     ) -> PyTree[V]:
-        """Reconstruct a ``State`` from flattened values.
+        """Reconstruct a ``PyTree`` from a (State) mapping.
 
         Args:
-            values: Flattened values corresponding to the original pytree.
+            mapping: A mapping that holds the values matching the pytree definition.
 
         Returns:
-            Reconstructed ``State`` object.
+            Reconstructed ``PyTree`` object.
         """
         # can't convert to pytree if keys don't match
         self_keys = set(self.keys)

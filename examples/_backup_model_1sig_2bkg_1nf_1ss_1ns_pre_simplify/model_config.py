@@ -1,10 +1,13 @@
 """Shared configuration for the 1sig_2bkg_1nf_1ss_1ns example."""
 
-from collections.abc import Mapping
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Mapping
 
 import jax.numpy as jnp
-from utils import log_normal_modifier, shape_interpolate
+
+from .utils import log_normal_modifier, shape_interpolate
 
 
 @dataclass(frozen=True)

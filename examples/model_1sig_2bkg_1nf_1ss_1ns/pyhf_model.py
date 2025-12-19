@@ -1,10 +1,16 @@
 """Compact pyhf example helpers."""
 
+import jax
 import jax.numpy as jnp
+import numpy as np
+import optimistix as optx
 import pyhf
+from model_config import DEFAULT_DATA, ModelData, expected_components
 
-from .model_config import DEFAULT_DATA, ModelData, expected_components
+import everwillow as ew
+import everwillow.statelib as sl
 
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 pyhf.set_backend("jax")
 
 
@@ -101,7 +107,7 @@ def build_pyhf(
 
 
 def vector_to_dict(theta: jnp.ndarray, slices: dict[str, slice]) -> dict[str, float]:
-    return {name: float(theta[slice_][0]) for name, slice_ in slices.items()}
+    return {name: theta[slice_][0] for name, slice_ in slices.items()}
 
 
 def dict_to_vector(
@@ -114,6 +120,7 @@ def dict_to_vector(
 
 
 def nll_fn(model: pyhf.pdf.Model, data_vector: jnp.ndarray):
+    @jax.jit
     def nll(theta: jnp.ndarray) -> jnp.ndarray:
         return -jnp.sum(model.logpdf(theta, data_vector))
 
@@ -124,13 +131,15 @@ def fit_with_pyhf_native(
     model: pyhf.pdf.Model,
     data_vector: jnp.ndarray,
     init: jnp.ndarray,
+    slices: dict[str, slice],
     *,
     maxiter: int | None = None,
 ) -> jnp.ndarray:
     kwargs = {}
     if maxiter is not None:
-        kwargs["optimizer"] = pyhf.optimize.scipy_minimize(options={"maxiter": maxiter})
-    return jnp.asarray(
+        kwargs["maxiter"] = maxiter
+    kwargs["tolerance"] = 1e-8
+    params = jnp.asarray(
         pyhf.infer.mle.fit(
             data_vector,
             model,
@@ -140,23 +149,88 @@ def fit_with_pyhf_native(
         ),
         dtype=jnp.float64,
     )
+    nll = nll_fn(model, data_vector)
+    return vector_to_dict(params, slices), nll(params)
+
+
+def fit_with_pyhf_native_minuit(
+    model: pyhf.pdf.Model,
+    data_vector: jnp.ndarray,
+    init: jnp.ndarray,
+    slices: dict[str, slice],
+    *,
+    maxiter: int | None = None,
+) -> np.ndarray:
+    pyhf.set_backend(
+        "jax",
+        pyhf.optimize.minuit_optimizer(tolerance=1e-8, verbose=0, strategy=2),
+    )
+    kwargs = {}
+    if maxiter is not None:
+        kwargs["maxiter"] = maxiter
+    params = np.asarray(
+        pyhf.infer.mle.fit(
+            data_vector,
+            model,
+            init_pars=init.tolist(),
+            par_bounds=model.config.suggested_bounds(),
+            **kwargs,
+        ),
+        dtype=np.float64,
+    )
+    nll = nll_fn(model, data_vector)
+    return vector_to_dict(params, slices), nll(params)
 
 
 def fit_with_everwillow(
     model: pyhf.pdf.Model,
     data_vector: jnp.ndarray,
     init: jnp.ndarray,
+    slices: dict[str, slice],
     *,
     max_steps: int = 150,
-) -> tuple[jnp.ndarray, float]:
-    import everwillow as ew
-
+    interactive: bool = False,
+) -> tuple[dict[str, float], float]:
     nll = nll_fn(model, data_vector)
-    result = ew.fit(nll, init, max_steps=max_steps)
-    return jnp.asarray(result.params, dtype=jnp.float64), float(result.nll)
+    init_state = sl.State.from_pytree(init)
+
+    if not interactive:
+        result = ew.fit(nll, init_state, max_steps=max_steps)
+    else:
+        result = ew.ifit(nll, init_state, max_steps=max_steps)
+
+    params = jnp.asarray(result.params, dtype=jnp.float64)
+    return vector_to_dict(params, slices), result.nll
 
 
-def summarise_pyhf(
-    theta: jnp.ndarray, slices: dict[str, slice], data: ModelData = DEFAULT_DATA
-):
-    return expected_components(vector_to_dict(theta, slices), data=data)
+def fit_with_optimistix(
+    model: pyhf.pdf.Model,
+    data_vector: jnp.ndarray,
+    init: jnp.ndarray,
+    slices: dict[str, slice],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    nll = nll_fn(model, data_vector)
+
+    # Wrapper that adapts nll(theta) to optimistix's nll(theta, args) signature
+    def nll_optx(theta: jnp.ndarray, args: tuple) -> jnp.ndarray:
+        return nll(theta)
+
+    solver = optx.BFGS(rtol=1e-5, atol=1e-7)
+    result = optx.minimise(
+        nll_optx,
+        solver,
+        init,
+        args=(),
+        has_aux=False,
+        max_steps=max_steps,
+    )
+
+    params = jnp.asarray(result.value, dtype=jnp.float64)
+    nll_value = result.state.f_info.f
+    return vector_to_dict(params, slices), nll_value
+
+
+def summarise_pyhf(params: dict[str, float], data: ModelData = DEFAULT_DATA):
+    return expected_components(params, data=data)

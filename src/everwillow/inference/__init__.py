@@ -6,10 +6,9 @@ hypothesis testing, and limit setting.
 
 from __future__ import annotations
 
-from everwillow.inference.fitting import FitResult, fit, fixed_param_fit
+from everwillow.inference.fitting import FitResult, fit
 
 __all__ = [
     "FitResult",
     "fit",
-    "fixed_param_fit",
 ]

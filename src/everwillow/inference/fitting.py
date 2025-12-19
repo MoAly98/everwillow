@@ -3,134 +3,67 @@
 from __future__ import annotations
 
 import typing as tp
+from types import EllipsisType
 
 import equinox as eqx
 import jax
 import optimistix as optx
 from jaxtyping import PyTree
 
-import everwillow.parameters.bounds as bounds_module
+import everwillow.parameters as ewp
 import everwillow.statelib as sl
+from everwillow.statelib import K, V
+
+Args: tp.TypeAlias = tuple[
+    sl.PartitionedMapping[V],  # fixed_state
+    sl.TreeDefMeta,  # treedefmeta
+    sl.State[ewp.TransformBase],  # bounds
+]
 
 
-class FitResult(eqx.Module):
+def _reconstruct_full_state(
+    free_state: sl.PartitionedMapping[V],
+    *,
+    args: Args,
+) -> sl.State[V]:
+    """Reconstruct full parameter pytree from free state and Args."""
+    (fixed_state, treedefmeta, bounds) = args
+
+    # Combine partitions back together (still in unbounded space)
+    combined_mapping = sl.combine_partitions(fixed_state, free_state)
+
+    # Caution: using treedefmeta to preserve the original key order
+    full_state_transformed = sl.State(combined_mapping, treedefmeta=treedefmeta)
+
+    # Transform back to bounded space for NLL evaluation
+    return ewp.wrap(full_state_transformed, bounds.mapping)
+
+
+class FitResult(eqx.Module, tp.Generic[V]):
     """Result of a fit operation."""
 
-    params: PyTree  #: Fitted parameter pytree.
+    params: PyTree[V]  #: Fitted parameter state.
     nll: jax.Array  #: Negative log-likelihood at the optimum.
     success: jax.Array  #: Whether the optimisation converged.
     solver_result: PyTree  #: Raw solver result.
 
 
-def _resolve_fixed_keys(
-    state: sl.FlatState[tp.Any],
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None,
-    predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None,
-) -> set[tuple[tp.Any, ...]]:
-    """Normalise user-provided fixed-parameter hints.
-
-    Args:
-        state: ``FlatState`` generated from the caller's parameter pytree.
-        fixed: Optional collection of leaf names (``str``) or canonical key
-            tuples identifying leaves that should remain unchanged.
-        predicate: Optional callable evaluated for every ``(key, value)`` pair in
-            ``state``. Returning ``True`` marks the parameter as fixed.
-
-    Returns:
-        Set of canonical key tuples describing the leaves that should be frozen.
-
-    Raises:
-        KeyError: If a supplied name or tuple does not correspond to a leaf in
-            ``state``.
-    """
-    keys: set[tuple[tp.Any, ...]] = set()
-
-    if fixed:
-        for entry in fixed:
-            if isinstance(entry, tuple):
-                key = tuple(entry)
-                if key not in state.raw_mapping:
-                    message = f"Fixed parameter not found in state: {key}"
-                    raise KeyError(message)
-                keys.add(key)
-            else:
-                matched = False
-                for key in state.raw_mapping:
-                    if key and key[-1] == entry:
-                        keys.add(key)
-                        matched = True
-                if not matched:
-                    message = f"Fixed parameter not found in state: {entry}"
-                    raise KeyError(message)
-
-    if predicate is not None:
-        for key, value in state.raw_mapping.items():
-            if predicate(key, value):
-                keys.add(key)
-
-    return keys
-
-
-def _resolve_name_keys(
-    state: sl.FlatState[tp.Any],
-    param_values: dict[str, tp.Any],
-) -> tuple[set[tuple[tp.Any, ...]], dict[tuple[tp.Any, ...], tp.Any]]:
-    """Map ``param_values`` into canonical key/value updates.
-
-    Args:
-        state: ``FlatState`` derived from the caller's parameter pytree.
-        param_values: Mapping of parameter names to the values that should be
-            injected into the state.
-
-    Returns:
-        A tuple ``(keys, updates)`` where ``keys`` contains the resolved
-        canonical tuples and ``updates`` may be fed directly to
-        :func:`everwillow.statelib.state.update_state`.
-
-    Raises:
-        KeyError: If any name in ``param_values`` cannot be located in
-            ``state``.
-    """
-    updates: dict[tuple[tp.Any, ...], tp.Any] = {}
-    keys: set[tuple[tp.Any, ...]] = set()
-    missing: list[str] = []
-
-    for name, value in param_values.items():
-        matched = False
-        for key in state.raw_mapping:
-            if key and key[-1] == name:
-                keys.add(key)
-                updates[key] = value
-                matched = True
-        if not matched:
-            missing.append(name)
-
-    if missing:
-        missing_list = ", ".join(sorted(missing))
-        message = f"Fixed parameter values not found in state: {missing_list}"
-        raise KeyError(message)
-
-    return keys, updates
-
-
 def fit(
-    nll_fn: tp.Callable[[PyTree], float],
-    params: PyTree,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
+    nll_fn: tp.Callable[[PyTree[V]], float],
+    params: sl.State[V],
     *,
-    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
-    | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
+    fixed: sl.State[V | EllipsisType] | None = None,
+    bounds: sl.State[ewp.TransformBase] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     **minimise_kwargs,
-) -> FitResult:
+) -> FitResult[V]:
     """Perform an unconditional maximum-likelihood fit.
 
     The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
     respect to all parameters except those explicitly marked as fixed. Internally
-    the parameter pytree is converted into a :class:`~everwillow.statelib.state.FlatState`
+    the parameter pytree is converted into a :class:`~everwillow.statelib.state.State`
     so that subsets of the state can be frozen using
-    :func:`everwillow.statelib.state.partition_state`.
+    :func:`everwillow.statelib.state.partition`.
 
     Parameter bounds are supported through automatic transformation to unbounded space.
 
@@ -138,17 +71,13 @@ def fit(
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument, followed by any positional or keyword
             arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree (e.g. mapping or
+        params: Initial parameter values organised as a state (e.g. mapping or
             nested containers).
-        fixed: Optional sequence of leaf names (``str``) or canonical key tuples
+        fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional mapping from parameter names (``str``) or canonical key
-            tuples to :class:`~everwillow.parameters.transforms.AbstractParameterTransformation`
+        bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimisation and wrapped back afterwards.
-        fixed_predicate: Optional callable invoked for each ``(key, value)`` pair
-            in the flattened state. Returning ``True`` marks the parameter as
-            fixed. This is evaluated in addition to ``fixed`` when provided.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
         ``**minimise_kwargs``: Additional keyword arguments forwarded to
@@ -158,75 +87,80 @@ def fit(
         :class:`FitResult` containing the fitted parameters and diagnostics.
 
     Examples:
-        >>> # Simple case: nll_fn takes only params
+        >>> import everwillow as ew
+        >>> import everwillow.statelib as sl
+
+        >>> # Basic usage
         >>> def my_nll(params):
         ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> result = fit(my_nll, {"mu": 0.0, "sigma": 0.5})
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        >>> result = ew.fit(my_nll, initial_params)
         >>> result.params["mu"]  # Should be close to 2.0
 
-        >>> # With additional arguments (partial)
-        >>> from functools import partial
-        >>>
-        >>> def my_nll(params, data, templates, *, config):
-        ...     return compute_loss(params, data, templates, config)
-        >>> result = fit(partial(my_nll, data, templates, config=cfg), initial_params)
-
-        >>> # Fix background while fitting mu and sigma
+        >>> # Fix 'sigma' while fitting mu
         >>> def my_nll(params):
         ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> result = fit(
+        >>> fixed = sl.State.from_pytree({"sigma": ...})
+        >>> result = ew.fit(
         ...     my_nll,
-        ...     {"mu": 0.0, "sigma": 0.5, "background": 50.0},
-        ...     fixed=["background"],
+        ...     initial_params,
+        ...     fixed=fixed,
         ... )
-        >>> result.params["background"]  # Remains fixed
-        50.0
+        >>> result.params["sigma"]  # Remains fixed
+        0.5
 
         >>> # With parameter bounds
+        >>> from everwillow.parameters.transforms import MinuitTransform
         >>> def my_nll(params):
         ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> from everwillow.parameters.transforms import MinuitTransform
-        >>> result = fit(
+        >>> bounds = sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)})
+        >>> result = ew.fit(
         ...     my_nll,
-        ...     {"mu": 0.5, "sigma": 0.1},
-        ...     bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+        ...     initial_params,
+        ...     bounds=bounds,
         ... )
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True
     """
-    # Convert to FlatState for manipulation
-    param_state = sl.FlatState.from_pytree(params)
+    # ensure args are properly typed
+    if not isinstance(params, sl.State):
+        raise TypeError("params must be a State")
+
+    # normalize fixed and bounds inputs
+    if fixed is None:
+        fixed = sl.State.from_pytree({})
+    if not isinstance(fixed, sl.State):
+        raise TypeError("fixed must be a State or None")
 
     if bounds is None:
-        bounds = {}
+        bounds = sl.State.from_pytree({})
+    if not isinstance(bounds, sl.State):
+        raise TypeError("bounds must be a State or None")
+
+    # Set fixed values
+    updated_params = sl.update(params, updates=fixed)
 
     # Apply bounds transformations and get inverse transform map `wrap` for later
-    param_state_transformed, _, wrap = bounds_module.apply_bounds_transform(
-        param_state, bounds
-    )
-
-    fixed_keys = _resolve_fixed_keys(param_state_transformed, fixed, fixed_predicate)
+    param_state_transformed = ewp.unwrap(updated_params, transform_mapping=bounds)
 
     # Partition state into fixed and free components
-    fixed_state, free_state = sl.partition_state(
-        param_state_transformed, keys=fixed_keys
+    def predicate(key: K, value: V) -> bool:
+        del value  # unused
+        return key in fixed
+
+    fixed_state, free_state = sl.partition(
+        param_state_transformed,
+        predicate=predicate,
     )
+
+    # Prepare args for reconstructing full state
+    args: Args = (fixed_state, params.treedefmeta, bounds)
 
     # Wrap nll to only take free parameters (as flat array)
     def wrapped_nll(new_state, args):
-        (fixed_state,) = args
-
-        # Combine partitions back together (still in unbounded space)
-        full_state_t = sl.combine_partitions(fixed_state, new_state)
-
-        # Transform back to bounded space for NLL evaluation
-        full_state = sl.apply_transformations(full_state_t, wrap)
-
-        # Convert to pytree for user's nll_fn
-        full_pytree = full_state.to_pytree()
-
-        # Call user's nll_fn with params + additional args/kwargs
-        return nll_fn(full_pytree)
+        full_state = _reconstruct_full_state(new_state, args=args)
+        # Call user's nll_fn with params pytree
+        return nll_fn(full_state.to_pytree())
 
     # Set up solver
     if solver is None:
@@ -237,111 +171,17 @@ def fit(
         wrapped_nll,
         solver,
         y0=free_state,
-        args=(fixed_state,),
+        args=args,
         **minimise_kwargs,
     )
 
-    # Combine with fixed partition if one existed (still in unbounded space)
-    fitted_full_state_t = sl.combine_partitions(fixed_state, solution.value)
-
-    # Transform back to bounded space for final result
-    fitted_full_state = sl.apply_transformations(fitted_full_state_t, wrap)
-
-    # Convert back to original pytree structure
-    fitted_params = fitted_full_state.to_pytree()
+    # Reconstruct full fitted state
+    fitted_state = _reconstruct_full_state(solution.value, args=args)
 
     # Return result
     return FitResult(
-        params=fitted_params,
+        params=fitted_state.to_pytree(),
         nll=solution.state.f_info.f,
-        success=solution.result == optx.RESULTS.successful,
+        success=jax.numpy.asarray(solution.result == optx.RESULTS.successful),
         solver_result=solution,
-    )
-
-
-def fixed_param_fit(
-    param_values: PyTree,
-    nll_fn: tp.Callable[..., float],
-    params: PyTree,
-    fixed: tp.Sequence[str | tuple[tp.Any, ...]] | None = None,
-    *,
-    bounds: tp.Mapping[str | tuple[tp.Any, ...], bounds_module.TransformSpec]
-    | None = None,
-    fixed_predicate: tp.Callable[[tuple[tp.Any, ...], tp.Any], bool] | None = None,
-    solver: optx.AbstractMinimiser | None = None,
-    **minimise_kwargs,
-) -> FitResult:
-    """
-    Perform a profile-likelihood style fit with selected parameters frozen.
-
-    ``param_values`` supplies concrete values for one or more leaves in the
-    parameter pytree. These leaves remain fixed while the remaining parameters
-    are optimised. Additional parameters can be frozen via ``fixed`` or
-    ``fixed_predicate``. Internally this routine relies on
-    :func:`everwillow.statelib.state.partition_state` to separate the fixed and
-    free portions of the state.
-
-    Args:
-        param_values: Mapping from parameter names to the values that should be
-            injected prior to optimisation.
-        nll_fn: Callable returning the scalar NLL. It must accept the parameter
-            pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
-        params: Initial parameter values organised as a pytree.
-        fixed: Additional parameters to hold fixed, expressed as leaf names or
-            canonical key tuples.
-        bounds: Optional parameter bounds specification (same format as :func:`fit`).
-        fixed_predicate: Optional callable evaluated for each leaf after
-            ``param_values`` have been applied. Returning ``True`` marks the leaf
-            as fixed.
-        solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
-            :class:`optimistix.BFGS`.
-        ``**minimise_kwargs``: Additional keyword arguments forwarded to
-            :func:`optimistix.minimise`.
-
-    Returns:
-        :class:`FitResult` containing the fitted parameters and diagnostics.
-
-    Examples:
-        >>> # Simple case
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2)**2
-        >>> # Fix mu=1.5 and fit everything else
-        >>> result = fixed_param_fit(
-        ...     {"mu": 1.5},
-        ...     my_nll,
-        ...     {"mu": 0.0, "data": 100},
-        ...     fixed=["data"],
-        ... )
-        >>> result.params["mu"]  # Will be 1.5 (fixed)
-
-        >>> # With additional arguments
-        >>> def my_nll(params, data, *, verbose):
-        ...     return compute_loss(params, data, verbose=verbose)
-        >>> result = fixed_param_fit({"mu": 1.5}, my_nll, initial_params,
-        ...                          args=(data,), kwargs={"verbose": True})
-    """
-    # Convert to FlatState for manipulation
-    param_state = sl.FlatState.from_pytree(params)
-
-    # Resolve canonical keys and apply the fixed values
-    name_keys, updates = _resolve_name_keys(param_state, param_values)
-
-    updated_state = sl.update_state(param_state, updates)
-
-    user_fixed_keys = _resolve_fixed_keys(updated_state, fixed, fixed_predicate)
-    combined_keys = user_fixed_keys | name_keys
-    fixed_sequence = [tuple(key) for key in combined_keys]
-
-    # Convert back to pytree and call regular fit
-    updated_pytree = updated_state.to_pytree()
-
-    return fit(
-        nll_fn,
-        updated_pytree,
-        fixed=fixed_sequence,
-        bounds=bounds,
-        fixed_predicate=fixed_predicate,
-        solver=solver,
-        **minimise_kwargs,
     )

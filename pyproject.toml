@@ -128,6 +128,7 @@ ignore = [
     "PLW3201", # Dunder method `...` has no special meaning in Python 3
     "RUF052",  # Local dummy variable `...` is accessed
     "F722",    # jaxtyping: `Float32[Array, "b c"]` (https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error)
+    "EM101",   # flake8-errmsg: Error message should not end with a period
 ]
 select = [
     "E",

@@ -15,12 +15,8 @@ try:  # Package import for -m execution
         summarise_pyhf,
         vector_to_dict,
     )
-    from .pyhf_model import (
-        fit_with_everwillow as fit_pyhf_with_everwillow,
-    )
-    from .pyhf_model import (
-        nll_fn as pyhf_nll,
-    )
+    from .pyhf_model import fit_with_everwillow as fit_pyhf_with_everwillow
+    from .pyhf_model import nll_fn as pyhf_nll
     from .pyhs3_model import build_pyhs3, summarise_pyhs3_fit
 except ImportError:  # Script execution fallback
     from evermore_model import fit_with_everwillow as fit_evermore_with_everwillow
@@ -31,12 +27,8 @@ except ImportError:  # Script execution fallback
         summarise_pyhf,
         vector_to_dict,
     )
-    from pyhf_model import (
-        fit_with_everwillow as fit_pyhf_with_everwillow,
-    )
-    from pyhf_model import (
-        nll_fn as pyhf_nll,
-    )
+    from pyhf_model import fit_with_everwillow as fit_pyhf_with_everwillow
+    from pyhf_model import nll_fn as pyhf_nll
     from pyhs3_model import build_pyhs3, summarise_pyhs3_fit
 
 

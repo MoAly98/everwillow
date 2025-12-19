@@ -1,12 +1,3 @@
-"""Unit tests for everwillow.inference module.
-
-Tests cover:
-- FitResult dataclass
-- fit() function with various parameter structures and options
-- fit() with parameter bounds
-- fixed_param_fit() function for profile likelihood
-"""
-
 from __future__ import annotations
 
 import typing as tp
@@ -19,6 +10,7 @@ import optimistix as optx
 import pytest
 
 import everwillow as ew
+import everwillow.statelib as sl
 from everwillow.inference import FitResult
 from everwillow.parameters.transforms import (
     MinuitTransform,
@@ -47,19 +39,6 @@ def _expect_interval(*, lower: float | None = None, upper: float | None = None):
     return _check
 
 
-def _assert_fit_results_close(
-    a: ew.FitResult,
-    b: ew.FitResult,
-    *,
-    tol: float = 1e-6,
-) -> None:
-    # We do not compare solver_result here as its internal
-    # structure may vary (e.g. FlatState.segment_id).
-    assert eqx.tree_equal(a.params, b.params, rtol=tol, atol=tol)
-    assert jnp.allclose(a.nll, b.nll, rtol=tol, atol=tol)
-    assert bool(a.success) == bool(b.success)
-
-
 def _fit_and_compare(
     nll_fn: tp.Callable[[tp.Any], float],
     params: tp.Any,
@@ -67,7 +46,10 @@ def _fit_and_compare(
 ) -> ew.FitResult:
     expected = ew.fit(nll_fn, params, **kwargs)
     jit_expected = eqx.filter_jit(ew.fit)(nll_fn, params, **kwargs)
-    _assert_fit_results_close(expected, jit_expected)
+    # this compares everything except for the treedef that is not guaranteed to be the same
+    assert eqx.tree_equal(expected.params, jit_expected.params, rtol=1e-12)
+    assert jnp.isclose(expected.nll, jit_expected.nll)
+    assert expected.success == jit_expected.success
     return expected
 
 
@@ -84,19 +66,6 @@ def _fit_raises(
         jit_fit(params)
 
 
-def _fixed_param_fit_and_compare(
-    param_values: tp.Any,
-    nll_fn: tp.Callable[[tp.Any], float],
-    params: tp.Any,
-    **kwargs,
-) -> ew.FitResult:
-    expected = ew.fixed_param_fit(param_values, nll_fn, params, **kwargs)
-    jit_fn = eqx.filter_jit(lambda pv, p: ew.fixed_param_fit(pv, nll_fn, p, **kwargs))
-    actual = jit_fn(param_values, params)
-    _assert_fit_results_close(expected, actual)
-    return expected
-
-
 # ============================================================================
 # FitResult dataclass tests
 # ============================================================================
@@ -108,7 +77,7 @@ class TestFitResult:
     def test_fitresult_creation(self):
         """Test creating a FitResult with all fields."""
         params = {"mu": 1.0, "sigma": 0.5}
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params=params,
             nll=jnp.asarray(5.5),
             success=jnp.asarray(True),
@@ -122,7 +91,7 @@ class TestFitResult:
 
     def test_fitresult_frozen(self):
         """Test that FitResult is immutable (frozen dataclass)."""
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params={},
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),
@@ -130,11 +99,11 @@ class TestFitResult:
         )
 
         with pytest.raises(AttributeError):
-            result.nll = 10.0  # type: ignore[misc]
+            result.nll = jnp.asarray(10.0)  # type: ignore[assignment]
 
     def test_fitresult_allows_none_solver_result(self):
         """Test that solver_result accepts ``None``."""
-        result = FitResult(
+        result: FitResult[float] = FitResult(
             params={},
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),
@@ -157,7 +126,9 @@ class TestFitBasic:
         def nll(params):
             return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-4
@@ -171,7 +142,7 @@ class TestFitBasic:
         def nll(params):
             return (params["x"] - 5.0) ** 2
 
-        result = _fit_and_compare(nll, {"x": 0.0})
+        result = _fit_and_compare(nll, params=sl.State.from_pytree({"x": 0.0}))
 
         assert abs(result.params["x"] - 5.0) < 1e-4
 
@@ -185,9 +156,11 @@ class TestFitBasic:
                 + (params["c"] - 3.0) ** 2
             )
 
-        result = _fit_and_compare(nll, {"a": 0.0, "b": 0.0, "c": 0.0})
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"a": 0.0, "b": 0.0, "c": 0.0})
+        )
 
-        assert abs(result.params["a"] - 1.0) < 1e-4
+        assert result.params["a"] == 1.0
         assert abs(result.params["b"] - 2.0) < 1e-4
         assert abs(result.params["c"] - 3.0) < 1e-4
 
@@ -208,8 +181,10 @@ class TestFitPytreeStructures:
                 params["level1"]["sigma"] - 1.0
             ) ** 2
 
-        initial = {"level1": {"mu": 0.0, "sigma": 0.5}}
-        result = _fit_and_compare(nll, initial)
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"level1": {"mu": 0.0, "sigma": 0.5}}
+        )
+        result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
         assert abs(result.params["level1"]["sigma"] - 1.0) < 1e-4
@@ -220,8 +195,8 @@ class TestFitPytreeStructures:
         def nll(params):
             return (params["a"]["b"]["c"] - 5.0) ** 2
 
-        initial = {"a": {"b": {"c": 0.0}}}
-        result = _fit_and_compare(nll, initial)
+        initial: sl.State[float] = sl.State.from_pytree({"a": {"b": {"c": 0.0}}})
+        result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["a"]["b"]["c"] - 5.0) < 1e-4
 
@@ -231,8 +206,10 @@ class TestFitPytreeStructures:
         def nll(params):
             return (params["flat"] - 1.0) ** 2 + (params["nested"]["value"] - 2.0) ** 2
 
-        initial = {"flat": 0.0, "nested": {"value": 0.0}}
-        result = _fit_and_compare(nll, initial)
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"flat": 0.0, "nested": {"value": 0.0}}
+        )
+        result = _fit_and_compare(nll, params=initial)
 
         assert abs(result.params["flat"] - 1.0) < 1e-4
         assert abs(result.params["nested"]["value"] - 2.0) < 1e-4
@@ -258,8 +235,8 @@ class TestFitFixedParameters:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 0.0, "sigma": 0.5, "background": 50.0},
-            fixed=["background"],
+            params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5, "background": 50.0}),
+            fixed=sl.State.from_pytree({"background": ...}),
         )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
@@ -280,8 +257,8 @@ class TestFitFixedParameters:
 
         result = _fit_and_compare(
             nll,
-            {"a": 0.0, "b": 10.0, "c": 20.0},
-            fixed=["b", "c"],
+            params=sl.State.from_pytree({"a": 0.0, "b": 10.0, "c": 20.0}),
+            fixed=sl.State.from_pytree({"b": ..., "c": ...}),
         )
 
         assert abs(result.params["a"] - 1.0) < 1e-4
@@ -294,7 +271,12 @@ class TestFitFixedParameters:
         def nll(params):
             return (params["x"] - 5.0) ** 2
 
-        _fit_raises(nll, {"x": 3.0}, IndexError, fixed=["x"])
+        _fit_raises(
+            nll,
+            params=sl.State.from_pytree({"x": 3.0}),
+            exception=IndexError,
+            fixed=sl.State.from_pytree({"x": ...}),
+        )
 
     def test_fixed_none(self):
         """Test that fixed=None works (no fixed parameters)."""
@@ -302,17 +284,23 @@ class TestFitFixedParameters:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0}, fixed=None)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), fixed=None
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
     def test_fixed_empty_mapping(self):
-        """Test that fixed=[] works (no fixed parameters)."""
+        """Test that fixed={} works (no fixed parameters)."""
 
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0}, fixed=[])
+        result = _fit_and_compare(
+            nll,
+            params=sl.State.from_pytree({"mu": 0.0}),
+            fixed=sl.State.from_pytree({}),
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
@@ -324,35 +312,17 @@ class TestFitFixedParameters:
                 params["level1"]["sigma"] - 1.0
             ) ** 2
 
-        initial = {"level1": {"mu": 0.0, "sigma": 5.0}}
+        initial: sl.State[float] = sl.State.from_pytree(
+            {"level1": {"mu": 0.0, "sigma": 5.0}}
+        )
         result = _fit_and_compare(
             nll,
             initial,
-            fixed=[("level1", "sigma")],
+            fixed=sl.State.from_pytree({"level1": {"sigma": ...}}),
         )
 
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
         assert abs(result.params["level1"]["sigma"] - 5.0) < 1e-10
-
-    def test_fixed_predicate(self) -> None:
-        """Fix parameters using the ``fixed_predicate`` hook."""
-
-        def nll(params):
-            return (
-                (params["a"] - 1.0) ** 2
-                + (params["b"] - 2.0) ** 2
-                + (params["c"] - 3.0) ** 2
-            )
-
-        result = _fit_and_compare(
-            nll,
-            {"a": 0.0, "b": 10.0, "c": 20.0},
-            fixed_predicate=lambda key, _value: key[-1] in {"b", "c"},
-        )
-
-        assert abs(result.params["a"] - 1.0) < 1e-4
-        assert abs(result.params["b"] - 10.0) < 1e-10
-        assert abs(result.params["c"] - 20.0) < 1e-10
 
 
 # ============================================================================
@@ -376,7 +346,9 @@ class TestFitAdditionalArguments:
         def wrapped(params):
             return nll(params, target_mu, target_sigma)
 
-        result = _fit_and_compare(wrapped, {"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            wrapped, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 3.0) < 1e-4
         assert abs(result.params["sigma"] - 1.5) < 1e-4
@@ -390,7 +362,9 @@ class TestFitAdditionalArguments:
             ) ** 2
 
         wrapped = partial(nll, target_mu=4.0, target_sigma=0.8)
-        result = _fit_and_compare(wrapped, {"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            wrapped, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 4.0) < 1e-4
         assert abs(result.params["sigma"] - 0.8) < 1e-4
@@ -406,7 +380,7 @@ class TestFitAdditionalArguments:
         def wrapped(params):
             return nll(params, target_mu, offset=offset)
 
-        result = _fit_and_compare(wrapped, {"mu": 0.0})
+        result = _fit_and_compare(wrapped, params=sl.State.from_pytree({"mu": 0.0}))
 
         assert abs(result.params["mu"] - 2.5) < 1e-4
 
@@ -421,8 +395,8 @@ class TestFitAdditionalArguments:
 
         result = _fit_and_compare(
             wrapped,
-            {"a": 0.0, "b": 5.0},
-            fixed=["b"],
+            params=sl.State.from_pytree({"a": 0.0, "b": 5.0}),
+            fixed=sl.State.from_pytree({"b": ...}),
         )
 
         assert abs(result.params["a"] - 7.0) < 1e-4
@@ -443,8 +417,10 @@ class TestFitSolverOptions:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        custom_solver = optx.BFGS(rtol=1e-6, atol=1e-6)
-        result = _fit_and_compare(nll, {"mu": 0.0}, solver=custom_solver)
+        custom_solver: optx.AbstractMinimiser = optx.BFGS(rtol=1e-6, atol=1e-6)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), solver=custom_solver
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-5
 
@@ -454,7 +430,9 @@ class TestFitSolverOptions:
         def nll(params):
             return (params["mu"] - 2.0) ** 2
 
-        result = _fit_and_compare(nll, {"mu": 0.0}, max_steps=50)
+        result = _fit_and_compare(
+            nll, params=sl.State.from_pytree({"mu": 0.0}), max_steps=50
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
@@ -479,7 +457,7 @@ class TestFitRealisticExamples:
         observed = 25.0
         result = _fit_and_compare(
             lambda params: poisson_nll(params, observed),
-            {"mu": 1.0, "background": 10.0},
+            params=sl.State.from_pytree({"mu": 1.0, "background": 10.0}),
         )
 
         # MLE for Poisson: expected ≈ observed
@@ -500,7 +478,9 @@ class TestFitRealisticExamples:
 
             return main + constraint
 
-        result = _fit_and_compare(nll_with_constraint, {"mu": 0.0, "sigma": 0.5})
+        result = _fit_and_compare(
+            nll_with_constraint, params=sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        )
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-3
@@ -523,8 +503,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 0.5},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+            sl.State.from_pytree({"mu": 0.5}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)}),
         )
 
         # Should hit the upper bound since true minimum is at 10
@@ -541,8 +521,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 2.0},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=10.0)},
+            sl.State.from_pytree({"mu": 2.0}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=10.0)}),
         )
 
         # Should hit the lower bound since true minimum is at -5
@@ -559,49 +539,32 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"mu": 1.0},
-            bounds={"mu": MinuitTransform(lower=0.0, upper=5.0)},
+            sl.State.from_pytree({"mu": 1.0}),
+            bounds=sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)}),
         )
 
         # Should find true minimum
         assert 0.0 <= result.params["mu"] <= 5.0
         assert jnp.isclose(result.params["mu"], 2.5, atol=1e-2)
 
-    def test_fit_with_none_bounds_no_constraint(self):
-        """Test that None bounds allow finding true minimum."""
-
-        def nll(params):
-            # Unconstrained minima: x=-50, y=50
-            return (params["x"] + 50.0) ** 2 + (params["y"] - 50.0) ** 2
-
-        result = _fit_and_compare(
-            nll,
-            {"x": 1.0, "y": 1.0},
-            bounds={"x": None, "y": None},
-        )
-
-        # Should find true minima
-        assert jnp.isclose(result.params["x"], -50.0, atol=1e-1)
-        assert jnp.isclose(result.params["y"], 50.0, atol=1e-1)
-
     @pytest.mark.parametrize(
         ("transform_factory", "target", "initial", "expected"),
         [
-            (partial(MinuitTransform, lower=0.0, upper=5.0), 2.5, 0.1, 2.5),
-            (partial(SigmoidTransform, lower=-2.0, upper=3.0), 2.0, -1.0, 2.0),
+            (MinuitTransform(lower=0.0, upper=5.0), 2.5, 0.1, 2.5),
+            (SigmoidTransform(lower=-2.0, upper=3.0), 2.0, -1.0, 2.0),
             (
-                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                OneSidedLogTransform(bound=0.0, direction="lower"),
                 -3.0,
                 1.0,
                 0.0,
             ),
             (
-                partial(OneSidedLogTransform, bound=5.0, direction="upper"),
+                OneSidedLogTransform(bound=5.0, direction="upper"),
                 8.0,
                 1.0,
                 5.0,
             ),
-            (partial(SoftPlusTransform), 1.5, 0.2, 1.5),
+            (SoftPlusTransform(), 1.5, 0.2, 1.5),
         ],
     )
     def test_fit_supports_all_transform_variants(
@@ -618,8 +581,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"x": initial},
-            bounds={"x": transform_factory()},
+            sl.State.from_pytree({"x": initial}),
+            bounds=sl.State.from_pytree({"x": transform_factory}),
         )
 
         assert jnp.isclose(result.params["x"], expected, atol=1e-2)
@@ -628,43 +591,43 @@ class TestFitWithBounds:
         ("transform_factory", "target", "initial", "check"),
         [
             (
-                partial(MinuitTransform, lower=0.0, upper=1.0),
+                MinuitTransform(lower=0.0, upper=1.0),
                 -2.0,
                 0.3,
                 _expect_close(0.0),
             ),
             (
-                partial(MinuitTransform, lower=0.0, upper=1.0),
+                MinuitTransform(lower=0.0, upper=1.0),
                 5.0,
                 0.7,
                 _expect_close(1.0),
             ),
             (
-                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                SigmoidTransform(lower=0.0, upper=1.0),
                 -5.0,
                 0.4,
                 _expect_close(0.0),
             ),
             (
-                partial(SigmoidTransform, lower=0.0, upper=1.0),
+                SigmoidTransform(lower=0.0, upper=1.0),
                 5.0,
                 0.6,
                 _expect_close(1.0),
             ),
             (
-                partial(OneSidedLogTransform, bound=0.0, direction="lower"),
+                OneSidedLogTransform(bound=0.0, direction="lower"),
                 -5.0,
                 0.8,
                 _expect_close(0.0),
             ),
             (
-                partial(OneSidedLogTransform, bound=2.0, direction="upper"),
+                OneSidedLogTransform(bound=2.0, direction="upper"),
                 10.0,
                 1.0,
                 _expect_close(2.0),
             ),
             (
-                partial(SoftPlusTransform),
+                SoftPlusTransform(),
                 -1.0,
                 0.5,
                 _expect_interval(lower=0.0, upper=5e-2),
@@ -685,155 +648,8 @@ class TestFitWithBounds:
 
         result = _fit_and_compare(
             nll,
-            {"x": initial},
-            bounds={"x": transform_factory()},
+            params=sl.State.from_pytree({"x": initial}),
+            bounds=sl.State.from_pytree({"x": transform_factory}),
         )
 
         check(float(result.params["x"]))
-
-
-# ============================================================================
-# fixed_param_fit() function tests
-# ============================================================================
-
-
-class TestFixedParamFit:
-    """Tests for fixed_param_fit() function."""
-
-    def test_fix_single_parameter(self):
-        """Test fixing a single parameter to a specific value."""
-
-        def nll(params):
-            return (params["mu"] - 3.0) ** 2 + (params["sigma"] - 1.0) ** 2
-
-        result = _fixed_param_fit_and_compare(
-            {"mu": 2.0}, nll, {"mu": 0.0, "sigma": 0.5}
-        )
-
-        assert abs(result.params["mu"] - 2.0) < 1e-10  # Should be exactly 2.0
-        assert abs(result.params["sigma"] - 1.0) < 1e-4
-
-    def test_fix_multiple_parameters(self):
-        """Test fixing multiple parameters."""
-
-        def nll(params):
-            return (
-                (params["a"] - 1.0) ** 2
-                + (params["b"] - 2.0) ** 2
-                + (params["c"] - 3.0) ** 2
-            )
-
-        result = _fixed_param_fit_and_compare(
-            {"a": 5.0, "c": 7.0}, nll, {"a": 0.0, "b": 0.0, "c": 0.0}
-        )
-
-        assert abs(result.params["a"] - 5.0) < 1e-10
-        assert abs(result.params["b"] - 2.0) < 1e-4
-        assert abs(result.params["c"] - 7.0) < 1e-10
-
-    def test_with_additional_fixed_list(self):
-        """Test combining param_values with additional fixed list."""
-
-        def nll(params):
-            return (
-                (params["a"] - 1.0) ** 2
-                + (params["b"] - 2.0) ** 2
-                + (params["c"] - 3.0) ** 2
-            )
-
-        result = _fixed_param_fit_and_compare(
-            {"a": 5.0},
-            nll,
-            {"a": 0.0, "b": 10.0, "c": 0.0},
-            fixed=["b"],
-        )
-
-        assert abs(result.params["a"] - 5.0) < 1e-10
-        assert abs(result.params["b"] - 10.0) < 1e-10
-        assert abs(result.params["c"] - 3.0) < 1e-4
-
-    def test_with_args(self):
-        """Test fixed_param_fit() with additional positional arguments."""
-
-        def nll(params, target):
-            return (params["mu"] - target) ** 2 + (params["sigma"] - 1.0) ** 2
-
-        def wrapped(params):
-            return nll(params, 5.0)
-
-        result = _fixed_param_fit_and_compare(
-            {"mu": 3.0}, wrapped, {"mu": 0.0, "sigma": 0.5}
-        )
-
-        assert abs(result.params["mu"] - 3.0) < 1e-10
-        assert abs(result.params["sigma"] - 1.0) < 1e-4
-
-    def test_with_kwargs(self):
-        """Test fixed_param_fit() with keyword arguments."""
-
-        def nll(params, *, target_sigma):
-            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - target_sigma) ** 2
-
-        wrapped = partial(nll, target_sigma=1.8)
-
-        result = _fixed_param_fit_and_compare(
-            {"mu": 1.5}, wrapped, {"mu": 0.0, "sigma": 0.5}
-        )
-
-        assert abs(result.params["mu"] - 1.5) < 1e-10
-        assert abs(result.params["sigma"] - 1.8) < 1e-4
-
-    def test_with_both_args_and_kwargs(self):
-        """Test fixed_param_fit() with both args and kwargs."""
-
-        def nll(params, scale, *, offset):
-            return (params["mu"] - scale - offset) ** 2
-
-        def wrapped(params):
-            return nll(params, 2.0, offset=3.0)
-
-        with pytest.raises(IndexError):
-            ew.fixed_param_fit({"mu": 5.0}, wrapped, {"mu": 0.0})
-        jit_fn = eqx.filter_jit(lambda pv, p: ew.fixed_param_fit(pv, wrapped, p))
-        with pytest.raises(IndexError):
-            jit_fn({"mu": 5.0}, {"mu": 0.0})
-
-    def test_profile_likelihood_scan_point(self):
-        """Test using fixed_param_fit for a single profile likelihood point."""
-
-        def nll(params):
-            return (params["mu"] - 2.0) ** 2 + (params["sigma"] - 1.0) ** 2
-
-        # Unconditional fit
-        result_uncond = _fit_and_compare(nll, {"mu": 0.0, "sigma": 0.5})
-
-        # Profile likelihood at mu=1.5
-        result_profile = _fixed_param_fit_and_compare(
-            {"mu": 1.5}, nll, {"mu": 0.0, "sigma": 0.5}
-        )
-
-        # Profile likelihood should have higher NLL than unconditional
-        assert float(result_profile.nll) > float(result_uncond.nll)
-        assert abs(result_profile.params["mu"] - 1.5) < 1e-10
-        assert abs(result_profile.params["sigma"] - 1.0) < 1e-4
-
-    def test_fixed_param_fit_with_bounds_constrains_free_param(self):
-        """Test profile likelihood fit where free parameter would violate bound."""
-
-        def nll(params):
-            # Unconstrained minimum: mu=any, sigma=-10
-            return (params["sigma"] + 10.0) ** 2
-
-        result = _fixed_param_fit_and_compare(
-            {"mu": 1.5},
-            nll,
-            {"mu": 1.0, "sigma": 0.5},
-            bounds={"sigma": OneSidedLogTransform(bound=0.0, direction="lower")},
-        )
-
-        # mu should be fixed at 1.5
-        assert jnp.isclose(result.params["mu"], 1.5, atol=1e-6)
-
-        # sigma should hit lower bound
-        assert result.params["sigma"] >= 0.0
-        assert jnp.isclose(result.params["sigma"], 0.0, atol=1e-2)

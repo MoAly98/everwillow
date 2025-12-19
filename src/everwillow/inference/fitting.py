@@ -116,14 +116,6 @@ def _make_progress_context(
         yield updater
 
 
-def _inexact_asarray(x):
-    """Convert a value to a JAX array with an inexact (floating-point) dtype."""
-    dtype = jnp.result_type(x)
-    if not jnp.issubdtype(dtype, jnp.inexact):
-        dtype = jnp.float64
-    return jnp.asarray(x, dtype=dtype)
-
-
 def _iminimize(
     wrapped_nll: tp.Callable[[sl.PartitionedMapping[V], Args], float],
     solver: optx.AbstractMinimiser,
@@ -136,8 +128,8 @@ def _iminimize(
     **minimise_kwargs,
 ) -> optx.Solution:
     """Interactive minimization with step-by-step iteration and progress bar."""
-    # Convert y0 leaves to JAX arrays (same as optx.minimise does)
-    y0 = jax.tree_util.tree_map(_inexact_asarray, y0)
+    # Convert y0 leaves to JAX arrays (required for solver.init which calls tree_full_like)
+    y0 = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.float64), y0)
 
     # Wrap nll to return (f, aux) tuple and ensure outputs are arrays
     def fn_with_aux(y, fn_args):

@@ -35,7 +35,7 @@ dependencies = [
     "optimistix>=0.0.10",
     "jaxtyping",
     "equinox>=0.10.11", # dep of optimistix but we make it explicit
-    "rich", # for interactive fitting progress bars
+    "tqdm", # for interactive fitting progress bars
 ]
 
 
@@ -57,6 +57,9 @@ examples = [
     "evermore",
     "pyhf",
     "rich",
+    "iminuit>=2.32.0",
+    "scipy>=1.16.3",
+    "matplotlib>=3.10.8",
 ]
 dev = [
     { include-group = "test" },

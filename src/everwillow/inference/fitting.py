@@ -86,34 +86,19 @@ def _make_progress_context(
         yield None
         return
 
-    from rich.progress import (
-        BarColumn,
-        Progress,
-        SpinnerColumn,
-        TaskProgressColumn,
-        TextColumn,
-        TimeElapsedColumn,
-    )
+    from tqdm import tqdm
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TextColumn("NLL: {task.fields[nll]:.6f}"),
-        TimeElapsedColumn(),
-        transient=False,
-    ) as progress:
-        task = progress.add_task(
-            "Minimizing...",
-            total=max_steps,
-            nll=float("inf"),
-        )
+    pbar = tqdm(total=max_steps, desc="Minimizing", unit="step")
 
-        def updater(step: int, nll_value: float) -> None:
-            progress.update(task, completed=step, nll=nll_value)
+    def updater(step: int, nll_value: float) -> None:
+        pbar.n = step
+        pbar.set_postfix(NLL=f"{nll_value:.6f}")
+        pbar.refresh()
 
+    try:
         yield updater
+    finally:
+        pbar.close()
 
 
 def _iminimize(
@@ -178,6 +163,10 @@ def _iminimize(
 
             # Check termination
             done, result = terminate(y=y, state=state)
+
+        # Final progress bar update - show 100% when converged
+        if updater is not None:
+            updater(max_steps, float(state.f_info.f))
 
     # Postprocess
     y_final, aux_final, stats = solver.postprocess(

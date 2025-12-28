@@ -3,8 +3,12 @@
 This module provides a generic root-finding function for computing upper limits.
 It uses optimistix.root_find with Bisection for pure JAX, JIT-compatible operation.
 
-The user provides an objective function that maps POI values to some quantity
-(e.g., CLs, p_alt), and upper_limit finds where that quantity equals a target level.
+The user provides an objective function that maps POI values to some quantity,
+and upper_limit finds where that quantity equals a target level.
+
+This is criterion-agnostic: the objective can compute CLs, p_alt, or any
+other quantity. The user composes the objective function to implement
+their desired exclusion criterion.
 
 Note:
     The objective function must be JAX-traceable. Avoid calling float() or other
@@ -53,7 +57,7 @@ def upper_limit(
                       Must be JAX-traceable (no float() calls on traced values).
                       Should be monotonic within bounds for reliable convergence.
         bounds: (lower, upper) search range for POI value.
-        level: Target value for the objective function (default 0.05 for 95% CL).
+        level: Target value for the objective function (default 0.05).
         rtol: Relative tolerance for convergence.
         atol: Absolute tolerance for convergence.
         max_steps: Maximum bisection iterations.

@@ -174,6 +174,8 @@ class TestUpperLimitEdgeCases:
 # Tests for upper_limit_toys
 # ============================================================
 
+from everwillow.inference.hypotest_toys import hypotest_toys
+
 
 def make_counting_nll_factory(signal: float, bkg: float, bkg_unc: float):
     """Create NLL factory for toy-based testing."""
@@ -229,33 +231,40 @@ class TestUpperLimitToys:
 
     def test_upper_limit_toys_returns_float(self):
         """upper_limit_toys should return a float."""
-        signal, bkg, bkg_unc = 6.0, 9.0, 3.0
-        nll_factory, aux_data = make_counting_nll_factory(signal, bkg, bkg_unc)
-        observed = {"main": 9.0, "aux": aux_data}
+        # Simple objective function that takes (poi, key) -> value
+        def objective(poi, key):
+            # Simulate CLs-like behavior: decreases as poi increases
+            return 1.0 / (1.0 + poi)
 
-        def nll_fn(params):
-            return nll_factory(params, observed)
-
-        params: sl.State[float] = sl.State.from_pytree({"mu": 1.0, "gamma": 1.0})
-        sample_fn = make_sample_fn(signal, bkg, aux_data)
         key = jax.random.key(42)
-
-        result = upper_limit_toys(
-            nll_fn,
-            params,
-            poi_name="mu",
-            nll_factory=nll_factory,
-            sample_fn=sample_fn,
-            key=key,
-            bounds=(0.0, 3.0),
-            ntoys=50,
-            max_iterations=5,
-        )
-
+        result = upper_limit_toys(objective, bounds=(0.0, 10.0), key=key, level=0.5)
         assert isinstance(result, float)
+
+    def test_upper_limit_toys_finds_root(self):
+        """upper_limit_toys should find where objective = level."""
+        # f(x, key) = 1/(1+x), find where f(x) = 0.5 -> x = 1
+        def objective(poi, key):
+            return 1.0 / (1.0 + poi)
+
+        key = jax.random.key(42)
+        result = upper_limit_toys(
+            objective, bounds=(0.0, 10.0), key=key, level=0.5, tolerance=0.01
+        )
+        assert jnp.isclose(result, 1.0, atol=0.05)
 
     def test_upper_limit_toys_within_bounds(self):
         """Result should be within specified bounds."""
+
+        def objective(poi, key):
+            return 1.0 / (1.0 + poi)
+
+        key = jax.random.key(42)
+        bounds = (0.5, 5.0)
+        result = upper_limit_toys(objective, bounds=bounds, key=key, level=0.3)
+        assert bounds[0] <= result <= bounds[1]
+
+    def test_upper_limit_toys_with_hypotest(self):
+        """Test with actual hypotest_toys objective."""
         signal, bkg, bkg_unc = 6.0, 9.0, 3.0
         nll_factory, aux_data = make_counting_nll_factory(signal, bkg, bkg_unc)
         observed = {"main": 9.0, "aux": aux_data}
@@ -265,22 +274,33 @@ class TestUpperLimitToys:
 
         params: sl.State[float] = sl.State.from_pytree({"mu": 1.0, "gamma": 1.0})
         sample_fn = make_sample_fn(signal, bkg, aux_data)
-        key = jax.random.key(42)
 
-        bounds = (0.5, 2.5)
+        # Create objective that calls hypotest_toys
+        def cls_objective(poi, key):
+            result = hypotest_toys(
+                nll_fn,
+                params,
+                poi_name="mu",
+                poi_test=poi,
+                nll_factory=nll_factory,
+                sample_fn=sample_fn,
+                key=key,
+                ntoys=50,
+            )
+            return float(cls(result.p_alt, result.p_null))
+
+        key = jax.random.key(42)
         result = upper_limit_toys(
-            nll_fn,
-            params,
-            poi_name="mu",
-            nll_factory=nll_factory,
-            sample_fn=sample_fn,
+            cls_objective,
+            bounds=(0.0, 3.0),
             key=key,
-            bounds=bounds,
-            ntoys=50,
-            max_iterations=5,
+            level=0.05,
+            tolerance=0.03,
+            max_iterations=8,
         )
 
-        assert bounds[0] <= result <= bounds[1]
+        assert isinstance(result, float)
+        assert 0.0 <= result <= 3.0
 
     def test_upper_limit_toys_rough_agreement_with_asymptotic(self):
         """Toy-based limit should roughly match asymptotic limit."""
@@ -293,27 +313,36 @@ class TestUpperLimitToys:
 
         params: sl.State[float] = sl.State.from_pytree({"mu": 1.0, "gamma": 1.0})
         sample_fn = make_sample_fn(signal, bkg, aux_data)
-        key = jax.random.key(42)
 
         # Asymptotic limit
-        def cls_criterion(poi):
+        def cls_criterion_asymp(poi):
             result = hypotest(nll_fn, params, poi_name="mu", poi_test=poi)
             return cls(result.p_alt, result.p_null)
 
-        limit_asymp = upper_limit(cls_criterion, bounds=(0.0, 3.0), level=0.05)
+        limit_asymp = upper_limit(cls_criterion_asymp, bounds=(0.0, 3.0), level=0.05)
 
-        # Toy limit (use more toys for better convergence)
+        # Toy-based objective
+        def cls_objective_toys(poi, key):
+            result = hypotest_toys(
+                nll_fn,
+                params,
+                poi_name="mu",
+                poi_test=poi,
+                nll_factory=nll_factory,
+                sample_fn=sample_fn,
+                key=key,
+                ntoys=200,
+            )
+            return float(cls(result.p_alt, result.p_null))
+
+        key = jax.random.key(42)
         limit_toys = upper_limit_toys(
-            nll_fn,
-            params,
-            poi_name="mu",
-            nll_factory=nll_factory,
-            sample_fn=sample_fn,
-            key=key,
+            cls_objective_toys,
             bounds=(0.0, 3.0),
-            ntoys=200,
+            key=key,
             level=0.05,
-            max_iterations=8,
+            tolerance=0.02,
+            max_iterations=10,
         )
 
         # Should be within ~50% of each other (toys have large uncertainty)

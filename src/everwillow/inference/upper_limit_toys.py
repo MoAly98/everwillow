@@ -1,17 +1,26 @@
-"""Upper limit finding via toy-based hypothesis testing.
+"""Upper limit finding via toy-based root search.
 
-This module provides a function for computing upper limits using
-Monte Carlo toys instead of asymptotic approximations.
+This module provides a generic root-finding function for computing upper limits
+using Monte Carlo toys. It mirrors the API of upper_limit.py but accepts a
+PRNG key for stochastic objective functions.
 
-The bisection search is performed in Python (not JIT-compiled) because
-each iteration requires generating new toys with a fresh PRNG key.
+The user provides an objective function that maps (poi, key) -> value,
+and upper_limit_toys finds where that value equals the target level.
 
-Example usage:
-    >>> limit = upper_limit_toys(
-    ...     nll_fn, params, poi_name="mu",
-    ...     nll_factory=nll_factory, sample_fn=sample_fn,
-    ...     key=jax.random.key(42), bounds=(0, 5), ntoys=500
-    ... )
+This is criterion-agnostic: the objective can compute CLs, p_alt, or any
+other quantity. The user composes the objective function to implement
+their desired exclusion criterion.
+
+Note on bisection implementation:
+    Currently uses a Python loop instead of optimistix.Bisection because:
+    1. Each iteration needs a fresh PRNG key for new toys
+    2. The toy-based hypotest contains Python loops (not fully vmap'd)
+
+    In principle, this could be converted to optimistix by:
+    - Passing iteration count as aux state and using fold_in for keys
+    - Making hypotest_toys fully vmap-compatible
+
+    For now, the Python loop is simpler and works correctly.
 """
 
 from __future__ import annotations
@@ -19,78 +28,65 @@ from __future__ import annotations
 import typing as tp
 
 import jax
-from jaxtyping import PRNGKeyArray, PyTree
-
-import everwillow.statelib as sl
-from everwillow.inference.calculators import cls
-from everwillow.inference.hypotest_toys import hypotest_toys
+from jaxtyping import PRNGKeyArray
 
 
 def upper_limit_toys(
-    nll_fn: tp.Callable[[PyTree], float],
-    params: sl.State,
-    poi_name: str,
-    *,
-    nll_factory: tp.Callable[[PyTree, tp.Any], float],
-    sample_fn: tp.Callable[[dict, PRNGKeyArray], dict],
+    objective_fn: tp.Callable[[float, PRNGKeyArray], float],
+    bounds: tuple[float, float],
     key: PRNGKeyArray,
-    bounds: tuple[float, float] = (0.0, 10.0),
     level: float = 0.05,
-    ntoys: int = 500,
-    null_value: float = 0.0,
+    *,
     tolerance: float = 0.02,
     max_iterations: int = 15,
-    solver: tp.Any = None,
-    max_steps: int = 256,
 ) -> float:
-    """Find upper limit on POI using toy-based CLs.
+    """Find POI value where objective function equals target level using toys.
 
-    Uses bisection search with hypotest_toys at each point.
-    Each iteration uses a fresh subset of the PRNG key for reproducibility.
+    This is a generic root finder for stochastic objectives. The user composes
+    the objective function to implement their desired exclusion criterion
+    (CLs, p_alt, or any other quantity).
+
+    Uses bisection search with the objective function evaluated at each point.
+    Each iteration uses a fresh PRNG key derived from the base key.
 
     Args:
-        nll_fn: Negative log-likelihood function for observed data.
-        params: Initial parameter state.
-        poi_name: Name of parameter of interest (e.g., "mu", "c_tG").
-        nll_factory: Factory function that creates NLL for any observation.
-                     Signature: (params_dict, observation) -> nll_value
-        sample_fn: Function to generate toy observations.
-                   Signature: (params_dict, prng_key) -> observation
-        key: JAX PRNG key for reproducibility.
+        objective_fn: Function mapping (poi, key) to quantity of interest.
+                      Should be monotonic (typically decreasing) as POI increases.
+                      Signature: (poi_value, prng_key) -> float
         bounds: (lower, upper) search range for POI value.
-        level: Target CLs level (default 0.05 for 95% CL).
-        ntoys: Number of toys per evaluation (default 500).
-        null_value: Null hypothesis value for POI (default 0.0).
-        tolerance: Stop when |CLs - level| < tolerance (default 0.02).
+        key: JAX PRNG key for reproducibility.
+        level: Target value for the objective function (default 0.05).
+        tolerance: Stop when |objective - level| < tolerance (default 0.02).
         max_iterations: Maximum bisection iterations (default 15).
-        solver: Optional solver for optimization.
-        max_steps: Maximum optimization steps.
 
     Returns:
-        POI value where CLs ≈ level (the upper limit).
+        POI value where objective_fn(poi, key) ≈ level.
 
     Note:
         The result has statistical uncertainty from the Monte Carlo sampling.
-        With ntoys toys, the CLs uncertainty is ~1/sqrt(ntoys).
-        Increase ntoys for more precise limits.
-
-        Unlike the asymptotic upper_limit, this function is NOT JIT-compiled
-        because each bisection iteration needs a fresh PRNG key.
+        The tolerance should account for this - setting it too tight may
+        cause the search to use all iterations without converging.
 
     Examples:
-        >>> # Find 95% CL upper limit on signal strength
-        >>> limit = upper_limit_toys(
-        ...     nll_fn, params, "mu",
-        ...     nll_factory=nll_factory, sample_fn=sample_fn,
-        ...     key=jax.random.key(42), bounds=(0, 5), ntoys=500
-        ... )
+        >>> # CLs-based upper limit with toys
+        >>> def cls_objective(poi, key):
+        ...     result = hypotest_toys(
+        ...         nll_fn, params, "mu", poi,
+        ...         nll_factory=nll_factory, sample_fn=sample_fn,
+        ...         key=key, ntoys=500
+        ...     )
+        ...     return float(cls(result.p_alt, result.p_null))
+        >>> limit = upper_limit_toys(cls_objective, bounds=(0, 5), key=key)
 
-        >>> # Find limit on Wilson coefficient with custom tolerance
-        >>> limit = upper_limit_toys(
-        ...     nll_fn, params, "c_tG",
-        ...     nll_factory=nll_factory, sample_fn=sample_fn,
-        ...     key=key, bounds=(-2, 2), tolerance=0.01, ntoys=1000
-        ... )
+        >>> # p_alt-based upper limit (non-CLs frequentist)
+        >>> def palt_objective(poi, key):
+        ...     result = hypotest_toys(
+        ...         nll_fn, params, "mu", poi,
+        ...         nll_factory=nll_factory, sample_fn=sample_fn,
+        ...         key=key, ntoys=500
+        ...     )
+        ...     return float(result.p_alt)
+        >>> limit = upper_limit_toys(palt_objective, bounds=(0, 5), key=key)
     """
     lo, hi = bounds
 
@@ -100,32 +96,19 @@ def upper_limit_toys(
         # Get fresh key for this iteration
         key_iter = jax.random.fold_in(key, iteration)
 
-        # Compute CLs at midpoint using toys
-        result = hypotest_toys(
-            nll_fn,
-            params,
-            poi_name,
-            mid,
-            nll_factory=nll_factory,
-            sample_fn=sample_fn,
-            key=key_iter,
-            ntoys=ntoys,
-            null_value=null_value,
-            solver=solver,
-            max_steps=max_steps,
-        )
-        cls_mid = float(cls(result.p_alt, result.p_null))
+        # Evaluate objective at midpoint
+        obj_mid = objective_fn(mid, key_iter)
 
         # Check convergence
-        if abs(cls_mid - level) < tolerance:
+        if abs(obj_mid - level) < tolerance:
             return mid
 
         # Bisection update
-        # CLs typically decreases as POI increases (for exclusion)
-        if cls_mid > level:
-            lo = mid  # Need higher POI to get lower CLs
+        # Objective typically decreases as POI increases (for exclusion)
+        if obj_mid > level:
+            lo = mid  # Need higher POI to get lower objective
         else:
-            hi = mid  # Need lower POI to get higher CLs
+            hi = mid  # Need lower POI to get higher objective
 
     # Return best estimate after max iterations
     return (lo + hi) / 2.0

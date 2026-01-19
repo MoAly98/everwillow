@@ -22,8 +22,13 @@ Args: tp.TypeAlias = tuple[
     sl.State[ewp.TransformBase],  # bounds
 ]
 
-# Callback signature for interactive fitting: (step_idx, free_state, nll_value) -> None
-Callback: tp.TypeAlias = tp.Callable[[int, sl.PartitionedMapping, float], None]
+# Solver state type varies by solver (e.g., _QuasiNewtonState for BFGS).
+# Access NLL via state.f_info.f
+SolverState = tp.TypeVar("SolverState")
+
+# Callback signature for interactive fitting: (step_idx, y, state) -> None
+# Matches the signature pattern used by solver.step and solver.terminate
+Callback: tp.TypeAlias = tp.Callable[[int, sl.PartitionedMapping, SolverState], None]
 
 
 def _reconstruct_full_state(
@@ -124,7 +129,7 @@ def _iminimize(
     max_steps: int,
     progress: bool,
     callback: Callback | None,
-    **minimise_kwargs,
+    solver_options: dict[str, tp.Any] | None = None,
 ) -> optx.Solution:
     """Interactive minimization with step-by-step iteration and progress bar."""
     # Convert y0 leaves to JAX arrays (required for solver.init which calls tree_full_like)
@@ -138,7 +143,7 @@ def _iminimize(
     # Infer output structure for solver initialization via eval_shape
     f_struct = jax.eval_shape(lambda: fn_with_aux(y0, args)[0])
     aux_struct = None
-    options = minimise_kwargs.get("options", {})
+    options = solver_options if solver_options is not None else {}
     tags: frozenset[object] = frozenset()
 
     # Initialize solver state
@@ -160,12 +165,9 @@ def _iminimize(
     iteration = 0
     with _make_progress_context(progress, max_steps) as updater:
         while not done and iteration < max_steps:
-            # Get current NLL value from solver state
-            current_nll = float(state.f_info.f)
-
-            # Call user callback
+            # Call user callback with current state (user can access state.f_info.f for NLL)
             if callback is not None:
-                callback(iteration, y, current_nll)
+                callback(iteration, y, state)
 
             # Perform one solver step
             y, state, aux = step(y=y, state=state)
@@ -174,8 +176,9 @@ def _iminimize(
             # Check termination
             done, result = terminate(y=y, state=state)
 
-            # Update progress bar
+            # Update progress bar with current NLL
             if updater is not None:
+                current_nll = float(state.f_info.f)
                 updater.update(iteration, current_nll)
 
         # Final progress bar update - set total to actual steps taken
@@ -211,6 +214,7 @@ def _fit(
     max_steps: int = 256,
     progress: bool = True,
     callback: Callback | None = None,
+    solver_options: dict[str, tp.Any] | None = None,
     **minimise_kwargs,
 ) -> FitResult[V]:
     """Internal fit implementation that handles both interactive and non-interactive modes.
@@ -271,7 +275,7 @@ def _fit(
             max_steps=max_steps,
             progress=progress,
             callback=callback,
-            **minimise_kwargs,
+            solver_options=solver_options,
         )
     else:
         solution = _minimize(
@@ -393,7 +397,7 @@ def ifit(
     max_steps: int = 256,
     progress: bool = True,
     callback: Callback | None = None,
-    **minimise_kwargs,
+    solver_options: dict[str, tp.Any] | None = None,
 ) -> FitResult[V]:
     """Perform an interactive maximum-likelihood fit with progress bar and callbacks.
 
@@ -418,9 +422,10 @@ def ifit(
         max_steps: Maximum number of optimization steps. Defaults to 256.
         progress: Whether to display a rich progress bar. Defaults to True.
         callback: Optional function called each iteration with signature
-            ``(step_idx: int, free_state: PartitionedMapping, nll_value: float) -> None``.
-            The callback receives the raw free parameters in unbounded space.
-        **minimise_kwargs: Additional keyword arguments forwarded to solver init.
+            ``(step_idx: int, y: PartitionedMapping, state: SolverState) -> None``.
+            This matches the pattern used by ``solver.step`` and ``solver.terminate``.
+            The NLL value can be accessed via ``state.f_info.f``.
+        solver_options: Optional dict of solver-specific options passed to ``solver.init``.
 
     Returns:
         :class:`FitResult` containing the fitted parameters and diagnostics.
@@ -437,8 +442,8 @@ def ifit(
 
         >>> # With custom callback to record history
         >>> history = []
-        >>> def record_history(step, state, nll):
-        ...     history.append({"step": step, "nll": nll})
+        >>> def record_history(step, y, state):
+        ...     history.append({"step": step, "nll": float(state.f_info.f)})
         >>> result = ew.ifit(my_nll, initial_params, callback=record_history)
 
         >>> # Disable progress bar
@@ -454,5 +459,5 @@ def ifit(
         max_steps=max_steps,
         progress=progress,
         callback=callback,
-        **minimise_kwargs,
+        solver_options=solver_options,
     )

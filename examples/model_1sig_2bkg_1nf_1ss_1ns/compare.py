@@ -473,7 +473,13 @@ def plot_benchmark_grid(
     # Get unique models and optimizers
     models = sorted({p[0] for p in parsed})
     # Fixed order for optimizers: everwillow, optimistix, iminuit, scipy
-    optimizer_order = ["everwillow", "everwillow.ifit", "optimistix", "iminuit", "scipy.minimizer"]
+    optimizer_order = [
+        "everwillow",
+        "everwillow.ifit",
+        "optimistix",
+        "iminuit",
+        "scipy.minimizer",
+    ]
     all_optimizers = {p[1] for p in parsed}
     optimizers = [o for o in optimizer_order if o in all_optimizers]
 
@@ -673,7 +679,13 @@ def plot_parameter_deviations(
             parsed.append((model, optimizer, b))
 
     # Fixed order for optimizers: everwillow, everwillow.ifit, optimistix, iminuit, scipy
-    optimizer_order = ["everwillow", "everwillow.ifit", "optimistix", "iminuit", "scipy.minimizer"]
+    optimizer_order = [
+        "everwillow",
+        "everwillow.ifit",
+        "optimistix",
+        "iminuit",
+        "scipy.minimizer",
+    ]
 
     # Sort by model first, then by optimizer order
     def sort_key(item):

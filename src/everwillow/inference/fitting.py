@@ -73,14 +73,33 @@ def _minimize(
     )
 
 
+class _ProgressUpdater:
+    """Progress bar updater that can adjust total on completion."""
+
+    def __init__(self, pbar):
+        self._pbar = pbar
+
+    def update(self, step: int, nll_value: float) -> None:
+        self._pbar.n = step
+        self._pbar.set_postfix(NLL=f"{nll_value:.6f}")
+        self._pbar.refresh()
+
+    def finalize(self, final_step: int, nll_value: float) -> None:
+        """Set total to actual steps taken and complete the bar."""
+        self._pbar.total = final_step
+        self._pbar.n = final_step
+        self._pbar.set_postfix(NLL=f"{nll_value:.6f}")
+        self._pbar.refresh()
+
+
 @contextlib.contextmanager
 def _make_progress_context(
     enabled: bool,
     max_steps: int,
-) -> tp.Generator[tp.Callable[[int, float], None] | None, None, None]:
+) -> tp.Generator[_ProgressUpdater | None, None, None]:
     """Create progress bar context manager.
 
-    Yields a callable `updater(step, nll_value)` when enabled, else None.
+    Yields a _ProgressUpdater when enabled, else None.
     """
     if not enabled:
         yield None
@@ -90,13 +109,8 @@ def _make_progress_context(
 
     pbar = tqdm(total=max_steps, desc="Minimizing", unit="step")
 
-    def updater(step: int, nll_value: float) -> None:
-        pbar.n = step
-        pbar.set_postfix(NLL=f"{nll_value:.6f}")
-        pbar.refresh()
-
     try:
-        yield updater
+        yield _ProgressUpdater(pbar)
     finally:
         pbar.close()
 
@@ -149,10 +163,6 @@ def _iminimize(
             # Get current NLL value from solver state
             current_nll = float(state.f_info.f)
 
-            # Update progress bar
-            if updater is not None:
-                updater(iteration, current_nll)
-
             # Call user callback
             if callback is not None:
                 callback(iteration, y, current_nll)
@@ -164,9 +174,13 @@ def _iminimize(
             # Check termination
             done, result = terminate(y=y, state=state)
 
-        # Final progress bar update - show 100% when converged
+            # Update progress bar
+            if updater is not None:
+                updater.update(iteration, current_nll)
+
+        # Final progress bar update - set total to actual steps taken
         if updater is not None:
-            updater(max_steps, float(state.f_info.f))
+            updater.finalize(iteration, float(state.f_info.f))
 
     # Postprocess
     y_final, aux_final, stats = solver.postprocess(

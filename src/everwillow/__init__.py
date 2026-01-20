@@ -14,10 +14,9 @@ __contact__ = "https://github.com/MoAly98/everwillow"
 __version__ = "0.0.1"
 
 # Core API
-from everwillow.inference import Callback, FitResult, fit, ifit
+from everwillow.inference import FitResult, fit, ifit
 
 __all__ = [
-    "Callback",
     "FitResult",
     "fit",
     "ifit",

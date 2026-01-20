@@ -87,11 +87,17 @@ class HistoryCallback:
         self._steps: list[int] = []
         self._nlls: list[float] = []
 
-    def __call__(self, step: int, free_state, nll: float) -> None:
-        """Record a step during optimization."""
+    def __call__(self, step: int, free_state, state) -> None:
+        """Record a step during optimization.
+
+        Args:
+            step: Current iteration index.
+            free_state: Current free parameter values (PartitionedMapping).
+            state: Solver state with NLL accessible via state.f_info.f.
+        """
         del free_state  # unused, but part of Callback signature
         self._steps.append(step)
-        self._nlls.append(nll)
+        self._nlls.append(float(state.f_info.f))
 
     @property
     def steps(self) -> list[int]:

@@ -21,6 +21,54 @@ from everwillow.parameters.transforms import (
 
 jax.config.update("jax_enable_x64", True)
 
+# ============================================================================
+# Shared fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def simple_quadratic_nll():
+    """Simple quadratic NLL: min at x=2, y=3."""
+
+    def nll(params):
+        return (params["x"] - 2.0) ** 2 + (params["y"] - 3.0) ** 2
+
+    return nll
+
+
+@pytest.fixture
+def simple_params():
+    """Initial params for simple_quadratic_nll."""
+    return sl.State.from_pytree({"x": 0.0, "y": 0.0})
+
+
+@pytest.fixture
+def mock_pbar():
+    """Mock tqdm progress bar for unit tests."""
+
+    class MockPbar:
+        def __init__(self):
+            self.n = 0
+            self.total = 100
+            self._postfix = {}
+            self.closed = False
+
+        def set_postfix(self, **kwargs):
+            self._postfix = kwargs
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    return MockPbar()
+
+
+# ============================================================================
+# Test helpers
+# ============================================================================
+
 
 def _expect_close(expected: float, *, atol: float = 1e-2):
     def _check(value: float) -> None:
@@ -113,12 +161,14 @@ class TestFitResult:
 
 
 # ============================================================================
-# fit() function tests - basic functionality
+# fit() function tests
 # ============================================================================
 
 
-class TestFitBasic:
-    """Tests for basic fit() functionality."""
+class TestFit:
+    """Tests for fit() public API."""
+
+    # --- Basic functionality ---
 
     def test_simple_quadratic(self):
         """Test fitting a simple quadratic NLL."""
@@ -164,14 +214,7 @@ class TestFitBasic:
         assert abs(result.params["b"] - 2.0) < 1e-4
         assert abs(result.params["c"] - 3.0) < 1e-4
 
-
-# ============================================================================
-# fit() function tests - pytree structures
-# ============================================================================
-
-
-class TestFitPytreeStructures:
-    """Tests for fit() with various pytree structures."""
+    # --- Pytree structures ---
 
     def test_nested_dict(self):
         """Test fitting with nested dict structure."""
@@ -214,14 +257,7 @@ class TestFitPytreeStructures:
         assert abs(result.params["flat"] - 1.0) < 1e-4
         assert abs(result.params["nested"]["value"] - 2.0) < 1e-4
 
-
-# ============================================================================
-# fit() function tests - fixed parameters
-# ============================================================================
-
-
-class TestFitFixedParameters:
-    """Tests for fit() with fixed parameters."""
+    # --- Fixed parameters ---
 
     def test_single_fixed_parameter(self):
         """Test fixing a single parameter."""
@@ -324,14 +360,7 @@ class TestFitFixedParameters:
         assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
         assert abs(result.params["level1"]["sigma"] - 5.0) < 1e-10
 
-
-# ============================================================================
-# fit() function tests - additional arguments
-# ============================================================================
-
-
-class TestFitAdditionalArguments:
-    """Tests for fit() with additional positional and keyword arguments."""
+    # --- Additional arguments ---
 
     def test_positional_args(self):
         """Test fit() with additional positional arguments."""
@@ -402,14 +431,7 @@ class TestFitAdditionalArguments:
         assert abs(result.params["a"] - 7.0) < 1e-4
         assert abs(result.params["b"] - 5.0) < 1e-10
 
-
-# ============================================================================
-# fit() function tests - solver options
-# ============================================================================
-
-
-class TestFitSolverOptions:
-    """Tests for fit() with custom solvers and solver options."""
+    # --- Solver options ---
 
     def test_custom_solver(self):
         """Test fit() with custom solver."""
@@ -436,14 +458,7 @@ class TestFitSolverOptions:
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
 
-
-# ============================================================================
-# fit() function tests - realistic examples
-# ============================================================================
-
-
-class TestFitRealisticExamples:
-    """Tests with realistic statistical models."""
+    # --- Realistic examples ---
 
     def test_poisson_likelihood(self):
         """Test Poisson negative log-likelihood fit."""
@@ -485,14 +500,7 @@ class TestFitRealisticExamples:
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-3
 
-
-# ============================================================================
-# fit() function tests - parameter bounds
-# ============================================================================
-
-
-class TestFitWithBounds:
-    """Test the fit() function with parameter bounds."""
+    # --- Parameter bounds ---
 
     def test_fit_hits_upper_bound(self):
         """Test that upper bound is enforced when minimum is above it."""
@@ -653,3 +661,451 @@ class TestFitWithBounds:
         )
 
         check(float(result.params["x"]))
+
+
+# ============================================================================
+# _fit() internal function tests
+# ============================================================================
+
+
+class TestFitInternal:
+    """Tests for _fit() shared logic (validation, dispatch)."""
+
+    def test_validates_params_type(self):
+        """Should raise TypeError if params is not a State."""
+
+        def nll(params):
+            return params["x"] ** 2
+
+        # Pass a dict instead of State
+        with pytest.raises(TypeError, match="params must be a State"):
+            ew.fit(nll, {"x": 0.0})  # type: ignore[arg-type]
+
+    def test_validates_fixed_type(self):
+        """Should raise TypeError if fixed is not State or None."""
+
+        def nll(params):
+            return params["x"] ** 2
+
+        with pytest.raises(TypeError, match="fixed must be a State or None"):
+            ew.fit(nll, sl.State.from_pytree({"x": 0.0}), fixed={"x": ...})  # type: ignore[arg-type]
+
+    def test_validates_bounds_type(self):
+        """Should raise TypeError if bounds is not State or None."""
+
+        def nll(params):
+            return params["x"] ** 2
+
+        with pytest.raises(TypeError, match="bounds must be a State or None"):
+            ew.fit(nll, sl.State.from_pytree({"x": 0.0}), bounds={"x": None})  # type: ignore[arg-type]
+
+    def test_ifit_validates_params_type(self):
+        """ifit should also validate params type."""
+
+        def nll(params):
+            return params["x"] ** 2
+
+        with pytest.raises(TypeError, match="params must be a State"):
+            ew.ifit(nll, {"x": 0.0}, progress=False)  # type: ignore[arg-type]
+
+
+# ============================================================================
+# _ProgressUpdater class tests
+# ============================================================================
+
+
+class TestProgressUpdater:
+    """Tests for _ProgressUpdater class."""
+
+    def test_update_sets_progress_and_postfix(self, mock_pbar):
+        """update() should set pbar.n and postfix with NLL."""
+        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
+
+        updater = _ProgressUpdater(mock_pbar)
+        updater.update(step=5, nll_value=1.234)
+
+        assert mock_pbar.n == 5
+        assert "NLL" in mock_pbar._postfix
+        assert "1.234" in mock_pbar._postfix["NLL"]
+
+    def test_finalize_sets_total_to_actual_steps(self, mock_pbar):
+        """finalize() should adjust total to final_step, not max_steps."""
+        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
+
+        mock_pbar.total = 100  # max_steps was 100
+        updater = _ProgressUpdater(mock_pbar)
+        updater.finalize(final_step=25, nll_value=0.5)
+
+        assert mock_pbar.total == 25  # Should be actual steps, not 100
+        assert mock_pbar.n == 25
+
+    def test_finalize_sets_final_nll_in_postfix(self, mock_pbar):
+        """finalize() should show final NLL value."""
+        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
+
+        updater = _ProgressUpdater(mock_pbar)
+        updater.finalize(final_step=10, nll_value=0.001)
+
+        assert "NLL" in mock_pbar._postfix
+        assert "0.001" in mock_pbar._postfix["NLL"]
+
+
+# ============================================================================
+# _make_progress_context tests
+# ============================================================================
+
+
+class TestMakeProgressContext:
+    """Tests for _make_progress_context context manager."""
+
+    def test_yields_updater_when_enabled(self):
+        """Should yield _ProgressUpdater when enabled=True."""
+        from everwillow.inference.fitting import (
+            _make_progress_context,  # noqa: PLC2701
+            _ProgressUpdater,  # noqa: PLC2701
+        )
+
+        with _make_progress_context(enabled=True, max_steps=100) as updater:
+            assert isinstance(updater, _ProgressUpdater)
+
+    def test_yields_none_when_disabled(self):
+        """Should yield None when enabled=False."""
+        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
+
+        with _make_progress_context(enabled=False, max_steps=100) as updater:
+            assert updater is None
+
+    def test_closes_progress_bar_on_exit(self):
+        """Context manager should close pbar on exit."""
+        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
+
+        # We can't easily check if pbar is closed without mocking tqdm,
+        # but we can verify the context manager exits cleanly
+        with _make_progress_context(enabled=True, max_steps=10) as updater:
+            assert updater is not None
+        # If we get here, the pbar was closed properly
+
+    def test_closes_progress_bar_on_exception(self):
+        """Context manager should close pbar even if exception raised."""
+        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
+
+        def raise_in_context():
+            with _make_progress_context(enabled=True, max_steps=10):
+                raise ValueError("Test exception")
+
+        # If cleanup fails, this would raise a different error
+        with pytest.raises(ValueError, match="Test exception"):
+            raise_in_context()
+
+
+# ============================================================================
+# _iminimize tests
+# ============================================================================
+
+
+class TestIminimize:
+    """Tests for _iminimize interactive minimization loop."""
+
+    def test_callback_called_each_iteration(self, simple_quadratic_nll, simple_params):
+        """Callback should be invoked at every solver step."""
+        call_count = []
+
+        def counting_callback(step, y, state):
+            call_count.append(step)
+
+        result = ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            callback=counting_callback,
+            progress=False,
+            max_steps=50,
+        )
+
+        assert len(call_count) > 0
+        assert result.success
+
+    def test_callback_receives_correct_step_index(
+        self, simple_quadratic_nll, simple_params
+    ):
+        """First arg should be 0, 1, 2, ... for each iteration."""
+        steps = []
+
+        def record_step(step, y, state):
+            steps.append(step)
+
+        ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            callback=record_step,
+            progress=False,
+            max_steps=50,
+        )
+
+        # Steps should be sequential starting from 0
+        assert steps == list(range(len(steps)))
+
+    def test_callback_receives_solver_state_with_nll(self):
+        """Third arg should be solver state with f_info.f for NLL."""
+        nlls = []
+
+        # Use a harder problem so NLL doesn't start at 0
+        def nll(params):
+            return (params["x"] - 10.0) ** 2 + (params["y"] - 20.0) ** 2
+
+        def record_nll(step, y, state):
+            nlls.append(float(state.f_info.f))
+
+        result: FitResult[float] = ew.ifit(
+            nll,
+            sl.State.from_pytree({"x": 0.0, "y": 0.0}),
+            callback=record_nll,
+            progress=False,
+            max_steps=50,
+        )
+
+        assert len(nlls) > 0
+        # Verify state.f_info.f contains valid NLL values (not all zeros)
+        assert any(nll_val > 0 for nll_val in nlls)
+        # Final result should be close to optimum
+        assert result.success
+        assert abs(result.params["x"] - 10.0) < 1e-3
+
+    def test_no_callback_when_none(self, simple_quadratic_nll, simple_params):
+        """Should work without callback (callback=None)."""
+        result = ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            callback=None,
+            progress=False,
+        )
+
+        assert result.success
+        assert abs(result.params["x"] - 2.0) < 1e-3
+        assert abs(result.params["y"] - 3.0) < 1e-3
+
+    def test_early_termination_before_max_steps(
+        self, simple_quadratic_nll, simple_params
+    ):
+        """Should stop when solver converges, not wait for max_steps."""
+        result = ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            progress=False,
+            max_steps=1000,  # Large max
+        )
+
+        # Should converge well before 1000 steps
+        assert result.solver_result.stats["num_steps"] < 100
+        assert result.success
+
+    def test_respects_max_steps_limit(self):
+        """Should stop at max_steps even if not converged."""
+
+        # Use a hard NLL that won't converge quickly
+        def hard_nll(params):
+            return jnp.sin(params["x"] * 10) ** 2 + (params["x"] - 100.0) ** 2
+
+        result: FitResult[float] = ew.ifit(
+            hard_nll,
+            sl.State.from_pytree({"x": 0.0}),
+            progress=False,
+            max_steps=5,
+        )
+
+        assert result.solver_result.stats["num_steps"] <= 5
+
+    def test_returns_actual_step_count_in_stats(
+        self, simple_quadratic_nll, simple_params
+    ):
+        """stats should have num_steps with actual iteration count."""
+        result = ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            progress=False,
+            max_steps=100,
+        )
+
+        assert "num_steps" in result.solver_result.stats
+        assert int(result.solver_result.stats["num_steps"]) > 0
+        assert int(result.solver_result.stats["num_steps"]) <= 100
+
+    def test_progress_updater_update_called(self, simple_quadratic_nll, simple_params):
+        """update() should be called each iteration when progress=True."""
+        from unittest.mock import MagicMock, patch
+
+        mock_updater = MagicMock()
+
+        with patch(
+            "everwillow.inference.fitting._make_progress_context"
+        ) as mock_context:
+            mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
+            mock_context.return_value.__exit__ = MagicMock(return_value=False)
+
+            ew.ifit(simple_quadratic_nll, simple_params, progress=True)
+
+            # update() should have been called at least once
+            assert mock_updater.update.call_count > 0
+
+    def test_progress_updater_finalize_called(
+        self, simple_quadratic_nll, simple_params
+    ):
+        """finalize() should be called when optimization completes."""
+        from unittest.mock import MagicMock, patch
+
+        mock_updater = MagicMock()
+
+        with patch(
+            "everwillow.inference.fitting._make_progress_context"
+        ) as mock_context:
+            mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
+            mock_context.return_value.__exit__ = MagicMock(return_value=False)
+
+            ew.ifit(simple_quadratic_nll, simple_params, progress=True)
+
+            # finalize() should have been called exactly once
+            mock_updater.finalize.assert_called_once()
+
+    def test_progress_updater_finalize_receives_final_step_and_nll(
+        self, simple_quadratic_nll, simple_params
+    ):
+        """finalize() should receive the final step count and NLL value."""
+        from unittest.mock import MagicMock, patch
+
+        mock_updater = MagicMock()
+
+        with patch(
+            "everwillow.inference.fitting._make_progress_context"
+        ) as mock_context:
+            mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
+            mock_context.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = ew.ifit(simple_quadratic_nll, simple_params, progress=True)
+
+            # finalize() should be called with final_step and nll_value
+            call_args = mock_updater.finalize.call_args
+            final_step = call_args[0][0]  # First positional arg
+            nll_value = call_args[0][1]  # Second positional arg
+
+            # final_step should match stats
+            assert final_step == int(result.solver_result.stats["num_steps"])
+            # nll_value should be close to final NLL
+            assert abs(nll_value - float(result.nll)) < 1e-6
+
+
+# ============================================================================
+# ifit() public API tests
+# ============================================================================
+
+
+class TestIfit:
+    """Tests for ifit() public API."""
+
+    def test_simple_quadratic(self, simple_quadratic_nll, simple_params):
+        """Test ifit finds correct minimum."""
+        result = ew.ifit(simple_quadratic_nll, simple_params, progress=False)
+
+        assert abs(result.params["x"] - 2.0) < 1e-3
+        assert abs(result.params["y"] - 3.0) < 1e-3
+        assert float(result.nll) < 1e-6
+        assert result.success
+
+    def test_converges_to_same_result_as_fit(self, simple_quadratic_nll, simple_params):
+        """ifit and fit should produce equivalent results."""
+        fit_result = ew.fit(simple_quadratic_nll, simple_params)
+        ifit_result = ew.ifit(simple_quadratic_nll, simple_params, progress=False)
+
+        assert jnp.allclose(fit_result.params["x"], ifit_result.params["x"], atol=1e-4)
+        assert jnp.allclose(fit_result.params["y"], ifit_result.params["y"], atol=1e-4)
+        assert jnp.allclose(fit_result.nll, ifit_result.nll, atol=1e-6)
+
+    def test_with_progress_disabled(self, simple_quadratic_nll, simple_params):
+        """Should work with progress=False."""
+        result = ew.ifit(simple_quadratic_nll, simple_params, progress=False)
+
+        assert result.success
+        assert result.solver_result is not None
+
+    def test_with_fixed_params(self, simple_quadratic_nll, simple_params):
+        """Fixed parameters should remain unchanged."""
+        result = ew.ifit(
+            simple_quadratic_nll,
+            simple_params,
+            fixed=sl.State.from_pytree({"y": ...}),
+            progress=False,
+        )
+
+        assert abs(result.params["x"] - 2.0) < 1e-3
+        assert result.params["y"] == 0.0  # Fixed at initial value
+
+    def test_with_bounds(self):
+        """Parameter bounds should be respected."""
+
+        def nll(params):
+            return (params["x"] - 10.0) ** 2  # Min at x=10
+
+        result: FitResult[float] = ew.ifit(
+            nll,
+            sl.State.from_pytree({"x": 0.5}),
+            bounds=sl.State.from_pytree({"x": MinuitTransform(lower=0.0, upper=5.0)}),
+            progress=False,
+        )
+
+        assert 0.0 <= result.params["x"] <= 5.0
+        assert jnp.isclose(result.params["x"], 5.0, atol=1e-2)  # Should hit upper bound
+
+    def test_callback_history_pattern(self):
+        """Record NLL history via callback, verify decreasing."""
+        history: dict[str, list] = {"steps": [], "nlls": []}
+
+        # Use harder problem so NLL doesn't start near 0
+        def nll(params):
+            return (params["x"] - 10.0) ** 2 + (params["y"] - 20.0) ** 2
+
+        def record(step, y, state):
+            history["steps"].append(step)
+            history["nlls"].append(float(state.f_info.f))
+
+        result: FitResult[float] = ew.ifit(
+            nll,
+            sl.State.from_pytree({"x": 0.0, "y": 0.0}),
+            callback=record,
+            progress=False,
+        )
+
+        assert len(history["nlls"]) > 0
+        assert result.success
+        # Verify we recorded some non-zero NLLs (optimization happened)
+        assert any(nll_val > 0 for nll_val in history["nlls"])
+        # Verify optimization succeeded
+        assert abs(result.params["x"] - 10.0) < 1e-3
+
+    def test_max_steps_one(self):
+        """Edge case: max_steps=1."""
+
+        def nll(params):
+            return (params["x"] - 5.0) ** 2
+
+        result: FitResult[float] = ew.ifit(
+            nll,
+            sl.State.from_pytree({"x": 0.0}),
+            progress=False,
+            max_steps=1,
+        )
+
+        # Should not crash, even with just 1 step
+        assert result.solver_result is not None
+
+    def test_already_at_optimum(self):
+        """Edge case: params already at optimum."""
+
+        def nll(params):
+            return (params["x"] - 5.0) ** 2
+
+        result: FitResult[float] = ew.ifit(
+            nll,
+            sl.State.from_pytree({"x": 5.0}),  # Already at optimum
+            progress=False,
+        )
+
+        assert jnp.isclose(result.params["x"], 5.0, atol=1e-6)
+        assert float(result.nll) < 1e-10

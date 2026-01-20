@@ -131,6 +131,8 @@ ignore = [
     "PLC0415", # `import` should be at the top-level of a file
     "PLW3201", # Dunder method `...` has no special meaning in Python 3
     "RUF052",  # Local dummy variable `...` is accessed
+    "RUF002",  # Ambiguous Unicode characters in docstrings (Greek letters are standard in physics)
+    "RUF003",  # Ambiguous Unicode characters in comments (Greek letters are standard in physics)
     "F722",    # jaxtyping: `Float32[Array, "b c"]` (https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error)
     "EM101",   # flake8-errmsg: Error message should not end with a period
 ]

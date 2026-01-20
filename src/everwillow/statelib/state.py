@@ -81,6 +81,8 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
             raise TypeError(msg)
     if sep is not None:
         return sep.join(map(str, result))
+
+    print("mo::", result, tuple(result))
     return tuple(result)
 
 

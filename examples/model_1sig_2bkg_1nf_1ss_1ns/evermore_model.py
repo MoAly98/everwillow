@@ -1,19 +1,43 @@
 """Minimal wrapper around the evermore reference example."""
 
+import typing as tp
 from collections.abc import Mapping
+from functools import partial
+from typing import NamedTuple
 
-import equinox as eqx
 import evermore as evm
+import iminuit
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optimistix as optx
+from flax import nnx
+from jaxtyping import Array, Float, PyTree
+from model_config import DEFAULT_DATA, ModelData, expected_components
+from scipy.optimize import minimize
 
-from .model_config import DEFAULT_DATA, ModelData, expected_components
+import everwillow as ew
+import everwillow.statelib as sl
 
-jax.config.update("jax_enable_x64", True)
+# Float64 scalar
+F64: tp.TypeAlias = Float[Array, ""]
+
+# histograms / templates
+Hist1D: tp.TypeAlias = Float[Array, "nbins"]  # noqa: F821
+Hists1D: tp.TypeAlias = PyTree[Hist1D]
+
+# negative log-likelihood implementation
+Args: tp.TypeAlias = tuple[
+    nnx.GraphDef,  # graphdef from `nnx.split`
+    nnx.State,  # static state from `nnx.split`
+    Hists1D,  # initial expectations for the histograms / templates
+    Hist1D,  # observation: d
+]
+
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
 
 
-class Params(eqx.Module):
+class Params(NamedTuple):
     mu: evm.Parameter
     norm1: evm.NormalParameter
     norm2: evm.NormalParameter
@@ -75,14 +99,13 @@ def model(params: Params, hists: dict[str, dict[str, jnp.ndarray]]):
     return expectations
 
 
-@eqx.filter_jit
+@nnx.jit
 def loss(
     dynamic: Params,
-    static: Params,
-    hists: dict[str, dict[str, jnp.ndarray]],
-    observation: jnp.ndarray,
+    args: tuple,
 ) -> jnp.ndarray:
-    params = evm.tree.combine(dynamic, static)
+    graphdef, static, hists, observation = args
+    params = nnx.merge(graphdef, dynamic, static)
     expectations = model(params, hists)
     constraints = evm.loss.get_log_probs(params)
     log_prob = (
@@ -90,78 +113,221 @@ def loss(
         .log_prob(observation)
         .sum()
     )
-    log_prob += evm.util.sum_over_leaves(constraints)
+    log_prob += evm.util.sum_over_leaves(jax.tree.map(jnp.sum, constraints))
     return -jnp.sum(log_prob)
 
 
 def fit_with_optimistix(
-    data: ModelData = DEFAULT_DATA,
+    components,
     max_steps: int = 10_000,
 ):
-    params, hists, observation = build_components(data)
-    dynamic, static = evm.tree.partition(params)
-
-    def optx_loss(dynamic_params, args):
-        static_params, hists_, obs_ = args
-        return loss(dynamic_params, static_params, hists_, obs_)
+    params, hists, observation = components
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
 
     solver = optx.BFGS(rtol=1e-5, atol=1e-7)
     result = optx.minimise(
-        optx_loss,
+        loss,
         solver,
         dynamic,
         has_aux=False,
-        args=(static, hists, observation),
+        args=(graphdef, static, hists, observation),
         max_steps=max_steps,
     )
 
-    best = evm.tree.combine(result.value, static)
-    nll = float(loss(result.value, static, hists, observation))
+    best = result.value.to_pure_dict()
+    nll = result.state.f_info.f
 
-    return (
-        {
-            "mu": float(best.mu.value),
-            "norm1": float(best.norm1.value),
-            "norm2": float(best.norm2.value),
-            "shape1": float(best.shape1.value),
-        },
-        nll,
+    return best, nll
+
+
+def fit_with_iminuit(
+    components,
+    max_steps: int = 10_000,
+):
+    params, hists, observation = components
+    params.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    args = (graphdef, static, hists, observation)
+
+    # update helper
+    def _update(path, param, value):
+        del path  # unused
+        return param.replace(value=value)
+
+    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
+        return jax.tree.map_with_path(
+            _update,
+            dynamic,
+            new_state,
+            is_leaf=evm.filter.is_parameter,
+            is_leaf_takes_path=True,
+        )
+
+    values = nnx.pure(dynamic)
+    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
+
+    # Wrapper for iminuit (operates on flat array)
+    def iminuit_loss(
+        pars: Float[Array, "n_params"],  # noqa: F821
+        *,
+        dynamic: nnx.State = dynamic,
+        args: Args = args,
+    ) -> F64:
+        flat_values = pars
+
+        # Reconstruct nested parameter state
+        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
+
+        # Compute loss
+        return loss(updated_dynamic, args)
+
+    class FcnPartial:
+        def __init__(self, fn, dynamic, args):
+            self.fn = fn
+            self.dynamic = dynamic
+            self.args = args
+
+        def __call__(self, flat_values):
+            # make a shallow copy of args to modify
+            (graphdef, static, hists, observation) = self.args
+            graphdef, dynamic, static = nnx.split(
+                nnx.merge(graphdef, self.dynamic, static, copy=True),
+                evm.filter.is_parameter,
+                ...,
+            )
+            args = (graphdef, static, hists, observation)
+            return self.fn(flat_values, dynamic=dynamic, args=args)
+
+    fcn = FcnPartial(iminuit_loss, dynamic, args).__call__
+
+    # Setup Minuit
+    minuit = iminuit.Minuit(
+        fcn,
+        flat_values,
+        grad=nnx.grad(fcn),  # analytical gradient
     )
+    minuit.errordef = iminuit.Minuit.LIKELIHOOD
+    minuit.strategy = 2
+    minuit.tol = 1e-8
+
+    # minimize
+    minuit.migrad(ncall=max_steps, use_simplex=False)
+    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
+    return bestfit.to_pure_dict(), minuit.fval
+
+
+def fit_with_scipy(
+    components,
+    max_steps: int = 10_000,
+):
+    params, hists, observation = components
+    params.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    args = (graphdef, static, hists, observation)
+
+    # update helper
+    def _update(path, param, value):
+        del path  # unused
+        return param.replace(value=value)
+
+    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
+        return jax.tree.map_with_path(
+            _update,
+            dynamic,
+            new_state,
+            is_leaf=evm.filter.is_parameter,
+            is_leaf_takes_path=True,
+        )
+
+    values = nnx.pure(dynamic)
+    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
+
+    # Wrapper for scipy (operates on flat array), similar to iminuit wrapper
+    def scipy_loss(
+        pars: Float[Array, "n_params"],  # noqa: F821
+        *,
+        dynamic: nnx.State = dynamic,
+        args: Args = args,
+    ) -> F64:
+        flat_values = pars
+
+        # Reconstruct nested parameter state
+        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
+
+        # Compute loss
+        return loss(updated_dynamic, args)
+
+    class FcnPartial:
+        def __init__(self, fn, dynamic, args):
+            self.fn = fn
+            self.dynamic = dynamic
+            self.args = args
+
+        def __call__(self, flat_values):
+            # make a shallow copy of args to modify
+            (graphdef, static, hists, observation) = self.args
+            graphdef, dynamic, static = nnx.split(
+                nnx.merge(graphdef, self.dynamic, static, copy=True),
+                evm.filter.is_parameter,
+                ...,
+            )
+            args = (graphdef, static, hists, observation)
+            # Convert from numpy to jax if needed
+            if isinstance(flat_values, np.ndarray):
+                flat_values = jnp.array(flat_values)
+            return self.fn(flat_values, dynamic=dynamic, args=args)
+
+    fcn = FcnPartial(scipy_loss, dynamic, args).__call__
+
+    # Gradient function using nnx.grad (similar to iminuit)
+    grad_fcn = nnx.grad(fcn)
+
+    def grad_wrapper(flat_params):
+        # Convert gradient to numpy for scipy
+        return np.array(grad_fcn(flat_params))
+
+    # Convert initial values to numpy
+    init_numpy = np.array(flat_values)
+
+    # Minimize using scipy
+    result = minimize(
+        lambda x: float(fcn(x)),  # Ensure scalar return
+        init_numpy,
+        method="SLSQP",
+        jac=grad_wrapper,
+        options={"maxiter": max_steps, "ftol": 1e-8},
+    )
+
+    # Convert result back to parameter dict
+    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(result.x)))
+    return bestfit.to_pure_dict(), float(result.fun)
 
 
 def fit_with_everwillow(
-    data: ModelData = DEFAULT_DATA,
+    components,
     max_steps: int = 150,
+    interactive: bool = False,
 ):
-    import everwillow as ew
+    params, hists, observation = components
+    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
 
-    params, hists, observation = build_components(data)
-    dynamic, static = evm.tree.partition(params)
+    args = (graphdef, static, hists, observation)
+    init_state = sl.State.from_pytree(dynamic)
 
-    def nll(param_dict: Mapping[str, float]) -> jnp.ndarray:
-        updated = evm.tree.update_values(
-            dynamic,
-            values=Params(
-                mu=param_dict["mu"],
-                norm1=param_dict["norm1"],
-                norm2=param_dict["norm2"],
-                shape1=param_dict["shape1"],
-            ),
+    if not interactive:
+        result = ew.fit(
+            partial(loss, args=args),
+            params=init_state,
+            max_steps=max_steps,
         )
-        return loss(updated, static, hists, observation)
+    else:
+        result = ew.ifit(
+            partial(loss, args=args),
+            params=init_state,
+            max_steps=max_steps,
+        )
 
-    result = ew.fit(
-        nll,
-        {
-            "mu": float(params.mu.value),
-            "norm1": float(params.norm1.value),
-            "norm2": float(params.norm2.value),
-            "shape1": float(params.shape1.value),
-        },
-        max_steps=max_steps,
-    )
-
-    return dict(result.params), float(result.nll)
+    return result.params.to_pure_dict(), result.nll
 
 
 def summarise_evermore_fit(params: Mapping[str, float], data: ModelData = DEFAULT_DATA):

@@ -2,28 +2,50 @@
 
 from collections.abc import Mapping
 
+import iminuit
+import jax
 import jax.numpy as jnp
+import numpy as np
+import optimistix as optx
 import pyhs3
-from pyhs3.data import PointData
-from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
-from pyhs3.functions import GenericFunction
-from pyhs3.metadata import Metadata
-from pyhs3.parameter_points import ParameterPoint, ParameterSet
-
-from .model_config import (
+from model_config import (
     DEFAULT_DATA,
     ModelData,
     default_initial_params,
     expected_components,
     gaussian_constraint_width,
 )
-from .utils import jaxify_distribution
+from pyhs3.data import PointData
+from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
+from pyhs3.functions import GenericFunction
+from pyhs3.metadata import Metadata
+from pyhs3.parameter_points import ParameterPoint, ParameterSet
+from scipy.optimize import minimize
+from utils import jaxify_distribution
+
+import everwillow as ew
+import everwillow.statelib as sl
+
+jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
+
+
+def nll_fn(inputs, jaxified, fixed_values):
+    """Create NLL function from pyhs3 model components."""
+
+    @jax.jit
+    def nll(params: Mapping[str, float]) -> jnp.ndarray:
+        merged = {**fixed_values, **params}
+        ordered = [merged[var.name] for var in inputs]
+        probability = jaxified(*ordered)[0]
+        return -jnp.log(jnp.asarray(probability))
+
+    return nll
 
 
 def build_pyhs3(
     data: ModelData = DEFAULT_DATA,
-) -> tuple[callable, dict[str, float]]:
-    """Return (negative log-likelihood, initial-parameter dict)."""
+) -> tuple[list, callable, dict[str, float], dict[str, float]]:
+    """Return (inputs, jaxified, fixed_values, initial-parameter dict)."""
 
     workspace = pyhs3.Workspace(
         metadata=Metadata(hs3_version="0.2"),
@@ -50,13 +72,169 @@ def build_pyhs3(
     }
     fixed_values = {point.name: float(point.value) for point in workspace.data}
 
-    def nll(params: Mapping[str, float]) -> jnp.ndarray:
-        merged = {**fixed_values, **params}
-        ordered = [merged[var.name] for var in inputs]
-        probability = jaxified(*ordered)[0]
-        return -jnp.log(jnp.asarray(probability))
+    return inputs, jaxified, fixed_values, initial
 
-    return nll, initial
+
+def fit_with_everwillow(
+    inputs,
+    jaxified,
+    fixed_values,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 150,
+    interactive: bool = False,
+) -> tuple[dict[str, float], float]:
+    """Fit using everwillow optimizer."""
+    nll = nll_fn(inputs, jaxified, fixed_values)
+    init_state = sl.State.from_pytree(initial)
+
+    if not interactive:
+        result = ew.fit(nll, init_state, max_steps=max_steps)
+    else:
+        result = ew.ifit(nll, init_state, max_steps=max_steps)
+
+    params = dict(result.params)
+    return params, result.nll
+
+
+def fit_with_optimistix(
+    inputs,
+    jaxified,
+    fixed_values,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using optimistix BFGS optimizer."""
+    nll = nll_fn(inputs, jaxified, fixed_values)
+
+    # Convert dict params to array for optimistix
+    param_names = sorted(initial.keys())
+    init_array = jnp.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array: jnp.ndarray, args: tuple) -> jnp.ndarray:
+        params_dict = {name: params_array[i] for i, name in enumerate(param_names)}
+        return nll(params_dict)
+
+    solver = optx.BFGS(rtol=1e-5, atol=1e-7)
+    result = optx.minimise(
+        nll_array,
+        solver,
+        init_array,
+        args=(),
+        has_aux=False,
+        max_steps=max_steps,
+    )
+
+    # Convert result back to dict
+    best_params_array = result.value
+    best_params = {name: best_params_array[i] for i, name in enumerate(param_names)}
+    nll_value = result.state.f_info.f
+
+    return best_params, nll_value
+
+
+def fit_with_iminuit(
+    inputs,
+    jaxified,
+    fixed_values,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using iminuit optimizer."""
+    nll = nll_fn(inputs, jaxified, fixed_values)
+
+    # Convert dict params to array for iminuit
+    param_names = sorted(initial.keys())
+    init_array = np.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array):
+        params_dict = {
+            name: float(params_array[i]) for i, name in enumerate(param_names)
+        }
+        return nll(params_dict)
+
+    # Gradient function using JAX
+    def grad_nll_array(params_array):
+        # Convert to jax array
+        jax_array = jnp.array(params_array)
+
+        # Create dict and compute gradient
+        def nll_for_grad(arr):
+            params_dict = {name: arr[i] for i, name in enumerate(param_names)}
+            return nll(params_dict)
+
+        grad_jax = jax.grad(nll_for_grad)(jax_array)
+        return np.array(grad_jax)
+
+    # Setup Minuit
+    minuit = iminuit.Minuit(
+        nll_array,
+        init_array,
+        grad=grad_nll_array,
+    )
+    minuit.errordef = iminuit.Minuit.LIKELIHOOD
+    minuit.strategy = 2
+    minuit.tol = 1e-8
+
+    # Minimize
+    minuit.migrad(ncall=max_steps, use_simplex=False)
+
+    # Convert result back to dict
+    best_params = {name: minuit.values[i] for i, name in enumerate(param_names)}
+    return best_params, minuit.fval
+
+
+def fit_with_scipy(
+    inputs,
+    jaxified,
+    fixed_values,
+    initial: dict[str, float],
+    *,
+    max_steps: int = 10_000,
+) -> tuple[dict[str, float], float]:
+    """Fit using scipy.optimize.minimize with SLSQP."""
+    nll = nll_fn(inputs, jaxified, fixed_values)
+
+    # Convert dict params to array for scipy
+    param_names = sorted(initial.keys())
+    init_array = np.array([initial[name] for name in param_names])
+
+    # Wrapper that converts array -> dict -> NLL
+    def nll_array(params_array):
+        params_dict = {
+            name: float(params_array[i]) for i, name in enumerate(param_names)
+        }
+        return nll(params_dict)
+
+    # Gradient function using JAX
+    def grad_nll_array(params_array):
+        # Convert to jax array
+        jax_array = jnp.array(params_array)
+
+        # Create dict and compute gradient
+        def nll_for_grad(arr):
+            params_dict = {name: arr[i] for i, name in enumerate(param_names)}
+            return nll(params_dict)
+
+        grad_jax = jax.grad(nll_for_grad)(jax_array)
+        return np.array(grad_jax)
+
+    # Minimize using scipy
+    result = minimize(
+        nll_array,
+        init_array,
+        method="SLSQP",
+        jac=grad_nll_array,
+        options={"maxiter": max_steps, "ftol": 1e-8},
+    )
+
+    # Convert result back to dict
+    best_params = {name: result.x[i] for i, name in enumerate(param_names)}
+    return best_params, result.fun
 
 
 def summarise_pyhs3_fit(

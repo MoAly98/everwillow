@@ -160,11 +160,17 @@ def uncertainties(
     stderrs = jnp.sqrt(jnp.diag(cov))
 
     # Get free_mapping with same structure/ordering as used for Hessian
-    _, free_mapping = sl.partition(params, predicate=lambda key, _: key in fixed)
+    fixed_mapping, free_mapping = sl.partition(
+        params, predicate=lambda key, _: key in fixed
+    )
 
     # Unflatten stderrs back into the same pytree structure as free_mapping
     _, treedef = jax.tree_util.tree_flatten(free_mapping)
-    uncertainty_mapping = jax.tree_util.tree_unflatten(treedef, stderrs)
+    free_uncertainty = jax.tree_util.tree_unflatten(treedef, stderrs)
 
-    # Convert PartitionedMapping to dict for State constructor
-    return sl.State(uncertainty_mapping.to_dict(), treedefmeta=params.treedefmeta)
+    fixed_uncertainty = jax.tree.map(lambda _: None, fixed_mapping)
+    uncs_combined = sl.combine_partitions(fixed_uncertainty, free_uncertainty)
+
+    return sl.State.from_pytree(
+        uncs_combined.to_dict(), canonicalize=False, is_leaf=lambda x: x is None
+    )

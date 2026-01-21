@@ -252,7 +252,7 @@ class State(BaseMapping[V]):
                         f"but got nested path with depth {len(path)}: {path}"
                     )
                     raise ValueError(msg)
-                key = next(iter(path)).key
+                key = getattr(next(iter(path)), "key", None)
                 # Canonical keys are tuples with str/int elements only
                 # (matching what canonicalize_key produces)
                 is_canonical = isinstance(key, tuple) and all(

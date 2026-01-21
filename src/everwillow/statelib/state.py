@@ -253,11 +253,13 @@ class State(BaseMapping[V]):
                     )
                     raise ValueError(msg)
                 key = next(iter(path)).key
-                if not isinstance(key, tuple):
-                    msg = (
-                        f"canonicalize=False requires tuple keys, "
-                        f"but got {type(key).__name__}: {key!r}"
-                    )
+                # Canonical keys are tuples with str/int elements only
+                # (matching what canonicalize_key produces)
+                is_canonical = isinstance(key, tuple) and all(
+                    isinstance(elem, (str, int)) for elem in key
+                )
+                if not is_canonical:
+                    msg = f"canonicalize=False requires canonical tuple keys, got: {key!r}"
                     raise ValueError(msg)
 
             data[key] = leaf

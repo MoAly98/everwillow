@@ -110,11 +110,15 @@ def test_canonicalize_false_roundtrips_to_dict() -> None:
 
 
 def test_canonicalize_false_rejects_invalid_inputs() -> None:
-    """canonicalize=False rejects nested pytrees and non-tuple keys."""
+    """canonicalize=False rejects nested pytrees and non-canonical keys."""
     # Nested structure
     with pytest.raises(ValueError, match=r"flat.*nested path"):
         sl.State.from_pytree({"a": {"b": 1.0}}, canonicalize=False)
 
-    # Non-tuple keys
-    with pytest.raises(ValueError, match=r"tuple keys.*str"):
+    # Non-tuple keys (string instead of tuple)
+    with pytest.raises(ValueError, match=r"canonical tuple keys"):
         sl.State.from_pytree({"a": 1.0}, canonicalize=False)
+
+    # Nested tuple (non-canonical)
+    with pytest.raises(ValueError, match=r"canonical tuple keys"):
+        sl.State.from_pytree({(("a", "b"), "c"): 1.0}, canonicalize=False)

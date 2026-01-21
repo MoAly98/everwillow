@@ -303,3 +303,29 @@ def test_combine_partitions_rejects_mismatched_origins() -> None:
 
     with pytest.raises(ValueError, match="same original state"):
         sl.combine_partitions(left_one, right_two)
+
+
+# ============================================================================
+# canonicalize option tests
+# ============================================================================
+
+
+def test_canonicalize_false_roundtrips_to_dict() -> None:
+    """to_dict() output can be round-tripped with canonicalize=False."""
+    original: FState = sl.State.from_pytree({"a": {"b": 1.0}, "c": 2.0})
+    flat = original.to_dict()
+
+    roundtripped: sl.State[float] = sl.State.from_pytree(flat, canonicalize=False)
+
+    assert dict(roundtripped) == dict(original)
+
+
+def test_canonicalize_false_rejects_invalid_inputs() -> None:
+    """canonicalize=False rejects nested pytrees and non-tuple keys."""
+    # Nested structure
+    with pytest.raises(ValueError, match=r"flat.*nested path"):
+        sl.State.from_pytree({"a": {"b": 1.0}}, canonicalize=False)
+
+    # Non-tuple keys
+    with pytest.raises(ValueError, match=r"tuple keys.*str"):
+        sl.State.from_pytree({"a": 1.0}, canonicalize=False)

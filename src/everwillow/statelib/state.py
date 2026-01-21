@@ -187,6 +187,7 @@ class State(BaseMapping[V]):
         *,
         is_leaf: tp.Callable[[V], bool] | None = None,
         sep: str | None = None,
+        canonicalize: bool = True,
     ) -> State[V]:
         """Build a :class:`State` instance from an arbitrary pytree.
 
@@ -196,6 +197,12 @@ class State(BaseMapping[V]):
                 to customize which nodes are treated as leaves.
             sep: Optional separator used to join key entries when constructing
                 public keys. When ``None`` (default), keys are returned as tuples.
+            canonicalize: When ``True`` (default), nested pytree paths are converted
+                to canonical tuple keys (e.g., ``{'a': {'b': 1}}`` → ``{('a', 'b'): 1}``).
+                When ``False``, the pytree must be flat with pre-canonicalized keys
+                (e.g., ``{('a', 'b'): 1}``). This is useful for round-tripping a
+                :meth:`to_dict` result back into a State. Raises :exc:`ValueError`
+                if a nested pytree is passed with ``canonicalize=False``.
 
         Returns:
             New :class:`State` representing ``pytree``.
@@ -213,7 +220,23 @@ class State(BaseMapping[V]):
         path_leaves, treedef = jtu.tree_flatten_with_path(pytree, is_leaf=is_leaf)
         data, keys = {}, []
         for path, leaf in path_leaves:
-            key = canonicalize_key(path, sep=sep)
+            if canonicalize:
+                key = canonicalize_key(path, sep=sep)
+            else:
+                if len(path) != 1:
+                    msg = (
+                        f"canonicalize=False requires flat (non-nested) pytrees, "
+                        f"but got nested path with depth {len(path)}: {path}"
+                    )
+                    raise ValueError(msg)
+                key = next(iter(path)).key
+                if not isinstance(key, tuple):
+                    msg = (
+                        f"canonicalize=False requires tuple keys, "
+                        f"but got {type(key).__name__}: {key!r}"
+                    )
+                    raise ValueError(msg)
+
             data[key] = leaf
             keys.append(key)
 

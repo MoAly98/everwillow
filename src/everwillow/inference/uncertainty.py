@@ -172,5 +172,5 @@ def uncertainties(
     uncs_combined = sl.combine_partitions(fixed_uncertainty, free_uncertainty)
 
     return sl.State.from_pytree(
-        uncs_combined.to_dict(), canonicalize=False, is_leaf=lambda x: x is None
+        uncs_combined.to_dict(), is_leaf=lambda x: x is None
     )

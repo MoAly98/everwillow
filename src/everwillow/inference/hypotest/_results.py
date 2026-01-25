@@ -1,0 +1,145 @@
+"""Result containers for hypothesis testing.
+
+These modules hold the results of hypothesis tests.
+"""
+
+from __future__ import annotations
+
+import typing as tp
+
+import equinox as eqx
+import jax.numpy as jnp
+from jaxtyping import Array
+
+from everwillow.inference.hypotest._utils import cl_s
+
+__all__ = [
+    "TestStatResult",
+    "ExpectedBands",
+    "HypoTestResult",
+    "HypoTestToysResult",
+    "ExpectedLimitResult",
+]
+
+
+class TestStatResult(eqx.Module):
+    """Result of computing a test statistic.
+
+    Only the test statistic value `q` is required. All other data
+    (fits, asimov values, etc.) is stored in `extras` and is
+    setup-dependent.
+
+    Attributes:
+        q: Test statistic value (required).
+        extras: Arbitrary additional data (e.g., fits, q_asimov).
+    """
+
+    q: Array
+    extras: dict[str, tp.Any] = eqx.field(default_factory=dict)
+
+
+class ExpectedBands(eqx.Module):
+    """Expected p-values at standard sigma bands.
+
+    Computed from Asimov dataset under background-only hypothesis.
+    Each band contains (pnull, palt) tuple.
+
+    Attributes:
+        minus_2sigma: Expected at -2σ fluctuation.
+        minus_1sigma: Expected at -1σ fluctuation.
+        median: Expected at median (0σ).
+        plus_1sigma: Expected at +1σ fluctuation.
+        plus_2sigma: Expected at +2σ fluctuation.
+    """
+
+    minus_2sigma: tuple[Array, Array]
+    minus_1sigma: tuple[Array, Array]
+    median: tuple[Array, Array]
+    plus_1sigma: tuple[Array, Array]
+    plus_2sigma: tuple[Array, Array]
+
+    def cls_bands(self) -> tuple[Array, Array, Array, Array, Array]:
+        """Return CLs values at each band.
+
+        CLs = palt / pnull
+
+        Returns:
+            Tuple of (cls_-2σ, cls_-1σ, cls_med, cls_+1σ, cls_+2σ).
+        """
+
+        return (
+            cl_s(*self.minus_2sigma),
+            cl_s(*self.minus_1sigma),
+            cl_s(*self.median),
+            cl_s(*self.plus_1sigma),
+            cl_s(*self.plus_2sigma),
+        )
+
+
+class HypoTestResult(eqx.Module):
+    """Result of an asymptotic hypothesis test.
+
+    Attributes:
+        q_obs: Observed test statistic value.
+        pnull: p-value under null hypothesis (background-only).
+        palt: p-value under alternative hypothesis (signal+background).
+        cl_s: CLs value (palt / pnull).
+        expected_bands: Expected p-values at sigma bands (from Asimov).
+        test_stat_result: Full test statistic result with fit information.
+    """
+
+    q_obs: Array
+    pnull: Array
+    palt: Array
+    cl_s: Array
+    expected_bands: ExpectedBands
+    test_stat_result: TestStatResult
+
+
+class HypoTestToysResult(eqx.Module):
+    """Result of a toy-based hypothesis test.
+
+    Attributes:
+        q_obs: Observed test statistic value.
+        pnull: p-value under null hypothesis (background-only).
+        palt: p-value under alternative hypothesis (signal+background).
+        cl_s: CLs value (palt / pnull).
+        expected_bands: Expected p-values at sigma bands (from toy distributions).
+        ntoys: Number of toys used in each hypothesis.
+        q_alt: Test statistic values from alternative toys.
+        q_null: Test statistic values from null toys.
+        test_stat_result: Full test statistic result with fit information.
+    """
+
+    q_obs: Array
+    pnull: Array
+    palt: Array
+    cl_s: Array
+    expected_bands: ExpectedBands
+    ntoys: int
+    q_alt: Array
+    q_null: Array
+    test_stat_result: TestStatResult
+
+
+class ExpectedLimitResult(eqx.Module):
+    """Result of expected upper limit computation with Brazil bands.
+
+    Contains observed limit and expected limits at standard sigma levels,
+    suitable for producing Brazil band plots.
+
+    Attributes:
+        observed: Observed upper limit.
+        expected: Expected (median) upper limit.
+        minus_2sigma: Expected limit at -2σ fluctuation.
+        minus_1sigma: Expected limit at -1σ fluctuation.
+        plus_1sigma: Expected limit at +1σ fluctuation.
+        plus_2sigma: Expected limit at +2σ fluctuation.
+    """
+
+    observed: Array
+    expected: Array
+    minus_2sigma: Array
+    minus_1sigma: Array
+    plus_1sigma: Array
+    plus_2sigma: Array

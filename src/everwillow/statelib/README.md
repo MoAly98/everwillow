@@ -40,17 +40,17 @@ print(aligned_b.mapping)
 print(aligned_c.mapping)
 # {('c', 'd'): 7.0, ('correlated',): 4.0}
 
-# Merge the aligned states into one mapping. Earlier segments overwrite earlier keys (ChainMap semantics).
-merged_mapping, metadata = sl.merge(state_a, aligned_b, aligned_c)
-print(merged_mapping)
-# FrozenChainMap({('c', 'd'): 7.0, ('correlated',): 5.0, ('e', 'f'): 3.0, ('a', 'b'): 1.0})
+# Merge the aligned states into one State.
+merged = sl.merge(state_a, aligned_b, aligned_c)
+print(merged)
+# State({('a', 'b'): 1.0, ('correlated',): 5.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0, ('correlated',): 4.0})
 
-# Split the merged mapping back into the original states.
-seg_a, seg_b, seg_c = sl.split(merged_mapping, metadata)
+# Split the merged state back into the original states.
+seg_a, seg_b, seg_c = sl.split(merged)
 print(seg_a.to_pytree())
 # {'a': {'b': 1.0}}
 print(seg_b.to_pytree())
-# {'c': {'d': 4.0}, 'e': {'f': 3.0}}
+# {'c': {'d': 5.0}, 'e': {'f': 3.0}}
 print(seg_c.to_pytree())
 # {'c': {'d': 7.0}, 'g': {'h': 4.0}}
 
@@ -101,8 +101,8 @@ assert state.to_pytree() == tree
 
 ## Combining and Splitting
 
-- **Merging** – `sl.merge(*states)` concatenates multiple `State` instances into one mapping and returns the metadata required to split it.
-- **Splitting** – `sl.split(mapping, metadata)` rebuilds the original per-state segments in order.
+- **Merging** – `sl.merge(*states)` concatenates multiple `State` instances into a single `State` containing all key/value pairs.
+- **Splitting** – `sl.split(merged_state)` rebuilds the original per-state segments in order.
 - **Partitioning** – `sl.partition(state, predicate=...)` produces two `State` objects with the same `treedefmeta`. Excluded keys are set to `None` in each partition.
 - **Recombining partitions** – `sl.combine_partitions(left, right)` reassembles exactly the original state as long as the partitions share the same `treedefmeta`.
 

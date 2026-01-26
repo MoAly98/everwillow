@@ -1,6 +1,5 @@
 __all__ = [
     "K",
-    "MergeMeta",
     "State",
     "Transform",
     "TreeDefMeta",
@@ -14,7 +13,7 @@ __all__ = [
     "update",
 ]
 
-from .meta import MergeMeta, TreeDefMeta
+from .meta import TreeDefMeta
 from .state import (
     K,
     State,

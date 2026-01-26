@@ -18,7 +18,8 @@ The heart of everwillow's parameter management.
 - {class}`~everwillow.statelib.state.FlatState` - Immutable pytree wrapper
 - {func}`~everwillow.statelib.state.partition_state` - Split into orthogonal subsets
 - {func}`~everwillow.statelib.state.update_state` - Safe value updates
-- {func}`~everwillow.statelib.state.merge_states` - Combine multiple states
+- {func}`~everwillow.statelib.state.merge` - Combine multiple states
+- {func}`~everwillow.statelib.state.split` - Split merged state back
 
 :::{dropdown} How FlatState Works 🔍
 :color: info
@@ -39,8 +40,8 @@ state = FlatState.from_pytree({"a": 1, "b": 2})
 state.n_internal_states  # 1
 
 # Multiple segments (from merging)
-merged = merge_states(state1, state2, state3)
-merged.n_internal_states  # 3
+merged = merge(state1, state2, state3)
+# merged is a single State with compound treedef
 ```
 
 Later segments **shadow** earlier ones for overlapping keys!
@@ -132,8 +133,8 @@ region_b_model = Model(logpdf=lambda params: -params["b"] ** 2)
 # Combine them
 combined = CombinedModel.combine(region_a_model, region_b_model)
 
-# Expects merged FlatState with one segment per model
-state = merge_states(FlatState.from_pytree({"a": 1}), FlatState.from_pytree({"b": 2}))
+# Expects merged State with one segment per model
+state = merge(State.from_pytree({"a": 1}), State.from_pytree({"b": 2}))
 
 total_logpdf = combined(state)  # Sum of both models
 ```
@@ -326,13 +327,12 @@ state.n_internal_states  # 1
 state.to_pytree()  # ✅ Works!
 
 # Multiple segments
-merged = merge_states(state1, state2)
-merged.n_internal_states  # 2
-merged.to_pytree()  # ❌ Raises ValueError!
+merged = merge(state1, state2)
+# merged.to_pytree() returns a tuple structure
 
-# Need to split first
-seg1, seg2 = split_state(merged)
-seg1.to_pytree()  # ✅ Works!
+# Split back into original states
+seg1, seg2 = split(merged)
+seg1.to_pytree()  # ✅ Original pytree restored!
 ```
 :::
 

@@ -34,11 +34,11 @@ def test_merge_and_split_restore_inputs() -> None:
     state_a: FState = sl.State.from_pytree({"a": 1.0}, sep=None)
     state_b: FState = sl.State.from_pytree({"b": {"c": 2.0}}, sep=None)
 
-    merged_mapping, metadata = sl.merge(state_a, state_b)
-    assert merged_mapping["a",] == 1.0
-    assert merged_mapping["b", "c"] == 2.0
+    merged = sl.merge(state_a, state_b)
+    assert merged["a",] == 1.0
+    assert merged["b", "c"] == 2.0
 
-    restored_a, restored_b = sl.split(merged_mapping, metadata)
+    restored_a, restored_b = sl.split(merged)
     assert restored_a.to_pytree() == {"a": 1.0}
     assert restored_b.to_pytree() == {"b": {"c": 2.0}}
 

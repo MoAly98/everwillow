@@ -29,8 +29,8 @@ assert state.to_pytree() == tree
 
 ## Combining and Splitting
 
-- **Merging** – `merge_states(*states)` concatenates multiple `FlatState` instances into one with distinct segments. Later segments shadow overlapping keys from earlier ones; normalize values first if you need them to agree.
-- **Splitting** – `split_state(state)` returns the original per-segment states in order.
+- **Merging** – `merge(*states)` concatenates multiple `State` instances into a single `State` containing all key/value pairs with a compound treedef.
+- **Splitting** – `split(merged_state)` returns the original per-segment states in order.
 - **Partitioning** – `partition_state(state, keys=..., predicate=...)` filters a single state into two orthogonal partitions while retaining segment metadata. Each partition intentionally lacks some leaves, so calling `to_pytree()` will raise a guidance error.
 - **Recombining partitions** – `combine_partitions(first, second)` reassembles exactly the original structure when the partitions came from the same source.
 - **Partition detection** – `FlatState.is_partitioned` is a cached property that flags states missing leaves from any segment, allowing callers to guard operations that require a complete pytree.
@@ -71,11 +71,11 @@ assert dict(rewritten.raw_mapping)[("beta",)] == 20
 model = sl.Model(logpdf=lambda tree: -tree["a"] ** 2)
 combo = sl.CombinedModel.combine(model, model)
 
-state = sl.merge_states(
-    sl.FlatState.from_pytree({"a": 1}),
-    sl.FlatState.from_pytree({"a": 2}),
+state = sl.merge(
+    sl.State.from_pytree({"a": 1}),
+    sl.State.from_pytree({"a": 2}),
 )
-assert combo(state) == sum(model(segment) for segment in sl.split_state(state))
+assert combo(state) == sum(model(segment) for segment in sl.split(state))
 ```
 
 ## Testing & Support
@@ -119,8 +119,8 @@ print(aligned_b.raw_mapping)
 print(aligned_c.raw_mapping)
 # -> ChainMap({('c', 'd'): 7.0, ('correlated',): 4.0})
 
-# 3. Merge the aligned states into a single combined FlatState.
-merged = sl.merge_states(state_a, aligned_b, aligned_c)
+# 3. Merge the aligned states into a single combined State.
+merged = sl.merge(state_a, aligned_b, aligned_c)
 
 print(dict(merged.raw_mapping))
 # -> {('a', 'b'): 1.0, ('correlated',): 4.0, ('e', 'f'): 3.0, ('c', 'd'): 7.0}
@@ -140,7 +140,7 @@ print(
 recombined = sl.combine_partitions(first_partition, second_partition)
 
 # 6. Split the recombined state back into the original segments.
-seg_a, seg_b, seg_c = sl.split_state(recombined)
+seg_a, seg_b, seg_c = sl.split(recombined)
 
 print(tuple(seg.to_pytree() for seg in (seg_a, seg_b, seg_c)))
 # -> ({'a': {'b': 1.0}}, {'c': {'d': 5.0}, 'e': {'f': 3.0}}, {'c': {'d': 7.0}, 'g': {'h': 4.0}})

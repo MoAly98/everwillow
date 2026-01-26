@@ -12,7 +12,7 @@ from types import EllipsisType, MappingProxyType
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree
 
-from everwillow.statelib.meta import MergeMeta, TreeDefMeta
+from everwillow.statelib.meta import TreeDefMeta
 
 __all__ = [
     "K",
@@ -137,30 +137,6 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         """
 
         return self._mapping
-
-
-class FrozenChainMap(BaseMapping[V]):
-    """Create a read-only ChainMap from multiple mappings.
-
-    Args:
-        *mappings: Ordered sequence of mappings to combine.
-
-    Returns:
-        A read-only ChainMap containing the combined mappings.
-        In contrast to ``collections.ChainMap``, this class is immutable.
-    """
-
-    def __init__(self, *mappings: tp.Mapping[K, V]) -> None:
-        # Ensure all internal maps are immutable
-        self._mapping = tp.ChainMap(*map(MappingProxyType, mappings))  # type: ignore[arg-type]
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.to_dict()!r})"
-
-    @property
-    def maps(self) -> tuple[tp.Mapping[K, V], ...]:
-        # forward from ChainMap
-        return self._mapping.maps  # type: ignore[attr-defined]
 
 
 @jtu.register_pytree_with_keys_class
@@ -308,56 +284,47 @@ class State(BaseMapping[V]):
         return cls(mapping, treedefmeta=treedefmeta)
 
 
-def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMeta]:
-    """Combine several :class:`State` objects into a single mapping.
+def merge(*states: State[V]) -> State[V]:
+    """Combine several States into one.
 
     Args:
-        *states: Ordered sequence of states to merge.
+        *states: Sequence of :class:`State` instances to merge.
 
     Returns:
-        Tuple containing the merged mapping and the mergemeta required to split it.
-
-    Note:
-        When multiple states contain the same key, the value from the first state
-        in ``*states`` takes precedence due to :class:`~collections.ChainMap` semantics.
-
-    Examples:
-        >>> first = State.from_pytree({"a": 1})
-        >>> second = State.from_pytree({"b": 2})
-        >>> merged, mergemeta = merge(first, second)
-        >>> merged["b",]
-        2
+        New :class:`State` containing all key/value pairs from the inputs.
     """
 
-    merged, treedefmetas = [], []
-    for state in states:
-        merged.append(state.mapping)
-        treedefmetas.append(state.treedefmeta)
-    mergemeta = MergeMeta(treedefmetas=tuple(treedefmetas))
-    return FrozenChainMap(*merged), mergemeta
+    all_keys, all_vals, child_treedefs = [], [], []
+    for s in states:
+        all_keys.extend(s.treedefmeta.keys)
+        all_vals.extend(s[k] for k in s.treedefmeta.keys)
+        child_treedefs.append(s.treedefmeta.treedef)
+
+    compound_treedef = jtu.treedef_tuple(child_treedefs)
+    mapping = dict(zip(all_keys, all_vals))
+    return State(mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys)))
 
 
-def split(
-    mapping: FrozenChainMap[V],
-    mergemeta: MergeMeta,
-) -> tuple[State[V], ...]:
-    """Split a merged mapping back into its original states.
+def split(state: State[V]) -> tuple[State[V], ...]:
+    """Split a merged State back into original States.
 
     Args:
-        mapping: Mapping produced by :func:`merge`.
-        mergemeta: MergeMeta returned by :func:`merge` for the same merge call.
+        state: :class:`State` instance created by :func:`merge`.
 
     Returns:
-        Tuple containing one :class:`State` per merged input.
-
-    Examples:
-        >>> first = State.from_pytree({"a": 1})
-        >>> merged, mergemeta = merge(first)
-        >>> split(merged, mergemeta)[0].to_pytree()
-        {'a': 1}
+        Tuple of :class:`State` instances corresponding to the original inputs
+        used to create ``state``.
     """
 
-    return mergemeta.split(mapping)
+    child_treedefs = jtu.treedef_children(state.treedefmeta.treedef)
+    offset, states = 0, []
+    for child_td in child_treedefs:
+        n = child_td.num_leaves
+        child_keys = state.treedefmeta.keys[offset:offset + n]
+        child_map = {k: state[k] for k in child_keys}
+        states.append(State(child_map, treedefmeta=TreeDefMeta(child_td, child_keys)))
+        offset += n
+    return tuple(states)
 
 
 def partition(

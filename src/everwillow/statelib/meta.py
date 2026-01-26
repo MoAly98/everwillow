@@ -8,10 +8,10 @@ import jax.tree_util as jtu
 from jaxtyping import PyTree, PyTreeDef
 
 if tp.TYPE_CHECKING:
-    from everwillow.statelib.state import FrozenChainMap, K, State, V
+    from everwillow.statelib.state import K, State, V
 
 
-__all__ = ["MergeMeta", "TreeDefMeta"]
+__all__ = ["TreeDefMeta"]
 
 
 @partial(
@@ -52,47 +52,4 @@ class TreeDefMeta:
         # this order of keys is important here to preserve original pytree order
         return jtu.tree_unflatten(
             treedef=self.treedef, leaves=(mapping[k] for k in self.keys)
-        )
-
-
-@partial(
-    jtu.register_dataclass,
-    data_fields=[],
-    meta_fields=["treedefmetas"],
-)
-@dataclasses.dataclass(frozen=True, slots=True)
-class MergeMeta:
-    """Metadata retained when multiple :class:`State` objects are merged.
-
-    The metadata stores the treedef for each original state alongside the group
-    of keys that belong to that state so the merged mapping can be split later.
-    """
-
-    treedefmetas: tuple[TreeDefMeta, ...]
-
-    def split(
-        self,
-        chain_map: FrozenChainMap[V],
-    ) -> tuple[State[V], ...]:
-        """Partition a merged FrozenChainMap back into individual states.
-
-        Args:
-            chain_map: FrozenChainMap produced by :func:`merge`.
-
-        Returns:
-            Tuple of :class:`State` objects restoring the original order.
-
-        Examples:
-            >>> state_a = State.from_pytree({"a": 1})
-            >>> merged, mergemeta = merge(state_a)
-            >>> mergemeta.split(merged)[0].to_pytree()
-            {'a': 1}
-        """
-        from everwillow.statelib.state import State
-
-        return tuple(
-            State(mapping, treedefmeta=treedefmeta)
-            for mapping, treedefmeta in zip(
-                chain_map.maps, self.treedefmetas, strict=True
-            )
         )

@@ -64,16 +64,13 @@ def test_partition_and_combine_roundtrip() -> None:
         predicate=lambda key, _value: "a" in key,
     )
 
-    assert left.mapping == {("a", "x"): 1.0}
-    assert right.mapping == {("b",): 2.0}
+    # Partitions now contain None for excluded keys
+    assert {k: v for k, v in left.items() if v is not None} == {("a", "x"): 1.0}
+    assert {k: v for k, v in right.items() if v is not None} == {("b",): 2.0}
 
     combined = sl.combine_partitions(left, right)
-    rebuilt_correct_order = sl.update(state, updates=combined)
-    assert rebuilt_correct_order.to_pytree() == state.to_pytree()
-
-    # also test roundtrip through State constructor
-    rebuilt = sl.State(mapping=combined, treedefmeta=state.treedefmeta)
-    assert rebuilt.to_pytree() == state.to_pytree()
+    # combined is now a State directly
+    assert combined.to_pytree() == state.to_pytree()
 
 
 def test_partition_origin_mismatch_raises() -> None:
@@ -90,5 +87,5 @@ def test_partition_origin_mismatch_raises() -> None:
         predicate=lambda key, _value: key == ("a",),
     )
 
-    with pytest.raises(ValueError, match="same original mapping"):
+    with pytest.raises(ValueError, match="same original state"):
         sl.combine_partitions(left_one, right_two)

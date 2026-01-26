@@ -16,7 +16,6 @@ from everwillow.statelib.meta import MergeMeta, TreeDefMeta
 
 __all__ = [
     "K",
-    "PartitionedMapping",
     "State",
     "V",
     "canonicalize_key",
@@ -271,6 +270,23 @@ class State(BaseMapping[V]):
     def treedefmeta(self) -> TreeDefMeta:
         return self._treedefmeta
 
+    @property
+    def notnone(self) -> tp.Mapping[K, V]:
+        """Return a filtered view excluding keys with None values.
+
+        This is useful after :func:`partition` to see only the active entries.
+
+        Returns:
+            Read-only mapping containing only non-None entries.
+
+        Examples:
+            >>> state = State.from_pytree({"a": 1, "b": 2})
+            >>> left, _ = partition(state, predicate=lambda k, _: k == ("a",))
+            >>> left.notnone
+            {('a',): 1}
+        """
+        return MappingProxyType({k: v for k, v in self._mapping.items() if v is not None})
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
 
@@ -290,63 +306,6 @@ class State(BaseMapping[V]):
         (treedefmeta,) = aux_data
         (mapping,) = children
         return cls(mapping, treedefmeta=treedefmeta)
-
-
-@jtu.register_pytree_with_keys_class
-class PartitionedMapping(BaseMapping[V]):
-    """Read-only mapping that remembers which object it was partitioned from.
-
-    Each partition stores the ``id`` of the original mapping so that only
-    compatible partitions can be combined again.
-
-    Examples:
-        >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, lambda key, _: key == ("a",))
-        >>> dict(left.mapping)
-        {('a',): 1}
-    """
-
-    __slots__ = ("_origin",)
-
-    def __init__(
-        self,
-        mapping: tp.Mapping[K, V],
-        *,
-        origin: int,
-    ) -> None:
-        # Ensure the mapping is immutable
-        self._mapping = MappingProxyType(mapping)
-        self._origin = origin
-
-    @property
-    def origin(self) -> int:
-        """Identifier of the mapping the partition originated from.
-
-        Returns:
-            Integer identifier equal to :func:`id` of the mapping passed during
-            construction.
-        """
-        return self._origin
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.to_dict()!r}, origin={self.origin})"
-
-    # jax.tree_util.register_pytree_with_keys_class methods
-    def tree_flatten_with_keys(self):
-        # .to_dict() because jax.tree_util already knows how to flatten dicts
-        children_with_keys = ((jtu.GetAttrKey("_mapping"), self.to_dict()),)
-        aux_data = (self._origin,)
-        return children_with_keys, aux_data
-
-    @classmethod
-    def tree_unflatten(
-        cls,
-        aux_data: tuple[int],
-        children: tuple[tp.Mapping[K, V], ...],
-    ) -> PartitionedMapping[V]:
-        (mapping,) = children
-        (origin,) = aux_data
-        return cls(mapping, origin=origin)
 
 
 def merge(*states: State[V]) -> tuple[FrozenChainMap[V], MergeMeta]:
@@ -402,10 +361,10 @@ def split(
 
 
 def partition(
-    mapping: tp.Mapping[K, V],
+    state: State[V],
     *,
     predicate: tp.Callable[[K, V], bool],
-) -> tuple[PartitionedMapping[V], PartitionedMapping[V]]:
+) -> tuple[State[V], State[V]]:
     """Split a mapping into two partitions based on a predicate.
 
     Args:
@@ -415,34 +374,34 @@ def partition(
             the first partition.
 
     Returns:
-        Tuple ``(left, right)`` containing two :class:`PartitionedMapping`
-        objects with the same ``origin``.
+        Tuple ``(left, right)`` containing two :class:`State` partitioned from
+        the original State. Elements not satisfying the predicate are set to ``None``
+        in ``left`` and vice versa for ``right``.
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
         >>> left, right = partition(state, lambda key, _: key == ("a",))
-        >>> dict(right.mapping)
+        >>> right.to_pytree()
         {('b',): 2}
     """
 
     left_data, right_data = {}, {}
-    for key, value in mapping.items():
+    for key, value in state.items():
         if predicate(key, value):
             left_data[key] = value
+            right_data[key] = None
         else:
+            left_data[key] = None
             right_data[key] = value
-
-    origin = id(mapping)
     return (
-        PartitionedMapping(left_data, origin=origin),
-        PartitionedMapping(right_data, origin=origin),
+        State(left_data, treedefmeta=state.treedefmeta),
+        State(right_data, treedefmeta=state.treedefmeta),
     )
 
-
 def combine_partitions(
-    left: PartitionedMapping[V],
-    right: PartitionedMapping[V],
-) -> FrozenChainMap[V]:
+    left: State[V],
+    right: State[V],
+) -> State[V]:
     """Merge two partitions that originated from the same mapping.
 
     Args:
@@ -461,10 +420,11 @@ def combine_partitions(
         >>> combine_partitions(left, right)["b",]
         2
     """
-    if left.origin != right.origin:
-        msg = "partitions must originate from the same original mapping"
+    if left.treedefmeta != right.treedefmeta:
+        msg = "partitions must originate from the same original state"
         raise ValueError(msg)
-    return FrozenChainMap(left.mapping, right.mapping)
+    return jtu.tree_map(lambda x1, x2: x1 if x1 is not None else x2, left, right, is_leaf=lambda x: x is None)
+
 
 
 def update(

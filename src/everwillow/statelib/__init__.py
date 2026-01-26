@@ -1,7 +1,6 @@
 __all__ = [
     "K",
     "MergeMeta",
-    "PartitionedMapping",
     "State",
     "Transform",
     "TreeDefMeta",
@@ -18,7 +17,6 @@ __all__ = [
 from .meta import MergeMeta, TreeDefMeta
 from .state import (
     K,
-    PartitionedMapping,
     State,
     V,
     canonicalize_key,

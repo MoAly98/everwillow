@@ -55,7 +55,7 @@ def hessian_matrix(
     )
 
     # Get flat array of free values
-    free_keys = tuple(free_state.keys())
+    free_keys = tuple(free_state.notnone.keys())
     flat_values = jnp.array([free_state[k] for k in free_keys])
 
     def _flat_nll(flat_free: Float[Array, ...]) -> Float[Array, ""]:
@@ -69,10 +69,9 @@ def hessian_matrix(
             Float[Array, ""]: Negative log-likelihood value.
         """
         free_mapping = {k: flat_free[i] for i, k in enumerate(free_keys)}
-        new_free = sl.PartitionedMapping(free_mapping, origin=free_state.origin)
+        new_free = sl.update(free_state, updates=free_mapping)
         combined = sl.combine_partitions(fixed_state, new_free)
-        full_state = sl.State(combined, treedefmeta=params.treedefmeta)
-        return nll_fn(full_state.to_pytree())
+        return nll_fn(combined.to_pytree())
 
     return jax.hessian(_flat_nll)(flat_values)
 
@@ -159,18 +158,16 @@ def uncertainties(
     # Cramér-Rao: uncertainties are sqrt of diagonal elements
     stderrs = jnp.sqrt(jnp.diag(cov))
 
-    # Get free_mapping with same structure/ordering as used for Hessian
-    fixed_mapping, free_mapping = sl.partition(
+    # Get free_state with same structure/ordering as used for Hessian
+    fixed_state, free_state = sl.partition(
         params, predicate=lambda key, _: key in fixed
     )
 
-    # Unflatten stderrs back into the same pytree structure as free_mapping
-    _, treedef = jax.tree_util.tree_flatten(free_mapping)
+    # Unflatten stderrs back into the same pytree structure as free_state
+    _, treedef = jax.tree_util.tree_flatten(free_state)
     free_uncertainty = jax.tree_util.tree_unflatten(treedef, stderrs)
 
-    fixed_uncertainty = jax.tree.map(lambda _: None, fixed_mapping)
+    fixed_uncertainty = jax.tree.map(lambda _: None, fixed_state)
     uncs_combined = sl.combine_partitions(fixed_uncertainty, free_uncertainty)
 
-    return sl.State.from_pytree(
-        uncs_combined.to_dict(), is_leaf=lambda x: x is None
-    )
+    return uncs_combined

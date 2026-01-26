@@ -168,6 +168,5 @@ def uncertainties(
     free_uncertainty = jax.tree_util.tree_unflatten(treedef, stderrs)
 
     fixed_uncertainty = jax.tree.map(lambda _: None, fixed_state)
-    uncs_combined = sl.combine_partitions(fixed_uncertainty, free_uncertainty)
 
-    return uncs_combined
+    return sl.combine_partitions(fixed_uncertainty, free_uncertainty)

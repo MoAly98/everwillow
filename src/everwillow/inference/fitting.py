@@ -18,7 +18,6 @@ from everwillow.statelib import K, V
 
 Args: tp.TypeAlias = tuple[
     sl.State[V],  # fixed_state
-    sl.TreeDefMeta,  # treedefmeta
     sl.State[ewp.TransformBase],  # bounds
 ]
 
@@ -37,7 +36,7 @@ def _reconstruct_full_state(
     args: Args,
 ) -> sl.State[V]:
     """Reconstruct full parameter pytree from free state and Args."""
-    (fixed_state, treedefmeta, bounds) = args
+    (fixed_state, bounds) = args
 
     # Combine partitions back together (still in unbounded space)
     full_state_transformed = sl.combine_partitions(fixed_state, free_state)
@@ -251,7 +250,7 @@ def _fit(
     )
 
     # Prepare args for reconstructing full state
-    args: Args = (fixed_state, params.treedefmeta, bounds)
+    args: Args = (fixed_state, bounds)
 
     # Wrap nll to only take free parameters
     def wrapped_nll(new_state, fn_args):

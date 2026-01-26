@@ -65,8 +65,8 @@ def test_partition_and_combine_roundtrip() -> None:
     )
 
     # Partitions now contain None for excluded keys
-    assert {k: v for k, v in left.items() if v is not None} == {("a", "x"): 1.0}
-    assert {k: v for k, v in right.items() if v is not None} == {("b",): 2.0}
+    assert {k: v for k, v in left.items() if v is not None} == {("a", "x"): 1.0}  # type: ignore[redundant-expr]
+    assert {k: v for k, v in right.items() if v is not None} == {("b",): 2.0}  # type: ignore[redundant-expr]
 
     combined = sl.combine_partitions(left, right)
     # combined is now a State directly

@@ -28,7 +28,8 @@ __all__ = [
 
 
 K: tp.TypeAlias = str | tuple[str, ...]
-V = tp.TypeVar("V", bound=ArrayLike)
+V = tp.TypeVar("V", bound=ArrayLike | None)
+
 
 def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
     """Flatten any iterable except strings/bytes."""
@@ -37,6 +38,7 @@ def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
             yield from _flatten_iterables(y)
     else:
         yield x
+
 
 @tp.overload
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> K: ...
@@ -261,7 +263,9 @@ class State(BaseMapping[V]):
             >>> left.notnone
             {('a',): 1}
         """
-        return MappingProxyType({k: v for k, v in self._mapping.items() if v is not None})
+        return MappingProxyType(
+            {k: v for k, v in self._mapping.items() if v is not None}
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
@@ -294,14 +298,16 @@ def merge(*states: State[V]) -> State[V]:
         New :class:`State` containing all key/value pairs from the inputs.
     """
 
-    all_keys, all_vals, child_treedefs = [], [], []
+    all_keys: list[K] = []
+    all_vals: list[V] = []
+    child_treedefs: list[jtu.PyTreeDef] = []
     for s in states:
         all_keys.extend(s.treedefmeta.keys)
         all_vals.extend(s[k] for k in s.treedefmeta.keys)
         child_treedefs.append(s.treedefmeta.treedef)
 
     compound_treedef = jtu.treedef_tuple(child_treedefs)
-    mapping = dict(zip(all_keys, all_vals))
+    mapping = dict(zip(all_keys, all_vals, strict=False))
     return State(mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys)))
 
 
@@ -320,7 +326,7 @@ def split(state: State[V]) -> tuple[State[V], ...]:
     offset, states = 0, []
     for child_td in child_treedefs:
         n = child_td.num_leaves
-        child_keys = state.treedefmeta.keys[offset:offset + n]
+        child_keys = state.treedefmeta.keys[offset : offset + n]
         child_map = {k: state[k] for k in child_keys}
         states.append(State(child_map, treedefmeta=TreeDefMeta(child_td, child_keys)))
         offset += n
@@ -352,18 +358,20 @@ def partition(
         {('b',): 2}
     """
 
-    left_data, right_data = {}, {}
+    left_data: dict[K, V] = {}
+    right_data: dict[K, V] = {}
     for key, value in state.items():
         if predicate(key, value):
             left_data[key] = value
-            right_data[key] = None
+            right_data[key] = tp.cast(V, None)
         else:
-            left_data[key] = None
+            left_data[key] = tp.cast(V, None)
             right_data[key] = value
     return (
         State(left_data, treedefmeta=state.treedefmeta),
         State(right_data, treedefmeta=state.treedefmeta),
     )
+
 
 def combine_partitions(
     left: State[V],
@@ -390,8 +398,12 @@ def combine_partitions(
     if left.treedefmeta != right.treedefmeta:
         msg = "partitions must originate from the same original state"
         raise ValueError(msg)
-    return jtu.tree_map(lambda x1, x2: x1 if x1 is not None else x2, left, right, is_leaf=lambda x: x is None)
-
+    return jtu.tree_map(
+        lambda x1, x2: x1 if x1 is not None else x2,
+        left,
+        right,
+        is_leaf=lambda x: x is None,
+    )
 
 
 def update(

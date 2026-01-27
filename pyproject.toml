@@ -9,7 +9,7 @@ description = "Statistical inference steps for high-energy physics analyses with
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 1 - Planning",
     "Intended Audience :: Science/Research",
@@ -18,9 +18,8 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
@@ -40,7 +39,7 @@ dependencies = [
 
 
 [dependency-groups]
-test = ["pytest >=7", "pytest-cov >=3", "coverage[toml]"]
+test = ["pytest >=9", "pytest-cov >=3", "coverage[toml]"]
 docs = [
     "sphinx>=7",
     "furo",

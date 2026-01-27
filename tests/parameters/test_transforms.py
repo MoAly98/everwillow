@@ -223,13 +223,17 @@ class TestSoftPlusTransform:
     def test_raises_on_negative_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(ValueError, match="expected positive inputs"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"
+        ):
             transform.unwrap(-0.1)
 
     def test_raises_on_zero_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(ValueError, match="expected positive inputs"):
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"
+        ):
             transform.unwrap(0.0)
 
 

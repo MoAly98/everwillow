@@ -134,6 +134,9 @@ ignore = [
     "RUF003",  # Ambiguous Unicode characters in comments (Greek letters are standard in physics)
     "F722",    # jaxtyping: `Float32[Array, "b c"]` (https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error)
     "EM101",   # flake8-errmsg: Error message should not end with a period
+    "UP040",   # PEP 695 type alias syntax (https://peps.python.org/pep-0695/)
+    "UP046",   # PEP 695 generic class syntax
+    "UP047",   # PEP 695 generic function syntax
 ]
 select = [
     "E",

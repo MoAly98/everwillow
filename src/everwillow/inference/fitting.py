@@ -97,7 +97,7 @@ class _ProgressUpdater:
 def _make_progress_context(
     enabled: bool,
     max_steps: int,
-) -> tp.Generator[_ProgressUpdater | None, None, None]:
+) -> tp.Generator[_ProgressUpdater | None]:
     """Create progress bar context manager.
 
     Yields a _ProgressUpdater when enabled, else None.

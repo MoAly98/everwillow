@@ -39,13 +39,6 @@ def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
     else:
         yield x
 
-def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
-    """Flatten any iterable except strings/bytes."""
-    if isinstance(x, tp.Iterable) and not isinstance(x, (str, bytes)):
-        for y in x:
-            yield from _flatten_iterables(y)
-    else:
-        yield x
 
 @tp.overload
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> K: ...

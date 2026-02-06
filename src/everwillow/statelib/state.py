@@ -60,7 +60,7 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
         Canonical key representation that can be used to index a :class:`State`.
 
     Raises:
-        ValueError: If ``path`` contains an unsupported key type.
+        TypeError: If ``path`` contains an unsupported key type.
 
     Examples:
         Build tuple keys that match the structure of the original pytree:
@@ -226,9 +226,6 @@ class State(BaseMapping[V]):
         Returns:
             Pytree with the same structure used to create the state.
 
-        Raises:
-            ValueError: If the state was created without a tree definition.
-
         Examples:
             >>> state = State.from_pytree({"x": 1})
             >>> state.to_pytree()
@@ -284,6 +281,8 @@ class State(BaseMapping[V]):
 def merge(*states: State[V]) -> State[V]:
     """Combine several States into one.
 
+    When states share overlapping keys, the last value wins.
+
     Args:
         *states: Sequence of :class:`State` instances to merge (at least two).
 
@@ -313,12 +312,17 @@ def merge(*states: State[V]) -> State[V]:
 def split(state: State[V]) -> tuple[State[V], ...]:
     """Split a merged State back into original States.
 
+    For overlapping keys, all returned segments receive the merged value.
+
     Args:
         state: :class:`State` instance created by :func:`merge`.
 
     Returns:
         Tuple of :class:`State` instances corresponding to the original inputs
         used to create ``state``.
+
+    Raises:
+        ValueError: If ``state`` was not produced by :func:`merge`.
     """
 
     td = state.treedefmeta.treedef
@@ -342,23 +346,22 @@ def partition(
     *,
     predicate: tp.Callable[[K, V], bool],
 ) -> tuple[State[V], State[V]]:
-    """Split a mapping into two partitions based on a predicate.
+    """Split a state into two partitions based on a predicate.
 
     Args:
-        mapping: Mapping obtained from a :class:`State`. The identity of this
-            mapping is stored to ensure only compatible partitions are merged.
+        state: :class:`State` instance to partition.
         predicate: Callable returning ``True`` for items that should go into
             the first partition.
 
     Returns:
         Tuple ``(left, right)`` containing two :class:`State` partitioned from
-        the original State. Elements not satisfying the predicate are set to ``None``
+        the original state. Elements not satisfying the predicate are set to ``None``
         in ``left`` and vice versa for ``right``.
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, lambda key, _: key == ("a",))
-        >>> right.to_pytree()
+        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
+        >>> dict(right.notnone)
         {('b',): 2}
     """
 
@@ -381,21 +384,21 @@ def combine_partitions(
     left: State[V],
     right: State[V],
 ) -> State[V]:
-    """Merge two partitions that originated from the same mapping.
+    """Merge two partitions that originated from the same state.
 
     Args:
         left: First partition returned by :func:`partition`.
         right: Second partition returned by :func:`partition`.
 
     Returns:
-        Dictionary containing the union of both partitions' mappings.
+        :class:`State` containing the union of both partitions.
 
     Raises:
-        ValueError: If the partitions do not share the same ``origin``.
+        ValueError: If the partitions do not share the same treedefmeta.
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, lambda key, _: key == ("a",))
+        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
         >>> combine_partitions(left, right)["b",]
         2
     """
@@ -431,7 +434,7 @@ def update(
 
     Examples:
         >>> base = State.from_pytree({"a": 1, "b": 2})
-        >>> update(base, {("b",): 99}).to_dict()
+        >>> update(base, updates={("b",): 99}).to_dict()
         {('a',): 1, ('b',): 99}
     """
     if not isinstance(state, State):

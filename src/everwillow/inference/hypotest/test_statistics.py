@@ -27,11 +27,11 @@ from everwillow.inference.hypotest._results import TestStatResult
 from everwillow.inference.hypotest._utils import constrained_fit
 
 __all__ = [
-    "TestStatistic",
-    "QTilde",
-    "QMu",
     "Q0",
+    "QMu",
+    "QTilde",
     "TMu",
+    "TestStatistic",
 ]
 
 
@@ -102,9 +102,7 @@ class QTilde(TestStatistic):
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute q̃_μ test statistic."""
-        q_obs, extras = self._compute_q(
-            nll_fn, params, poi_key, poi_test, **fit_kwargs
-        )
+        q_obs, extras = self._compute_q(nll_fn, params, poi_key, poi_test, **fit_kwargs)
 
         # Compute q_asimov if asimov_nll_fn provided
         if asimov_nll_fn is not None:
@@ -130,11 +128,11 @@ class QTilde(TestStatistic):
         """Compute q̃ for a single NLL function."""
         # Free fit (unconditional MLE)
         fit_free = ew.fit(nll_fn, params, **fit_kwargs)
-        fitted_state = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
         # Constrained fit (POI fixed at test value)
-        fixed = sl.State.from_pytree({poi_key: poi_test})
+        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
 
         # Profile likelihood ratio
@@ -175,9 +173,7 @@ class QMu(TestStatistic):
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute q_μ test statistic."""
-        q_obs, extras = self._compute_q(
-            nll_fn, params, poi_key, poi_test, **fit_kwargs
-        )
+        q_obs, extras = self._compute_q(nll_fn, params, poi_key, poi_test, **fit_kwargs)
 
         if asimov_nll_fn is not None:
             q_asimov, _ = self._compute_q(
@@ -199,9 +195,9 @@ class QMu(TestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_μ for a single NLL function."""
         fit_free = ew.fit(nll_fn, params, **fit_kwargs)
-        fitted_state = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
 
-        fixed = sl.State.from_pytree({poi_key: poi_test})
+        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
@@ -231,19 +227,21 @@ class Q0(TestStatistic):
         nll_fn: tp.Callable[[PyTree], float],
         params: sl.State,
         poi_key: sl.K,
+        poi_test: float,
         *,
         asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
-        """Compute q_0 discovery test statistic."""
-        q_obs, extras = self._compute_q(
-            nll_fn, params, poi_key, **fit_kwargs
-        )
+        """Compute q_0 discovery test statistic.
+
+        Note:
+            The ``poi_test`` argument is ignored; Q0 always tests μ=0 by design.
+        """
+        _ = poi_test  # Unused; Q0 always tests μ=0
+        q_obs, extras = self._compute_q(nll_fn, params, poi_key, **fit_kwargs)
 
         if asimov_nll_fn is not None:
-            q_asimov, _ = self._compute_q(
-                asimov_nll_fn, params, poi_key, **fit_kwargs
-            )
+            q_asimov, _ = self._compute_q(asimov_nll_fn, params, poi_key, **fit_kwargs)
             extras["q_asimov"] = q_asimov
         else:
             extras["q_asimov"] = q_obs
@@ -259,10 +257,10 @@ class Q0(TestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_0 for a single NLL function."""
         fit_free = ew.fit(nll_fn, params, **fit_kwargs)
-        fitted_state = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
-        fixed = sl.State.from_pytree({poi_key: 0.0})
+        fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
         fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
@@ -300,9 +298,7 @@ class TMu(TestStatistic):
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute t_μ signed test statistic."""
-        t_obs, extras = self._compute_t(
-            nll_fn, params, poi_key, poi_test, **fit_kwargs
-        )
+        t_obs, extras = self._compute_t(nll_fn, params, poi_key, poi_test, **fit_kwargs)
 
         if asimov_nll_fn is not None:
             t_asimov, _ = self._compute_t(
@@ -324,10 +320,10 @@ class TMu(TestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute t_μ for a single NLL function."""
         fit_free = ew.fit(nll_fn, params, **fit_kwargs)
-        fitted_state = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
-        fixed = sl.State.from_pytree({poi_key: poi_test})
+        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll

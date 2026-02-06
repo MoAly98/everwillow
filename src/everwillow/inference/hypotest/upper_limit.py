@@ -35,7 +35,7 @@ from jaxtyping import Array, PRNGKeyArray
 from everwillow.inference.hypotest._results import ExpectedLimitResult, HypoTestResult
 from everwillow.inference.hypotest._utils import cl_s
 
-__all__ = ["upper_limit", "upper_limit_toys", "expected_upper_limit"]
+__all__ = ["expected_upper_limit", "upper_limit", "upper_limit_toys"]
 
 
 def upper_limit(
@@ -90,12 +90,12 @@ def upper_limit(
         """Objective for root finding: f(poi) - level = 0."""
         return objective_fn(poi) - level
 
-    solver = optx.Bisection(rtol=rtol, atol=atol)
+    solver: optx.Bisection = optx.Bisection(rtol=rtol, atol=atol)  # type: ignore[call-arg]
 
     # Initial guess at midpoint
     y0 = jnp.array((bounds[0] + bounds[1]) / 2.0)
 
-    solution = optx.root_find(
+    solution: optx.Solution = optx.root_find(
         root_objective,
         solver,
         y0,
@@ -186,10 +186,7 @@ def expected_upper_limit(
     calc_fn: tp.Callable[[float], HypoTestResult],
     bounds: tuple[float, float],
     level: float = 0.05,
-    *,
-    rtol: float = 1e-4,
-    atol: float = 1e-6,
-    max_steps: int = 100,
+    **solver_kwargs: tp.Any,
 ) -> ExpectedLimitResult:
     """Compute observed and expected upper limits with Brazil bands.
 
@@ -201,9 +198,8 @@ def expected_upper_limit(
                  Should call AsymptoticCalculator and return its result.
         bounds: (lower, upper) search range for POI value.
         level: Target CLs level (default 0.05 for 95% CL).
-        rtol: Relative tolerance for convergence.
-        atol: Absolute tolerance for convergence.
-        max_steps: Maximum bisection iterations.
+        **solver_kwargs: Additional arguments passed to :func:`upper_limit`
+            (e.g., ``rtol``, ``atol``, ``max_steps``).
 
     Returns:
         ExpectedLimitResult with observed and expected limits at all bands.
@@ -217,8 +213,6 @@ def expected_upper_limit(
         >>> print(f"Observed: {result.observed:.3f}")
         >>> print(f"Expected: {result.expected:.3f} (+1σ: {result.plus_1sigma:.3f})")
     """
-    solver_kwargs = {"rtol": rtol, "atol": atol, "max_steps": max_steps}
-
     # Observed limit
     observed = upper_limit(
         lambda poi: calc_fn(poi).cl_s,

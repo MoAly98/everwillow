@@ -57,33 +57,26 @@ from everwillow.inference.hypotest.upper_limit import (
 )
 
 __all__ = [
-    # Results
+    "Q0",
+    "Distribution",
+    "EmpiricalDistribution",
     "ExpectedBands",
     "ExpectedLimitResult",
+    "HypoTestCalculator",
     "HypoTestResult",
     "HypoTestToysResult",
-    "TestStatResult",
-    # Test statistics
-    "TestStatistic",
-    "QTilde",
-    "QMu",
-    "Q0",
-    "TMu",
-    # Distributions
-    "Distribution",
-    "QTildeAsymptotic",
-    "QMuAsymptotic",
     "Q0Asymptotic",
+    "QMu",
+    "QMuAsymptotic",
+    "QTilde",
+    "QTildeAsymptotic",
+    "TMu",
     "TMuAsymptotic",
-    "EmpiricalDistribution",
-    # Calculator
-    "HypoTestCalculator",
-    # Toy generation
+    "TestStatResult",
+    "TestStatistic",
     "ToyGenerator",
-    # Upper limits
+    "cl_s",
     "expected_upper_limit",
     "upper_limit",
     "upper_limit_toys",
-    # Utilities
-    "cl_s",
 ]

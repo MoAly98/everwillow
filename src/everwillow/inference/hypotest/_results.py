@@ -8,17 +8,16 @@ from __future__ import annotations
 import typing as tp
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array
 
 from everwillow.inference.hypotest._utils import cl_s
 
 __all__ = [
-    "TestStatResult",
     "ExpectedBands",
+    "ExpectedLimitResult",
     "HypoTestResult",
     "HypoTestToysResult",
-    "ExpectedLimitResult",
+    "TestStatResult",
 ]
 
 

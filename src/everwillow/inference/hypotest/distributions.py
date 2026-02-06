@@ -12,7 +12,6 @@ References:
 from __future__ import annotations
 
 import abc
-import typing as tp
 
 import equinox as eqx
 import jax
@@ -23,11 +22,11 @@ from everwillow.inference.hypotest._results import ExpectedBands, TestStatResult
 
 __all__ = [
     "Distribution",
-    "QTildeAsymptotic",
-    "QMuAsymptotic",
-    "Q0Asymptotic",
-    "TMuAsymptotic",
     "EmpiricalDistribution",
+    "Q0Asymptotic",
+    "QMuAsymptotic",
+    "QTildeAsymptotic",
+    "TMuAsymptotic",
 ]
 
 
@@ -270,7 +269,9 @@ class TMuAsymptotic(Distribution):
         """Two-sided p-value under alternative hypothesis (signal+background)."""
         sigma = jnp.sqrt(jnp.maximum(jnp.abs(t_asimov), 1e-10))
         shift = jnp.sqrt(jnp.abs(t_asimov))
-        return 2.0 * (1.0 - jax.scipy.stats.norm.cdf((jnp.abs(t) + shift) / sigma - nsigma))
+        return 2.0 * (
+            1.0 - jax.scipy.stats.norm.cdf((jnp.abs(t) + shift) / sigma - nsigma)
+        )
 
     def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
         """Return (pnull, palt) - raw hypothesis p-values."""

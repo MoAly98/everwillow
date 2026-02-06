@@ -13,7 +13,6 @@ from __future__ import annotations
 import typing as tp
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import PyTree
 
 import everwillow.statelib as sl

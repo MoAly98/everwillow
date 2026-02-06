@@ -10,8 +10,7 @@ import typing as tp
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-from jaxtyping import Array, PRNGKeyArray, PyTree
+from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
 import everwillow.statelib as sl
 from everwillow.inference.hypotest._utils import constrained_fit
@@ -86,14 +85,14 @@ class ToyGenerator(eqx.Module):
         # This ensures toys are generated at the best-fit point for each hypothesis
 
         # Alternative hypothesis: POI = poi_test (signal)
-        fixed_alt = sl.State.from_pytree({poi_key: poi_test})
+        fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         alt_result = constrained_fit(nll_fn, params, fixed_alt, **fit_kwargs)
-        params_alt = sl.State.from_pytree(alt_result.params)
+        params_alt: sl.State[ArrayLike] = sl.State.from_pytree(alt_result.params)
 
         # Null hypothesis: POI = 0 (background-only)
-        fixed_null = sl.State.from_pytree({poi_key: 0.0})
+        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
         null_result = constrained_fit(nll_fn, params, fixed_null, **fit_kwargs)
-        params_null = sl.State.from_pytree(null_result.params)
+        params_null: sl.State[ArrayLike] = sl.State.from_pytree(null_result.params)
 
         # Generate toys under alternative hypothesis
         q_alt = self._run_toys(
@@ -162,5 +161,4 @@ class ToyGenerator(eqx.Module):
             return result.q
 
         # Run toys in parallel using vmap
-        q_toys = jax.vmap(single_toy)(keys)
-        return q_toys
+        return jax.vmap(single_toy)(keys)

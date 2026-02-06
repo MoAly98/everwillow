@@ -181,9 +181,9 @@ def section_end_to_end() -> None:
     print(f"  seg_c pytree: {seg_c.to_pytree()}")
     print()
 
-    # 7. Verify round-trip.
+    # 7. Verify structure is preserved (overlapping keys get merged value).
     assert seg_a.to_pytree() == tree_a
-    # assert seg_b.to_pytree() == tree_b  # overlapping key roundtrip issue
+    assert seg_b.to_pytree() == {"c": {"d": 4.0}, "e": {"f": 3.0}}
     assert seg_c.to_pytree() == tree_c
 
 

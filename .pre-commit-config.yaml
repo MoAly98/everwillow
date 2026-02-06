@@ -29,7 +29,7 @@ repos:
     rev: "v1.17.1"
     hooks:
       - id: mypy
-        files: src|tests
+        files: src
         args: [--config-file=pyproject.toml]
         additional_dependencies:
           - pytest

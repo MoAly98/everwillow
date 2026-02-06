@@ -29,8 +29,8 @@ assert state.to_pytree() == tree
 
 ## Combining and Splitting
 
-- **Merging** – `merge(*states)` concatenates multiple `State` instances into a single `State` containing all key/value pairs with a compound treedef.
-- **Splitting** – `split(merged_state)` returns the original per-segment states in order.
+- **Merging** – `merge(*states)` concatenates multiple `State` instances into a single `State` containing all key/value pairs with a compound treedef. When states share overlapping keys, the last value wins.
+- **Splitting** – `split(merged_state)` returns the per-segment states in order. For overlapping keys, all segments receive the merged value (last writer wins).
 - **Partitioning** – `partition(state, predicate=...)` filters a single state into two orthogonal partitions while retaining segment metadata. Excluded entries are set to `None`; use the `.notnone` property to see only active entries.
 - **Recombining partitions** – `combine_partitions(first, second)` reassembles exactly the original structure when the partitions came from the same source.
 
@@ -127,11 +127,11 @@ recombined = sl.combine_partitions(first_partition, second_partition)
 seg_a, seg_b, seg_c = sl.split(recombined)
 
 print(seg_a.to_pytree())  # {'a': {'b': 1.0}}
-print(seg_b.to_pytree())  # {'c': {'d': 5.0}, 'e': {'f': 3.0}}
+print(seg_b.to_pytree())  # {'c': {'d': 4.0}, 'e': {'f': 3.0}}
 print(seg_c.to_pytree())  # {'c': {'d': 7.0}, 'g': {'h': 4.0}}
 
-# 7. Verify round-trip.
+# 7. Verify structure is preserved (overlapping keys get merged value).
 assert seg_a.to_pytree() == tree_a
-# assert seg_b.to_pytree() == tree_b  # overlapping key roundtrip issue
+assert seg_b.to_pytree() == {"c": {"d": 4.0}, "e": {"f": 3.0}}
 assert seg_c.to_pytree() == tree_c
 ```

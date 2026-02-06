@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import typing as tp
-
 import pytest
 
 import everwillow.statelib as sl
 
-FState: tp.TypeAlias = sl.State[float]
-TMapping: tp.TypeAlias = tp.Mapping[sl.K, sl.Transform[float]]
-
 
 def test_apply_transformations_rewrites_keys_and_values() -> None:
     """Applying transformations updates both keys and values."""
-    state: FState = sl.State.from_pytree({"a": 1, "b": 2})
-    transforms: TMapping = {
+    state = sl.State.from_pytree({"a": 1, "b": 2})
+    transforms = {
         ("a",): sl.Transform(new_key=("alpha",), value_fn=lambda _k, v: v + 1),
         ("b",): sl.Transform(new_key=("beta",), value_fn=lambda _k, v: v * 2),
     }
@@ -31,8 +26,8 @@ def test_apply_transformations_rewrites_keys_and_values() -> None:
 
 def test_apply_transformations_rejects_duplicate_targets() -> None:
     """Multiple transforms targeting the same destination raise ``ValueError``."""
-    state: FState = sl.State.from_pytree({"a": 1, "b": 2})
-    transforms: TMapping = {
+    state = sl.State.from_pytree({"a": 1, "b": 2})
+    transforms = {
         ("a",): sl.Transform(new_key=("shared",)),
         ("b",): sl.Transform(new_key=("shared",)),
     }
@@ -43,6 +38,23 @@ def test_apply_transformations_rejects_duplicate_targets() -> None:
 
 def test_apply_transformations_requires_state_instance() -> None:
     """Only ``State`` instances are accepted."""
-    transforms: TMapping = {("a",): sl.Transform(new_key=("a",))}
+    transforms = {("a",): sl.Transform(new_key=("a",))}
     with pytest.raises(TypeError, match="must be a State"):
-        sl.apply_transformations({"a": 1}, transforms)  # type: ignore[arg-type]
+        sl.apply_transformations({"a": 1}, transforms)
+
+
+def test_apply_transformations_empty_returns_original() -> None:
+    """An empty transforms dict returns the original state unchanged."""
+    state = sl.State.from_pytree({"a": 1, "b": 2})
+
+    result = sl.apply_transformations(state, {})
+    assert result is state
+
+
+def test_apply_transformations_missing_key_raises() -> None:
+    """Referencing a key not in the state raises KeyError."""
+    state = sl.State.from_pytree({"a": 1})
+    transforms = {("missing",): sl.Transform(new_key=("x",))}
+
+    with pytest.raises(KeyError, match="not present in state"):
+        sl.apply_transformations(state, transforms)

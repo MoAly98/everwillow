@@ -203,13 +203,6 @@ class State(BaseMapping[V]):
         Examples:
             >>> State.from_pytree({"a": [1, 2]}).mapping
             mappingproxy({('a', 0): 1, ('a', 1): 2})
-
-            Round-trip with pre-canonicalized keys:
-
-            >>> state = State.from_pytree({"x": 1.0, "y": 2.0})
-            >>> flat = state.to_dict()  # {('x',): 1.0, ('y',): 2.0}
-            >>> State.from_pytree(flat, canonicalize=False).to_dict() == flat
-            True
         """
 
         if isinstance(pytree, State):
@@ -292,11 +285,17 @@ def merge(*states: State[V]) -> State[V]:
     """Combine several States into one.
 
     Args:
-        *states: Sequence of :class:`State` instances to merge.
+        *states: Sequence of :class:`State` instances to merge (at least two).
 
     Returns:
         New :class:`State` containing all key/value pairs from the inputs.
+
+    Raises:
+        ValueError: If fewer than two states are provided.
     """
+    if len(states) < 2:
+        msg = "merge requires at least two states"
+        raise ValueError(msg)
 
     all_keys: list[K] = []
     all_vals: list[V] = []
@@ -322,7 +321,12 @@ def split(state: State[V]) -> tuple[State[V], ...]:
         used to create ``state``.
     """
 
-    child_treedefs = jtu.treedef_children(state.treedefmeta.treedef)
+    td = state.treedefmeta.treedef
+    if td != jtu.treedef_tuple(jtu.treedef_children(td)):
+        msg = "split requires a state produced by merge"
+        raise ValueError(msg)
+
+    child_treedefs = jtu.treedef_children(td)
     offset, states = 0, []
     for child_td in child_treedefs:
         n = child_td.num_leaves

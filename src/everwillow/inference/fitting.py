@@ -17,8 +17,7 @@ import everwillow.statelib as sl
 from everwillow.statelib import K, V
 
 Args: tp.TypeAlias = tuple[
-    sl.PartitionedMapping[V],  # fixed_state
-    sl.TreeDefMeta,  # treedefmeta
+    sl.State[V],  # fixed_state
     sl.State[ewp.TransformBase],  # bounds
 ]
 
@@ -28,22 +27,19 @@ SolverState = tp.TypeVar("SolverState")
 
 # Callback signature for interactive fitting: (step_idx, y, state) -> None
 # Matches the signature pattern used by solver.step and solver.terminate
-Callback: tp.TypeAlias = tp.Callable[[int, sl.PartitionedMapping, SolverState], None]
+Callback: tp.TypeAlias = tp.Callable[[int, sl.State, SolverState], None]
 
 
 def _reconstruct_full_state(
-    free_state: sl.PartitionedMapping[V],
+    free_state: sl.State[V],
     *,
     args: Args,
 ) -> sl.State[V]:
     """Reconstruct full parameter pytree from free state and Args."""
-    (fixed_state, treedefmeta, bounds) = args
+    (fixed_state, bounds) = args
 
     # Combine partitions back together (still in unbounded space)
-    combined_mapping = sl.combine_partitions(fixed_state, free_state)
-
-    # Caution: using treedefmeta to preserve the original key order
-    full_state_transformed = sl.State(combined_mapping, treedefmeta=treedefmeta)
+    full_state_transformed = sl.combine_partitions(fixed_state, free_state)
 
     # Transform back to bounded space for NLL evaluation
     return ewp.wrap(full_state_transformed, bounds.mapping)
@@ -59,9 +55,9 @@ class FitResult(eqx.Module, tp.Generic[V]):
 
 
 def _minimize(
-    wrapped_nll: tp.Callable[[sl.PartitionedMapping[V], Args], float],
+    wrapped_nll: tp.Callable[[sl.State[V], Args], float],
     solver: optx.AbstractMinimiser,
-    y0: sl.PartitionedMapping[V],
+    y0: sl.State[V],
     args: Args,
     *,
     max_steps: int,
@@ -101,7 +97,7 @@ class _ProgressUpdater:
 def _make_progress_context(
     enabled: bool,
     max_steps: int,
-) -> tp.Generator[_ProgressUpdater | None, None, None]:
+) -> tp.Generator[_ProgressUpdater | None]:
     """Create progress bar context manager.
 
     Yields a _ProgressUpdater when enabled, else None.
@@ -121,9 +117,9 @@ def _make_progress_context(
 
 
 def _iminimize(
-    wrapped_nll: tp.Callable[[sl.PartitionedMapping[V], Args], float],
+    wrapped_nll: tp.Callable[[sl.State[V], Args], float],
     solver: optx.AbstractMinimiser,
-    y0: sl.PartitionedMapping[V],
+    y0: sl.State[V],
     args: Args,
     *,
     max_steps: int,
@@ -254,7 +250,7 @@ def _fit(
     )
 
     # Prepare args for reconstructing full state
-    args: Args = (fixed_state, params.treedefmeta, bounds)
+    args: Args = (fixed_state, bounds)
 
     # Wrap nll to only take free parameters
     def wrapped_nll(new_state, fn_args):
@@ -422,7 +418,7 @@ def ifit(
         max_steps: Maximum number of optimization steps. Defaults to 256.
         progress: Whether to display a rich progress bar. Defaults to True.
         callback: Optional function called each iteration with signature
-            ``(step_idx: int, y: PartitionedMapping, state: SolverState) -> None``.
+            ``(step_idx: int, y: State, state: SolverState) -> None``.
             This matches the pattern used by ``solver.step`` and ``solver.terminate``.
             The NLL value can be accessed via ``state.f_info.f``.
         solver_options: Optional dict of solver-specific options passed to ``solver.init``.

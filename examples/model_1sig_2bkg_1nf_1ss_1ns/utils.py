@@ -92,7 +92,7 @@ class HistoryCallback:
 
         Args:
             step: Current iteration index.
-            free_state: Current free parameter values (PartitionedMapping).
+            free_state: Current free parameter values (State).
             state: Solver state with NLL accessible via state.f_info.f.
         """
         del free_state  # unused, but part of Callback signature

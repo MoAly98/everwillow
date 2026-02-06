@@ -9,7 +9,7 @@ description = "Statistical inference steps for high-energy physics analyses with
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 1 - Planning",
     "Intended Audience :: Science/Research",
@@ -18,9 +18,8 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
@@ -40,7 +39,7 @@ dependencies = [
 
 
 [dependency-groups]
-test = ["pytest >=7", "pytest-cov >=3", "coverage[toml]"]
+test = ["pytest >=9", "pytest-cov >=3", "coverage[toml]"]
 docs = [
     "sphinx>=7",
     "furo",
@@ -131,8 +130,13 @@ ignore = [
     "PLC0415", # `import` should be at the top-level of a file
     "PLW3201", # Dunder method `...` has no special meaning in Python 3
     "RUF052",  # Local dummy variable `...` is accessed
+    "RUF002",  # Ambiguous Unicode characters in docstrings (Greek letters are standard in physics)
+    "RUF003",  # Ambiguous Unicode characters in comments (Greek letters are standard in physics)
     "F722",    # jaxtyping: `Float32[Array, "b c"]` (https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error)
     "EM101",   # flake8-errmsg: Error message should not end with a period
+    "UP040",   # PEP 695 type alias syntax (https://peps.python.org/pep-0695/)
+    "UP046",   # PEP 695 generic class syntax
+    "UP047",   # PEP 695 generic function syntax
 ]
 select = [
     "E",

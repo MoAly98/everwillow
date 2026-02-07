@@ -216,8 +216,9 @@ def _iminimize(
 
 
 def _fit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -272,7 +273,7 @@ def _fit(
     # Wrap nll to only take free parameters
     def wrapped_nll(new_state, fn_args):
         full_state = _reconstruct_full_state(new_state, args=fn_args)
-        return nll_fn(full_state.to_pytree())
+        return nll_fn(full_state.to_pytree(), observation)
 
     # Set up solver
     if solver is None:
@@ -314,8 +315,9 @@ def _fit(
 
 
 def fit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -335,10 +337,11 @@ def fit(
 
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
-            pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            pytree as its first argument and observation data as its second.
         params: Initial parameter values organised as a state (e.g. mapping or
             nested containers).
+        observation: Observed data passed to ``nll_fn``. Can be any pytree structure
+            (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
         bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
@@ -358,40 +361,36 @@ def fit(
         >>> import everwillow.statelib as sl
 
         >>> # Basic usage
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
-        >>> result = ew.fit(my_nll, initial_params)
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["target"])**2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> observed = {"target": 2.0}
+        >>> result = ew.fit(my_nll, initial_params, observed)
         >>> result.params["mu"]  # Should be close to 2.0
 
         >>> # Fix 'sigma' while fitting mu
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> fixed = sl.State.from_pytree({"sigma": ...})
-        >>> result = ew.fit(
-        ...     my_nll,
-        ...     initial_params,
-        ...     fixed=fixed,
-        ... )
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["mu_target"]) ** 2 + (
+        ...         params["sigma"] - observation["sigma_target"]
+        ...     ) ** 2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        >>> observed = {"mu_target": 2.0, "sigma_target": 1.0}
+        >>> fixed = sl.State.from_pytree({("sigma",): ...})
+        >>> result = ew.fit(my_nll, initial_params, observed, fixed=fixed)
         >>> result.params["sigma"]  # Remains fixed
         0.5
 
         >>> # With parameter bounds
         >>> from everwillow.parameters.transforms import MinuitTransform
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> bounds = sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)})
-        >>> result = ew.fit(
-        ...     my_nll,
-        ...     initial_params,
-        ...     bounds=bounds,
-        ... )
+        >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
+        >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True
     """
     return _fit(
         nll_fn,
         params,
+        observation,
         fixed=fixed,
         bounds=bounds,
         solver=solver,
@@ -402,8 +401,9 @@ def fit(
 
 
 def ifit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -426,8 +426,10 @@ def ifit(
 
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
-            pytree as its first argument.
+            pytree as its first argument and observation data as its second.
         params: Initial parameter values organised as a state.
+        observation: Observed data passed to ``nll_fn``. Can be any pytree structure
+            (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
         bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
@@ -453,10 +455,11 @@ def ifit(
         >>> import everwillow.statelib as sl
 
         >>> # Interactive fit with progress bar
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
-        >>> result = ew.ifit(my_nll, initial_params)
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["target"])**2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> observed = {"target": 2.0}
+        >>> result = ew.ifit(my_nll, initial_params, observed)
 
         >>> # With custom callback to record history
         >>> history = ew.inference.HistoryCallback()
@@ -480,6 +483,7 @@ def ifit(
     return _fit(
         nll_fn,
         params,
+        observation,
         fixed=fixed,
         bounds=bounds,
         solver=solver,

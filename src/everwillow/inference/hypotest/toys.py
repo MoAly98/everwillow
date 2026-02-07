@@ -34,13 +34,12 @@ class ToyGenerator(eqx.Module):
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
         >>> dist = toy_gen.generate(
-        ...     nll_fn, params, ("mu",), 1.0,
+        ...     nll_fn, params, observed, ("mu",), 1.0,
         ...     sample_fn=my_sampler,
-        ...     nll_factory=my_nll_factory,
         ...     key=jax.random.key(42),
         ... )
         >>> # Use with HypoTestCalculator
-        >>> result = calc(nll_fn, params, ("mu",), 1.0, distribution=dist)
+        >>> result = calc(nll_fn, params, observed, ("mu",), 1.0, distribution=dist)
     """
 
     test_statistic: TestStatistic
@@ -48,28 +47,26 @@ class ToyGenerator(eqx.Module):
 
     def generate(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
-        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], tp.Any],
-        nll_factory: tp.Callable[[sl.State, tp.Any], tp.Callable[[PyTree], float]],
+        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
         key: PRNGKeyArray,
         **fit_kwargs: tp.Any,
     ) -> EmpiricalDistribution:
         """Generate toys and return empirical distribution.
 
         Args:
-            nll_fn: Negative log-likelihood function for observed data
-                   (used to profile nuisance parameters).
+            nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
+            observation: Observed data (used to profile nuisance parameters).
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
             sample_fn: Function to generate toy data. Called as
-                sample_fn(params_state, key) -> toy_data.
-            nll_factory: Function to create NLL from toy data. Called as
-                nll_factory(params_state, toy_data) -> nll_fn.
+                sample_fn(params_state, key) -> toy_observation.
             key: JAX PRNG key for reproducibility.
             **fit_kwargs: Additional arguments passed to fit().
 
@@ -86,34 +83,38 @@ class ToyGenerator(eqx.Module):
 
         # Alternative hypothesis: POI = poi_test (signal)
         fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        alt_result = constrained_fit(nll_fn, params, fixed_alt, **fit_kwargs)
+        alt_result = constrained_fit(
+            nll_fn, params, observation, fixed_alt, **fit_kwargs
+        )
         params_alt: sl.State[ArrayLike] = sl.State.from_pytree(alt_result.params)
 
         # Null hypothesis: POI = 0 (background-only)
         fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        null_result = constrained_fit(nll_fn, params, fixed_null, **fit_kwargs)
+        null_result = constrained_fit(
+            nll_fn, params, observation, fixed_null, **fit_kwargs
+        )
         params_null: sl.State[ArrayLike] = sl.State.from_pytree(null_result.params)
 
         # Generate toys under alternative hypothesis
         q_alt = self._run_toys(
+            nll_fn,
             params_alt,
             params,
             poi_key,
             poi_test,
             sample_fn,
-            nll_factory,
             keys_alt,
             fit_kwargs,
         )
 
         # Generate toys under null hypothesis
         q_null = self._run_toys(
+            nll_fn,
             params_null,
             params,
             poi_key,
             poi_test,
             sample_fn,
-            nll_factory,
             keys_null,
             fit_kwargs,
         )
@@ -122,26 +123,26 @@ class ToyGenerator(eqx.Module):
 
     def _run_toys(
         self,
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         sample_params: sl.State,
         fit_params: sl.State,
         poi_key: sl.K,
         poi_test: float,
-        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], tp.Any],
-        nll_factory: tp.Callable[[sl.State, tp.Any], tp.Callable[[PyTree], float]],
+        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
         keys: PRNGKeyArray,
-        fit_kwargs: dict,
+        fit_kwargs: dict[str, tp.Any],
     ) -> Array:
         """Run toys and return test statistic values.
 
         Uses jax.vmap for parallel computation across toys.
 
         Args:
+            nll_fn: Negative log-likelihood function taking (params, observation).
             sample_params: Parameters to use for sampling (State).
             fit_params: Parameters to use for fitting (State).
             poi_key: Canonical key for the POI.
             poi_test: Test value for POI.
             sample_fn: Sampling function.
-            nll_factory: NLL factory function.
             keys: Array of PRNG keys, one per toy.
             fit_kwargs: Additional fit arguments.
 
@@ -150,13 +151,11 @@ class ToyGenerator(eqx.Module):
         """
 
         def single_toy(key: PRNGKeyArray) -> Array:
-            # Generate toy data
-            toy_data = sample_fn(sample_params, key)
-            # Create NLL for this toy
-            toy_nll = nll_factory(sample_params, toy_data)
-            # Compute test statistic
+            # Generate toy observation
+            toy_observation = sample_fn(sample_params, key)
+            # Compute test statistic using toy as observation
             result = self.test_statistic(
-                toy_nll, fit_params, poi_key, poi_test, **fit_kwargs
+                nll_fn, fit_params, toy_observation, poi_key, poi_test, **fit_kwargs
             )
             return result.q
 

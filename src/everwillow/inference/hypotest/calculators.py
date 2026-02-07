@@ -41,7 +41,7 @@ class HypoTestCalculator(eqx.Module):
         ... )
         >>> calc = HypoTestCalculator(test_statistic=QTilde())
         >>> dist = QTildeAsymptotic()
-        >>> result = calc(nll_fn, params, ("mu",), poi_test=1.0, distribution=dist)
+        >>> result = calc(nll_fn, params, observed, ("mu",), poi_test=1.0, distribution=dist)
         >>> print(f"CLs = {result.cl_s:.4f}")
     """
 
@@ -49,25 +49,30 @@ class HypoTestCalculator(eqx.Module):
 
     def __call__(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         distribution: Distribution,
         *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
+        asimov_observation: PyTree | None = None,
+        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
         **fit_kwargs: tp.Any,
     ) -> HypoTestResult:
         """Run hypothesis test.
 
         Args:
-            nll_fn: Negative log-likelihood function.
+            nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
+            observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
             distribution: Distribution object for p-value computation.
-            asimov_nll_fn: Optional NLL for Asimov dataset. If provided,
-                the test statistic will store q_asimov in extras.
+            asimov_observation: Pre-computed Asimov dataset. If provided, used
+                directly for q_asimov computation.
+            predict_fn: Function to generate expected observation from parameters.
+                Used to compute Asimov data if asimov_observation not provided.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
@@ -77,9 +82,11 @@ class HypoTestCalculator(eqx.Module):
         ts_result = self.test_statistic(
             nll_fn,
             params,
+            observation,
             poi_key,
             poi_test,
-            asimov_nll_fn=asimov_nll_fn,
+            asimov_observation=asimov_observation,
+            predict_fn=predict_fn,
             **fit_kwargs,
         )
 

@@ -43,7 +43,7 @@ class TestStatistic(eqx.Module):
     handled separately by Distribution classes.
 
     Subclasses must implement:
-        - `__call__`: Compute the test statistic and populate extras
+        - `_compute_q`: Compute the core test statistic formula
 
     The extras dict typically contains:
         - q_asimov: Test statistic value from Asimov dataset
@@ -52,29 +52,98 @@ class TestStatistic(eqx.Module):
         - fit_constrained: Constrained fit result
     """
 
-    @abc.abstractmethod
     def __call__(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
+        asimov_observation: PyTree | None = None,
+        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute the test statistic.
 
         Args:
-            nll_fn: Negative log-likelihood function.
+            nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
+            observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
-            asimov_nll_fn: Optional NLL for Asimov dataset.
+            asimov_observation: Pre-computed Asimov dataset. If provided, used
+                directly for q_asimov computation.
+            predict_fn: Function to generate expected observation from parameters.
+                Used to compute Asimov data if asimov_observation not provided.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
             TestStatResult with q value and extras.
+        """
+        # Compute observed q
+        q_obs, extras = self._compute_q(
+            nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
+        )
+
+        # Resolve Asimov observation
+        asimov_obs = self._resolve_asimov(
+            asimov_observation, predict_fn, params, poi_key, poi_test
+        )
+
+        # Compute Asimov q if available
+        if asimov_obs is not None:
+            q_asimov, asimov_extras = self._compute_q(
+                nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs
+            )
+            extras["q_asimov"] = q_asimov
+            extras["asimov_fit_constrained"] = asimov_extras.get("fit_constrained")
+            extras["asimov_fit_free"] = asimov_extras.get("fit_free")
+        else:
+            extras["q_asimov"] = q_obs
+
+        return TestStatResult(q=q_obs, extras=extras)
+
+    @staticmethod
+    def _resolve_asimov(
+        asimov_observation: PyTree | None,
+        predict_fn: tp.Callable[[sl.State], PyTree] | None,
+        params: sl.State,
+        poi_key: sl.K,
+        poi_test: float,
+    ) -> PyTree | None:
+        """Resolve Asimov observation from explicit data or predict_fn."""
+        if asimov_observation is not None:
+            return asimov_observation
+        if predict_fn is not None:
+            asimov_params = sl.update(params, updates={poi_key: poi_test})
+            return predict_fn(asimov_params)
+        return None
+
+    @abc.abstractmethod
+    def _compute_q(
+        self,
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
+        params: sl.State,
+        observation: PyTree,
+        poi_key: sl.K,
+        poi_test: float,
+        **fit_kwargs: tp.Any,
+    ) -> tuple[Array, dict[str, tp.Any]]:
+        """Compute the core test statistic formula.
+
+        Subclasses implement this method with their specific formula.
+
+        Args:
+            nll_fn: Negative log-likelihood function taking (params, observation).
+            params: Initial parameter state.
+            observation: Observed data passed to nll_fn.
+            poi_key: Canonical key for the parameter of interest.
+            poi_test: Test value for the POI.
+            **fit_kwargs: Additional arguments passed to fit().
+
+        Returns:
+            Tuple of (q_value, extras_dict).
         """
         ...
 
@@ -91,49 +160,26 @@ class QTilde(TestStatistic):
     upper limit calculations.
     """
 
-    def __call__(
-        self,
-        nll_fn: tp.Callable[[PyTree], float],
-        params: sl.State,
-        poi_key: sl.K,
-        poi_test: float,
-        *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
-        **fit_kwargs: tp.Any,
-    ) -> TestStatResult:
-        """Compute q̃_μ test statistic."""
-        q_obs, extras = self._compute_q(nll_fn, params, poi_key, poi_test, **fit_kwargs)
-
-        # Compute q_asimov if asimov_nll_fn provided
-        if asimov_nll_fn is not None:
-            q_asimov, asimov_extras = self._compute_q(
-                asimov_nll_fn, params, poi_key, poi_test, **fit_kwargs
-            )
-            extras["q_asimov"] = q_asimov
-            extras["asimov_fit_constrained"] = asimov_extras.get("fit_constrained")
-            extras["asimov_fit_free"] = asimov_extras.get("fit_free")
-        else:
-            extras["q_asimov"] = q_obs
-
-        return TestStatResult(q=q_obs, extras=extras)
-
     def _compute_q(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute q̃ for a single NLL function."""
+        """Compute q̃ for a single observation."""
         # Free fit (unconditional MLE)
-        fit_free = ew.fit(nll_fn, params, **fit_kwargs)
+        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
         # Constrained fit (POI fixed at test value)
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(
+            nll_fn, params, observation, fixed, **fit_kwargs
+        )
 
         # Profile likelihood ratio
         delta_nll = fit_constrained.nll - fit_free.nll
@@ -162,43 +208,23 @@ class QMu(TestStatistic):
     No boundary is applied. Use for general hypothesis testing.
     """
 
-    def __call__(
-        self,
-        nll_fn: tp.Callable[[PyTree], float],
-        params: sl.State,
-        poi_key: sl.K,
-        poi_test: float,
-        *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
-        **fit_kwargs: tp.Any,
-    ) -> TestStatResult:
-        """Compute q_μ test statistic."""
-        q_obs, extras = self._compute_q(nll_fn, params, poi_key, poi_test, **fit_kwargs)
-
-        if asimov_nll_fn is not None:
-            q_asimov, _ = self._compute_q(
-                asimov_nll_fn, params, poi_key, poi_test, **fit_kwargs
-            )
-            extras["q_asimov"] = q_asimov
-        else:
-            extras["q_asimov"] = q_obs
-
-        return TestStatResult(q=q_obs, extras=extras)
-
     def _compute_q(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute q_μ for a single NLL function."""
-        fit_free = ew.fit(nll_fn, params, **fit_kwargs)
+        """Compute q_μ for a single observation."""
+        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(
+            nll_fn, params, observation, fixed, **fit_kwargs
+        )
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q = 2.0 * delta_nll
@@ -224,12 +250,14 @@ class Q0(TestStatistic):
 
     def __call__(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
+        asimov_observation: PyTree | None = None,
+        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute q_0 discovery test statistic.
@@ -237,31 +265,37 @@ class Q0(TestStatistic):
         Note:
             The ``poi_test`` argument is ignored; Q0 always tests μ=0 by design.
         """
-        _ = poi_test  # Unused; Q0 always tests μ=0
-        q_obs, extras = self._compute_q(nll_fn, params, poi_key, **fit_kwargs)
-
-        if asimov_nll_fn is not None:
-            q_asimov, _ = self._compute_q(asimov_nll_fn, params, poi_key, **fit_kwargs)
-            extras["q_asimov"] = q_asimov
-        else:
-            extras["q_asimov"] = q_obs
-
-        return TestStatResult(q=q_obs, extras=extras)
+        # Q0 always tests at μ=0, override poi_test
+        return super().__call__(
+            nll_fn,
+            params,
+            observation,
+            poi_key,
+            0.0,
+            asimov_observation=asimov_observation,
+            predict_fn=predict_fn,
+            **fit_kwargs,
+        )
 
     def _compute_q(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
+        poi_test: float,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute q_0 for a single NLL function."""
-        fit_free = ew.fit(nll_fn, params, **fit_kwargs)
+        """Compute q_0 for a single observation."""
+        # poi_test will always be 0.0 due to __call__ override
+        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(
+            nll_fn, params, observation, fixed, **fit_kwargs
+        )
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -287,44 +321,24 @@ class TMu(TestStatistic):
     where q_μ = -2 ln(L(μ)/L(μ̂)).
     """
 
-    def __call__(
+    def _compute_q(
         self,
-        nll_fn: tp.Callable[[PyTree], float],
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
-        poi_key: sl.K,
-        poi_test: float,
-        *,
-        asimov_nll_fn: tp.Callable[[PyTree], float] | None = None,
-        **fit_kwargs: tp.Any,
-    ) -> TestStatResult:
-        """Compute t_μ signed test statistic."""
-        t_obs, extras = self._compute_t(nll_fn, params, poi_key, poi_test, **fit_kwargs)
-
-        if asimov_nll_fn is not None:
-            t_asimov, _ = self._compute_t(
-                asimov_nll_fn, params, poi_key, poi_test, **fit_kwargs
-            )
-            extras["q_asimov"] = t_asimov
-        else:
-            extras["q_asimov"] = t_obs
-
-        return TestStatResult(q=t_obs, extras=extras)
-
-    def _compute_t(
-        self,
-        nll_fn: tp.Callable[[PyTree], float],
-        params: sl.State,
+        observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute t_μ for a single NLL function."""
-        fit_free = ew.fit(nll_fn, params, **fit_kwargs)
+        """Compute t_μ for a single observation."""
+        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(
+            nll_fn, params, observation, fixed, **fit_kwargs
+        )
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q = 2.0 * delta_nll

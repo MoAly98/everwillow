@@ -63,12 +63,16 @@ def simple_quadratic_nll(sigma_x: float = 1.0, sigma_y: float = 1.0):
     See module docstring for derivation of expected Hessian/covariance/uncertainties.
     """
 
-    def nll(params):
-        return (params["x"] - 2.0) ** 2 / (2 * sigma_x**2) + (
-            params["y"] - 3.0
+    def nll(params, observation):
+        return (params["x"] - observation["x"]) ** 2 / (2 * sigma_x**2) + (
+            params["y"] - observation["y"]
         ) ** 2 / (2 * sigma_y**2)
 
     return nll
+
+
+# Standard observation for tests - the "true" values
+OBSERVED: dict[str, float] = {"x": 2.0, "y": 3.0}
 
 
 # ============================================================================
@@ -85,7 +89,7 @@ class TestHessianMatrix:
         nll = simple_quadratic_nll(sigma_x, sigma_y)
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        hess = hessian_matrix(nll, params)
+        hess = hessian_matrix(nll, params, OBSERVED)
 
         # H_ii = 1/sigma_i^2 (see module docstring)
         expected_hess = jnp.diag(jnp.array([1 / sigma_x**2, 1 / sigma_y**2]))
@@ -96,7 +100,7 @@ class TestHessianMatrix:
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        hess = hessian_matrix(nll, params)
+        hess = hessian_matrix(nll, params, OBSERVED)
 
         assert hess.shape == (2, 2)
 
@@ -106,7 +110,7 @@ class TestHessianMatrix:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        hess = hessian_matrix(nll, params, fixed=fixed)
+        hess = hessian_matrix(nll, params, OBSERVED, fixed=fixed)
 
         # Only x is free, so Hessian is 1x1
         assert hess.shape == (1, 1)
@@ -118,20 +122,21 @@ class TestHessianMatrix:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"x": ..., "y": ...})
 
-        hess = hessian_matrix(nll, params, fixed=fixed)
+        hess = hessian_matrix(nll, params, OBSERVED, fixed=fixed)
 
         assert hess.shape == (0, 0)
 
     def test_symmetric(self):
         """Hessian should be symmetric."""
 
-        def correlated_nll(params):
+        def correlated_nll(params, observation):
             # NLL with off-diagonal Hessian terms
+            del observation
             x, y = params["x"], params["y"]
             return x**2 + y**2 + x * y
 
         params: FState = sl.State.from_pytree({"x": 1.0, "y": 1.0})
-        hess = hessian_matrix(correlated_nll, params)
+        hess = hessian_matrix(correlated_nll, params, {})
 
         assert jnp.allclose(hess, hess.T, atol=1e-10)
 
@@ -140,7 +145,7 @@ class TestHessianMatrix:
         nll = simple_quadratic_nll()
 
         with pytest.raises(TypeError, match="params must be a State"):
-            hessian_matrix(nll, {"x": 2.0, "y": 3.0})  # type: ignore[arg-type]
+            hessian_matrix(nll, {"x": 2.0, "y": 3.0}, OBSERVED)  # type: ignore[arg-type]
 
     def test_validates_fixed_type(self):
         """Should raise TypeError if fixed is not State or None."""
@@ -148,7 +153,7 @@ class TestHessianMatrix:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
         with pytest.raises(TypeError, match="fixed must be a State or None"):
-            hessian_matrix(nll, params, fixed={"y": ...})  # type: ignore[arg-type]
+            hessian_matrix(nll, params, OBSERVED, fixed={"y": ...})  # type: ignore[arg-type]
 
 
 # ============================================================================
@@ -165,7 +170,7 @@ class TestCovarianceMatrix:
         nll = simple_quadratic_nll(sigma_x, sigma_y)
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        cov = covariance_matrix(nll, params)
+        cov = covariance_matrix(nll, params, OBSERVED)
 
         # Cov_ii = sigma_i^2 (see module docstring)
         expected_cov = jnp.diag(jnp.array([sigma_x**2, sigma_y**2]))
@@ -176,7 +181,7 @@ class TestCovarianceMatrix:
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        cov = covariance_matrix(nll, params)
+        cov = covariance_matrix(nll, params, OBSERVED)
 
         # All eigenvalues should be positive
         eigenvalues = jnp.linalg.eigvalsh(cov)
@@ -189,7 +194,7 @@ class TestCovarianceMatrix:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        cov = covariance_matrix(nll, params, fixed=fixed)
+        cov = covariance_matrix(nll, params, OBSERVED, fixed=fixed)
 
         assert cov.shape == (1, 1)
         assert jnp.isclose(cov[0, 0], sigma_x**2, atol=1e-10)
@@ -208,7 +213,7 @@ class TestCorrelationMatrix:
         nll = simple_quadratic_nll(0.5, 0.25)
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        corr = correlation_matrix(nll, params)
+        corr = correlation_matrix(nll, params, OBSERVED)
 
         assert jnp.allclose(jnp.diag(corr), 1.0, atol=1e-10)
 
@@ -218,7 +223,7 @@ class TestCorrelationMatrix:
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        corr = correlation_matrix(nll, params)
+        corr = correlation_matrix(nll, params, OBSERVED)
 
         # Off-diagonal should be 0
         assert jnp.isclose(corr[0, 1], 0.0, atol=1e-10)
@@ -227,13 +232,14 @@ class TestCorrelationMatrix:
     def test_correlated_params(self):
         """Correlated params should have off-diagonal in [-1, 1]."""
 
-        def correlated_nll(params):
+        def correlated_nll(params, observation):
+            del observation
             x, y = params["x"], params["y"]
             # Introduce correlation via cross term
             return x**2 + y**2 + 0.5 * x * y
 
         params: FState = sl.State.from_pytree({"x": 0.0, "y": 0.0})
-        corr = correlation_matrix(correlated_nll, params)
+        corr = correlation_matrix(correlated_nll, params, {})
 
         # Off-diagonal should be non-zero and in valid range
         assert -1.0 <= corr[0, 1] <= 1.0
@@ -244,12 +250,13 @@ class TestCorrelationMatrix:
     def test_values_in_valid_range(self):
         """All correlation values should be in [-1, 1]."""
 
-        def correlated_nll(params):
+        def correlated_nll(params, observation):
+            del observation
             x, y = params["x"], params["y"]
             return x**2 + y**2 + 0.8 * x * y
 
         params: FState = sl.State.from_pytree({"x": 0.0, "y": 0.0})
-        corr = correlation_matrix(correlated_nll, params)
+        corr = correlation_matrix(correlated_nll, params, {})
 
         assert jnp.all(corr >= -1.0)
         assert jnp.all(corr <= 1.0)
@@ -269,7 +276,7 @@ class TestUncertainties:
         nll = simple_quadratic_nll(sigma_x, sigma_y)
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        errs = uncertainties(nll, params)
+        errs = uncertainties(nll, params, OBSERVED)
 
         # sigma_i = sqrt(Cov_ii) = sigma_i (see module docstring)
         assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
@@ -280,7 +287,7 @@ class TestUncertainties:
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        errs = uncertainties(nll, params)
+        errs = uncertainties(nll, params, OBSERVED)
 
         assert isinstance(errs, sl.State)
 
@@ -291,7 +298,7 @@ class TestUncertainties:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        errs = uncertainties(nll, params, fixed=fixed)
+        errs = uncertainties(nll, params, OBSERVED, fixed=fixed)
 
         assert ("x",) in errs
         assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
@@ -302,11 +309,11 @@ class TestUncertainties:
     def test_single_parameter(self):
         """Should work with single parameter."""
 
-        def nll(params):
-            return (params["x"] - 5.0) ** 2 / (2 * 0.3**2)
+        def nll(params, observation):
+            return (params["x"] - observation["x"]) ** 2 / (2 * 0.3**2)
 
         params: FState = sl.State.from_pytree({"x": 5.0})
-        errs = uncertainties(nll, params)
+        errs = uncertainties(nll, params, {"x": 5.0})
 
         assert jnp.isclose(errs["x",], 0.3, atol=1e-10)
 
@@ -314,11 +321,11 @@ class TestUncertainties:
         """Should work with nested parameter structure."""
         sigma = 0.4
 
-        def nll(params):
-            return (params["level1"]["mu"] - 2.0) ** 2 / (2 * sigma**2)
+        def nll(params, observation):
+            return (params["level1"]["mu"] - observation["mu"]) ** 2 / (2 * sigma**2)
 
         params: FState = sl.State.from_pytree({"level1": {"mu": 2.0}})
-        errs = uncertainties(nll, params)
+        errs = uncertainties(nll, params, {"mu": 2.0})
 
         assert jnp.isclose(errs["level1", "mu"], sigma, atol=1e-10)
 
@@ -340,11 +347,11 @@ class TestUncertaintyIntegration:
         initial_params: FState = sl.State.from_pytree({"x": 0.0, "y": 0.0})
 
         # Fit
-        result = ew.fit(nll, initial_params)
+        result = ew.fit(nll, initial_params, OBSERVED)
 
         # Extract uncertainties at fitted params
         fitted_params: FState = sl.State.from_pytree(result.params)
-        errs = uncertainties(nll, fitted_params)
+        errs = uncertainties(nll, fitted_params, OBSERVED)
 
         # Check fitted values
         assert jnp.isclose(result.params["x"], 2.0, atol=1e-4)
@@ -359,8 +366,8 @@ class TestUncertaintyIntegration:
         nll = simple_quadratic_nll(0.5, 0.25)
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        cov = covariance_matrix(nll, params)
-        errs = uncertainties(nll, params)
+        cov = covariance_matrix(nll, params, OBSERVED)
+        errs = uncertainties(nll, params, OBSERVED)
 
         # Manual extraction from covariance diagonal
         expected_errs = jnp.sqrt(jnp.diag(cov))
@@ -372,8 +379,8 @@ class TestUncertaintyIntegration:
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        hess = hessian_matrix(nll, params)
-        cov = covariance_matrix(nll, params)
+        hess = hessian_matrix(nll, params, OBSERVED)
+        cov = covariance_matrix(nll, params, OBSERVED)
 
         product = hess @ cov
         identity = jnp.eye(2)

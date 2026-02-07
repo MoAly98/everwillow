@@ -28,8 +28,9 @@ def cl_s(palt: Array, pnull: Array) -> Array:
 
 
 def constrained_fit(
-    nll_fn: tp.Callable[[PyTree], float],
+    nll_fn: tp.Callable[[PyTree, PyTree], float],
     params: sl.State,
+    observation: PyTree,
     fixed: sl.State,
     **fit_kwargs: tp.Any,
 ) -> ew.FitResult:
@@ -40,8 +41,9 @@ def constrained_fit(
     at the fixed point rather than running the optimizer.
 
     Args:
-        nll_fn: Negative log-likelihood function.
+        nll_fn: Negative log-likelihood function taking (params, observation).
         params: Initial parameter state.
+        observation: Observed data passed to nll_fn.
         fixed: State specifying which parameters to fix and their values.
         **fit_kwargs: Additional arguments passed to fit().
 
@@ -54,7 +56,7 @@ def constrained_fit(
     if len(free_keys) == 0:
         # All parameters are fixed - just evaluate NLL
         updated_params = sl.update(params, updates=fixed)
-        nll_value = jnp.asarray(nll_fn(updated_params.to_pytree()))
+        nll_value = jnp.asarray(nll_fn(updated_params.to_pytree(), observation))
         return ew.FitResult(
             params=updated_params.to_pytree(),
             nll=nll_value,
@@ -62,4 +64,4 @@ def constrained_fit(
             solver_result=None,
         )
 
-    return ew.fit(nll_fn, params, fixed=fixed, **fit_kwargs)
+    return ew.fit(nll_fn, params, observation, fixed=fixed, **fit_kwargs)

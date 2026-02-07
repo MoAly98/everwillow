@@ -33,10 +33,17 @@ class ToyGenerator(eqx.Module):
 
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
+        >>> # With predict_fn (default Poisson sampler)
         >>> dist = toy_gen.generate(
         ...     nll_fn, params, observed, ("mu",), 1.0,
-        ...     sample_fn=my_sampler,
         ...     key=jax.random.key(42),
+        ...     predict_fn=my_predict_fn,
+        ... )
+        >>> # Or with custom sampler
+        >>> dist = toy_gen.generate(
+        ...     nll_fn, params, observed, ("mu",), 1.0,
+        ...     key=jax.random.key(42),
+        ...     sample_fn=my_custom_sampler,
         ... )
         >>> # Use with HypoTestCalculator
         >>> result = calc(nll_fn, params, observed, ("mu",), 1.0, distribution=dist)
@@ -53,8 +60,9 @@ class ToyGenerator(eqx.Module):
         poi_key: sl.K,
         poi_test: float,
         *,
-        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
         key: PRNGKeyArray,
+        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree] | None = None,
+        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
         **fit_kwargs: tp.Any,
     ) -> EmpiricalDistribution:
         """Generate toys and return empirical distribution.
@@ -65,14 +73,25 @@ class ToyGenerator(eqx.Module):
             observation: Observed data (used to profile nuisance parameters).
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
-            sample_fn: Function to generate toy data. Called as
-                sample_fn(params_state, key) -> toy_observation.
             key: JAX PRNG key for reproducibility.
+            sample_fn: Function to generate toy data. Called as
+                sample_fn(params_state, key) -> toy_observation. If None,
+                a default Poisson sampler is created using predict_fn.
+            predict_fn: Function returning expected observation given parameters.
+                Used to create default Poisson sampler if sample_fn is None.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
             EmpiricalDistribution with q_alt and q_null arrays.
+
+        Raises:
+            ValueError: If neither sample_fn nor predict_fn is provided.
         """
+        # Create default Poisson sampler if sample_fn not provided
+        if sample_fn is None:
+            if predict_fn is None:
+                raise ValueError("Either sample_fn or predict_fn must be provided")
+            sample_fn = self._make_poisson_sampler(predict_fn)
         # Split keys for alt and null toys
         keys = jax.random.split(key, self.ntoys * 2)
         keys_alt = keys[: self.ntoys]
@@ -161,3 +180,22 @@ class ToyGenerator(eqx.Module):
 
         # Run toys in parallel using vmap
         return jax.vmap(single_toy)(keys)
+
+    @staticmethod
+    def _make_poisson_sampler(
+        predict_fn: tp.Callable[[sl.State], PyTree],
+    ) -> tp.Callable[[sl.State, PRNGKeyArray], PyTree]:
+        """Create a Poisson sampler from a prediction function.
+
+        Args:
+            predict_fn: Function returning expected observation given parameters.
+
+        Returns:
+            Sampling function that generates Poisson-distributed observations.
+        """
+
+        def sample_fn(params_state: sl.State, key: PRNGKeyArray) -> PyTree:
+            expected = predict_fn(params_state)
+            return jax.tree.map(lambda x: jax.random.poisson(key, x), expected)
+
+        return sample_fn

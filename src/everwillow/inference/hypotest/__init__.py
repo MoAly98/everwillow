@@ -53,6 +53,7 @@ from everwillow.inference.hypotest.toys import ToyGenerator
 from everwillow.inference.hypotest.upper_limit import (
     expected_upper_limit,
     upper_limit,
+    upper_limit_scan,
     upper_limit_toys,
 )
 
@@ -78,5 +79,6 @@ __all__ = [
     "cl_s",
     "expected_upper_limit",
     "upper_limit",
+    "upper_limit_scan",
     "upper_limit_toys",
 ]

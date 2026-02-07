@@ -35,7 +35,12 @@ from jaxtyping import Array, PRNGKeyArray
 from everwillow.inference.hypotest._results import ExpectedLimitResult, HypoTestResult
 from everwillow.inference.hypotest._utils import cl_s
 
-__all__ = ["expected_upper_limit", "upper_limit", "upper_limit_toys"]
+__all__ = [
+    "expected_upper_limit",
+    "upper_limit",
+    "upper_limit_scan",
+    "upper_limit_toys",
+]
 
 
 def upper_limit(
@@ -43,13 +48,14 @@ def upper_limit(
     bounds: tuple[float, float],
     level: float = 0.05,
     *,
+    solver: optx.AbstractRootFinder | None = None,
     rtol: float = 1e-4,
     atol: float = 1e-6,
     max_steps: int = 100,
 ) -> Array:
     """Find POI value where objective function equals target level.
 
-    Uses bisection root-finding to find where objective_fn(poi) = level.
+    Uses root-finding to find where objective_fn(poi) = level.
     Pure JAX implementation via optimistix, fully JIT-compatible.
 
     This is a generic root finder - the user composes the objective function
@@ -61,9 +67,10 @@ def upper_limit(
                       Should be monotonic within bounds for reliable convergence.
         bounds: (lower, upper) search range for POI value.
         level: Target value for the objective function (default 0.05).
-        rtol: Relative tolerance for convergence.
-        atol: Absolute tolerance for convergence.
-        max_steps: Maximum bisection iterations.
+        solver: Root-finding solver to use. Defaults to optx.Bisection.
+        rtol: Relative tolerance for convergence (used by default solver).
+        atol: Absolute tolerance for convergence (used by default solver).
+        max_steps: Maximum iterations.
 
     Returns:
         POI value where objective_fn(poi) = level.
@@ -79,18 +86,17 @@ def upper_limit(
         ...     return result.cl_s
         >>> limit = upper_limit(cls_objective, bounds=(0, 5), level=0.05)
 
-        >>> # Find where palt = 0.05 (frequentist limit)
-        >>> def palt_objective(poi):
-        ...     result = calc(nll_fn, params, ("mu",), poi)
-        ...     return result.palt
-        >>> limit = upper_limit(palt_objective, bounds=(0, 5), level=0.05)
+        >>> # With custom solver
+        >>> solver = optx.Newton(rtol=1e-5, atol=1e-5)
+        >>> limit = upper_limit(cls_objective, bounds=(0, 5), solver=solver)
     """
 
     def root_objective(poi, _args):
         """Objective for root finding: f(poi) - level = 0."""
         return objective_fn(poi) - level
 
-    solver: optx.Bisection = optx.Bisection(rtol=rtol, atol=atol)  # type: ignore[call-arg]
+    if solver is None:
+        solver = optx.Bisection(rtol=rtol, atol=atol)  # type: ignore[call-arg]
 
     # Initial guess at midpoint
     y0 = jnp.array((bounds[0] + bounds[1]) / 2.0)
@@ -180,6 +186,62 @@ def upper_limit_toys(
     _, lo, hi, _ = final_state
 
     return (lo + hi) / 2.0
+
+
+def upper_limit_scan(
+    objective_fn: tp.Callable[[float], Array],
+    scan: Array,
+    level: float = 0.05,
+) -> Array:
+    """Find POI value where objective equals target level via grid scan.
+
+    Evaluates the objective function on a grid of POI values, then
+    interpolates to find where it crosses the target level.
+    Fully JIT-compatible via jax.vmap and jnp.interp.
+
+    This is useful when:
+    - The objective function is expensive and you want to reuse evaluations
+    - You need to visualize the objective curve
+    - Root-finding fails due to non-monotonicity
+
+    Args:
+        objective_fn: Function mapping POI value to quantity of interest.
+                      Must be JAX-traceable.
+        scan: Array of POI values to evaluate. Should be monotonically
+              increasing and span the expected limit location.
+        level: Target value for the objective function (default 0.05).
+
+    Returns:
+        POI value where objective_fn(poi) = level, found by interpolation.
+
+    Note:
+        The accuracy depends on the density of scan points near the crossing.
+        For CLs limits, the objective typically decreases as POI increases.
+
+    Examples:
+        >>> # Scan CLs on a grid
+        >>> scan = jnp.linspace(0, 2, 50)
+        >>> limit = upper_limit_scan(
+        ...     lambda poi: calc(nll_fn, params, observed, ("mu",), poi).cl_s,
+        ...     scan,
+        ...     level=0.05,
+        ... )
+
+        >>> # With finer grid near expected limit
+        >>> scan = jnp.concatenate([
+        ...     jnp.linspace(0, 0.5, 10),
+        ...     jnp.linspace(0.5, 1.5, 30),
+        ...     jnp.linspace(1.5, 3, 10),
+        ... ])
+        >>> limit = upper_limit_scan(cls_objective, scan, level=0.05)
+    """
+    # Evaluate objective on the scan grid
+    values = jax.vmap(objective_fn)(scan)
+
+    # Interpolate to find crossing point
+    # For CLs: objective decreases as POI increases, so reverse for interp
+    # jnp.interp expects xp to be increasing, so we reverse both arrays
+    return jnp.interp(level, values[::-1], scan[::-1])
 
 
 def expected_upper_limit(

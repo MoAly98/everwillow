@@ -196,6 +196,9 @@ class ToyGenerator(eqx.Module):
 
         def sample_fn(params_state: sl.State, key: PRNGKeyArray) -> PyTree:
             expected = predict_fn(params_state)
-            return jax.tree.map(lambda x: jax.random.poisson(key, x), expected)
+            leaves, treedef = jax.tree_util.tree_flatten(expected)
+            subkeys = jax.random.split(key, len(leaves))
+            keys_tree = jax.tree_util.tree_unflatten(treedef, subkeys)
+            return jax.tree.map(jax.random.poisson, keys_tree, expected)
 
         return sample_fn

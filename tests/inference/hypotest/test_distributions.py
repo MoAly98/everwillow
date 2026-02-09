@@ -281,13 +281,15 @@ class TestTMuAsymptotic:
 
         For t=t_asimov=4.0:
         - sigma = √|t_asimov| = 2
-        - pnull = 2 * (1 - Φ(|t|/sigma)) = 2 * (1 - Φ(2)) = 0.0456
-        - palt = 2 * (1 - Φ((|t| + √|t_asimov|)/sigma)) = 2 * (1 - Φ(2)) = 0.0456
+        - pnull = 2 * (1 - Φ(|t|/sigma)) = 2 * (1 - Φ(2)) ≈ 0.0456
+        - palt = 2 * (1 - Φ((|t| + sigma)/sigma)) = 2 * (1 - Φ(3)) ≈ 0.0027
         """
         t_asimov = 4.0
         sigma = math.sqrt(t_asimov)
-        expected_pnull = 2 * normal_sf(t_asimov / sigma)  # 0.0456
-        expected_palt = 2 * normal_sf((t_asimov + sigma) / sigma)  # 0.00134
+        expected_pnull = 2 * normal_sf(t_asimov / sigma)  # 2 * (1 - Φ(2)) ≈ 0.0456
+        expected_palt = 2 * normal_sf(
+            (t_asimov + sigma) / sigma
+        )  # 2 * (1 - Φ(3)) ≈ 0.0027
 
         result = TSResult(
             q=jnp.array(t_asimov), extras={"q_asimov": jnp.array(t_asimov)}

@@ -248,6 +248,7 @@ def expected_upper_limit(
     calc_fn: tp.Callable[[float], HypoTestResult],
     bounds: tuple[float, float],
     level: float = 0.05,
+    objective_fn: tp.Callable[[tuple[Array, Array]], Array] | None = None,
     **solver_kwargs: tp.Any,
 ) -> ExpectedLimitResult:
     """Compute observed and expected upper limits with Brazil bands.
@@ -259,7 +260,9 @@ def expected_upper_limit(
         calc_fn: Function mapping POI value to HypoTestResult.
                  Should call AsymptoticCalculator and return its result.
         bounds: (lower, upper) search range for POI value.
-        level: Target CLs level (default 0.05 for 95% CL).
+        level: Target level (default 0.05 for 95% CL).
+        objective_fn: Function mapping (pnull, palt) tuple to scalar objective.
+                      Defaults to CLs = palt / pnull.
         **solver_kwargs: Additional arguments passed to :func:`upper_limit`
             (e.g., ``rtol``, ``atol``, ``max_steps``).
 
@@ -275,39 +278,52 @@ def expected_upper_limit(
         >>> print(f"Observed: {result.observed:.3f}")
         >>> print(f"Expected: {result.expected:.3f} (+1σ: {result.plus_1sigma:.3f})")
     """
+
+    def _default_objective(pvals: tuple[Array, Array]) -> Array:
+        return cl_s(pvals[1], pvals[0])
+
+    if objective_fn is None:
+        objective_fn = _default_objective
+
     # Observed limit
     observed = upper_limit(
-        lambda poi: calc_fn(poi).cl_s,
+        lambda poi: objective_fn((calc_fn(poi).pnull, calc_fn(poi).palt)),
         bounds,
         level,
         **solver_kwargs,
     )
 
     # Expected limits at each sigma band
-    def limit_at_band(band_idx: int) -> Array:
-        """Compute limit where expected CLs at given band equals level."""
-
-        def objective(poi: float) -> Array:
-            result = calc_fn(poi)
-            bands = result.expected_bands
-            # Each band contains (pnull, palt) tuple
-            band_list = [
-                bands.minus_2sigma,
-                bands.minus_1sigma,
-                bands.median,
-                bands.plus_1sigma,
-                bands.plus_2sigma,
-            ]
-            pnull, palt = band_list[band_idx]
-            return cl_s(palt, pnull)
-
-        return upper_limit(objective, bounds, level, **solver_kwargs)
-
-    minus_2sigma = limit_at_band(0)
-    minus_1sigma = limit_at_band(1)
-    expected = limit_at_band(2)
-    plus_1sigma = limit_at_band(3)
-    plus_2sigma = limit_at_band(4)
+    minus_2sigma = upper_limit(
+        lambda poi: objective_fn(calc_fn(poi).expected_bands.minus_2sigma),
+        bounds,
+        level,
+        **solver_kwargs,
+    )
+    minus_1sigma = upper_limit(
+        lambda poi: objective_fn(calc_fn(poi).expected_bands.minus_1sigma),
+        bounds,
+        level,
+        **solver_kwargs,
+    )
+    expected = upper_limit(
+        lambda poi: objective_fn(calc_fn(poi).expected_bands.median),
+        bounds,
+        level,
+        **solver_kwargs,
+    )
+    plus_1sigma = upper_limit(
+        lambda poi: objective_fn(calc_fn(poi).expected_bands.plus_1sigma),
+        bounds,
+        level,
+        **solver_kwargs,
+    )
+    plus_2sigma = upper_limit(
+        lambda poi: objective_fn(calc_fn(poi).expected_bands.plus_2sigma),
+        bounds,
+        level,
+        **solver_kwargs,
+    )
 
     return ExpectedLimitResult(
         observed=observed,

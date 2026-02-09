@@ -60,10 +60,10 @@ class ExpectedBands(eqx.Module):
     def cls_bands(self) -> tuple[Array, Array, Array, Array, Array]:
         """Return CLs values at each band.
 
-        CLs = palt / pnull
+        ``CLs = palt / pnull``
 
         Returns:
-            Tuple of (cls_-2σ, cls_-1σ, cls_med, cls_+1σ, cls_+2σ).
+            Tuple of CLs at (-2σ, -1σ, median, +1σ, +2σ).
         """
 
         return (

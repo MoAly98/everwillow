@@ -59,6 +59,10 @@ class TestMinuitTransform:
     def test_init_requires_finite_bounds(self):
         """constructor enforces finite and ordered bounds."""
         with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
+        ):
+            transforms.MinuitTransform(lower=jnp.inf, upper=1.0)
+        with pytest.raises(
             (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
         ):
             transforms.MinuitTransform(lower=0.0, upper=jnp.inf)
@@ -108,6 +112,10 @@ class TestSigmoidTransform:
 
     def test_init_requires_valid_bounds(self):
         """constructor enforces finite and ordered bounds."""
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
+        ):
+            transforms.SigmoidTransform(lower=jnp.inf, upper=1.0)
         with pytest.raises(
             (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
         ):

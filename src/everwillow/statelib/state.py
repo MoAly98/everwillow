@@ -449,8 +449,5 @@ def update(
     for key, value in updates.items():
         if value is ...:
             continue
-        if key not in data:
-            msg = f"cannot update missing key {key}"
-            raise KeyError(msg)
         data[key] = value
     return State(data, treedefmeta=state.treedefmeta)

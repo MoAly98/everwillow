@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing as tp
 from functools import partial
+from unittest.mock import MagicMock, patch
 
 import equinox as eqx
 import jax
@@ -1213,3 +1214,131 @@ class TestIfit:
 
         assert jnp.isclose(result.params["x"], 5.0, atol=1e-6)
         assert float(result.nll) < 1e-10
+
+
+# ============================================================================
+# Argument forwarding tests (call_args verification)
+# ============================================================================
+
+
+class TestArgumentForwarding:
+    """Tests verifying kwargs are properly forwarded through function chains."""
+
+    def test_fit_forwards_minimise_kwargs(self):
+        """fit() should forward **minimise_kwargs to optx.minimise."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+            mock_solution = MagicMock()
+            mock_solution.value = sl.State.from_pytree({"x": 1.0})
+            mock_solution.state.f_info.f = jnp.array(0.0)
+            mock_solution.result = optx.RESULTS.successful
+            mock_minimise.return_value = mock_solution
+
+            ew.fit(
+                nll,
+                sl.State.from_pytree({"x": 0.0}),
+                {"target": 1.0},
+                throw=False,
+            )
+
+            assert mock_minimise.call_count == 1
+            call_kwargs = mock_minimise.call_args[1]
+            assert call_kwargs["throw"] is False
+
+    def test_fit_forwards_max_steps(self):
+        """fit() should forward max_steps to optx.minimise."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+            mock_solution = MagicMock()
+            mock_solution.value = sl.State.from_pytree({"x": 1.0})
+            mock_solution.state.f_info.f = jnp.array(0.0)
+            mock_solution.result = optx.RESULTS.successful
+            mock_minimise.return_value = mock_solution
+
+            ew.fit(
+                nll,
+                sl.State.from_pytree({"x": 0.0}),
+                {"target": 1.0},
+                max_steps=500,
+            )
+
+            call_kwargs = mock_minimise.call_args[1]
+            assert call_kwargs["max_steps"] == 500
+
+    def test_fit_forwards_solver(self):
+        """fit() should forward custom solver to optx.minimise."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        custom_solver = optx.GradientDescent(learning_rate=0.1, rtol=1e-3, atol=1e-3)
+
+        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+            mock_solution = MagicMock()
+            mock_solution.value = sl.State.from_pytree({"x": 1.0})
+            mock_solution.state.f_info.f = jnp.array(0.0)
+            mock_solution.result = optx.RESULTS.successful
+            mock_minimise.return_value = mock_solution
+
+            ew.fit(
+                nll,
+                sl.State.from_pytree({"x": 0.0}),
+                {"target": 1.0},
+                solver=custom_solver,
+            )
+
+            call_args = mock_minimise.call_args[0]
+            assert call_args[1] is custom_solver
+
+    def test_ifit_forwards_progress_flag(self):
+        """ifit() should forward progress to _make_progress_context."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        with patch(
+            "everwillow.inference.fitting._make_progress_context"
+        ) as mock_context:
+            mock_context.return_value.__enter__ = lambda self: None
+            mock_context.return_value.__exit__ = lambda self, *args: False
+
+            ew.ifit(
+                nll,
+                sl.State.from_pytree({"x": 0.0}),
+                {"target": 1.0},
+                progress=True,
+            )
+
+            # _make_progress_context(enabled, max_steps) - positional args
+            call_args = mock_context.call_args[0]
+            assert call_args[0] is True  # enabled
+
+    def test_ifit_forwards_max_steps_to_progress(self):
+        """ifit() should forward max_steps to _make_progress_context."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        with patch(
+            "everwillow.inference.fitting._make_progress_context"
+        ) as mock_context:
+            mock_context.return_value.__enter__ = lambda self: None
+            mock_context.return_value.__exit__ = lambda self, *args: False
+
+            ew.ifit(
+                nll,
+                sl.State.from_pytree({"x": 0.0}),
+                {"target": 1.0},
+                progress=True,
+                max_steps=999,
+            )
+
+            # _make_progress_context(enabled, max_steps) - positional args
+            call_args = mock_context.call_args[0]
+            assert call_args[1] == 999  # max_steps

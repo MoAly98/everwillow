@@ -76,7 +76,7 @@ def test_from_pytree_with_nested_sequences() -> None:
 
 
 def test_from_pytree_with_registered_dataclass() -> None:
-    """Registered dataclasses produce FlattenedIndexKey entries."""
+    """Registered dataclasses produce GetAttrKey entries."""
     import dataclasses
     from functools import partial
 
@@ -92,6 +92,33 @@ def test_from_pytree_with_registered_dataclass() -> None:
     state = sl.State.from_pytree(tree)
 
     assert state.to_dict() == {("v", "x"): 1.0, ("v", "y"): 2.0}
+
+
+def test_from_pytree_with_flattened_index_key() -> None:
+    """Custom pytree with FlattenedIndexKey produces integer-indexed keys."""
+    import jax.tree_util as jtu
+
+    class Pair:
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
+
+    def flatten_with_keys(obj):
+        children = (
+            (jtu.FlattenedIndexKey(0), obj.a),
+            (jtu.FlattenedIndexKey(1), obj.b),
+        )
+        return children, None
+
+    def unflatten(aux, children):
+        return Pair(*children)
+
+    jtu.register_pytree_with_keys(Pair, flatten_with_keys, unflatten)
+
+    tree = {"p": Pair(1.0, 2.0)}
+    state = sl.State.from_pytree(tree)
+
+    assert state.to_dict() == {("p", 0): 1.0, ("p", 1): 2.0}
 
 
 def test_from_pytree_with_tuple_dict_keys() -> None:
@@ -169,6 +196,15 @@ def test_update_rejects_non_state() -> None:
     """Calling ``update`` on a plain dict raises TypeError."""
     with pytest.raises(TypeError, match="State types"):
         sl.update({"a": 1.0}, updates={})
+
+
+def test_update_with_state_updates_missing_key_raises() -> None:
+    """Updating with a State that has a missing key raises KeyError."""
+    state = sl.State.from_pytree({"a": 1.0})
+    updates = sl.State.from_pytree({"missing": 2.0})
+
+    with pytest.raises(KeyError, match="cannot update missing key"):
+        sl.update(state, updates=updates)
 
 
 # -- Merge / Split --
@@ -303,3 +339,33 @@ def test_combine_partitions_rejects_mismatched_origins() -> None:
 
     with pytest.raises(ValueError, match="same original state"):
         sl.combine_partitions(left_one, right_two)
+
+
+# -- Edge cases and error handling --
+
+
+def test_canonicalize_key_rejects_unknown_key_type() -> None:
+    """canonicalize_key raises TypeError for unsupported key types."""
+
+    class UnknownKeyType:
+        pass
+
+    with pytest.raises(TypeError, match="Unrecognised key path entry"):
+        sl.canonicalize_key((UnknownKeyType(),))
+
+
+def test_treedefmeta_to_pytree_rejects_mismatched_keys() -> None:
+    """TreeDefMeta.to_pytree raises KeyError when mapping keys don't match."""
+    state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
+    treedefmeta = state.treedefmeta
+
+    wrong_mapping = {("x",): 1.0, ("y",): 2.0}
+
+    with pytest.raises(KeyError, match="Missing"):
+        treedefmeta.to_pytree(wrong_mapping)
+
+
+def test_state_constructor_rejects_invalid_treedefmeta() -> None:
+    """State constructor raises TypeError if treedefmeta is not TreeDefMeta."""
+    with pytest.raises(TypeError, match="TreeDefMeta"):
+        sl.State(mapping={("a",): 1.0}, treedefmeta="not a TreeDefMeta")

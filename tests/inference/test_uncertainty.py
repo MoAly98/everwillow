@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import typing as tp
 from types import EllipsisType
+from unittest.mock import patch
 
 import jax
 import jax.numpy as jnp
@@ -385,3 +386,60 @@ class TestUncertaintyIntegration:
         product = hess @ cov
         identity = jnp.eye(2)
         assert jnp.allclose(product, identity, atol=1e-10)
+
+
+# ============================================================================
+# Argument forwarding tests (call_args verification)
+# ============================================================================
+
+
+class TestArgumentForwarding:
+    """Tests verifying kwargs are properly forwarded through function chains."""
+
+    def test_covariance_matrix_forwards_fixed_to_hessian(self):
+        """covariance_matrix() should forward fixed to hessian_matrix."""
+        nll = simple_quadratic_nll()
+        params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
+        fixed: EState = sl.State.from_pytree({"y": ...})
+
+        with patch("everwillow.inference.uncertainty.hessian_matrix") as mock_hessian:
+            # Return a valid 1x1 hessian (since y is fixed)
+            mock_hessian.return_value = jnp.array([[1.0]])
+
+            covariance_matrix(nll, params, OBSERVED, fixed=fixed)
+
+            assert mock_hessian.call_count == 1
+            call_kwargs = mock_hessian.call_args[1]
+            assert call_kwargs["fixed"] is fixed
+
+    def test_correlation_matrix_forwards_fixed_to_covariance(self):
+        """correlation_matrix() should forward fixed to covariance_matrix."""
+        nll = simple_quadratic_nll()
+        params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
+        fixed: EState = sl.State.from_pytree({"y": ...})
+
+        with patch("everwillow.inference.uncertainty.covariance_matrix") as mock_cov:
+            # Return a valid 1x1 covariance (since y is fixed)
+            mock_cov.return_value = jnp.array([[0.25]])
+
+            correlation_matrix(nll, params, OBSERVED, fixed=fixed)
+
+            assert mock_cov.call_count == 1
+            call_kwargs = mock_cov.call_args[1]
+            assert call_kwargs["fixed"] is fixed
+
+    def test_uncertainties_forwards_fixed_to_covariance(self):
+        """uncertainties() should forward fixed to covariance_matrix."""
+        nll = simple_quadratic_nll()
+        params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
+        fixed: EState = sl.State.from_pytree({"y": ...})
+
+        with patch("everwillow.inference.uncertainty.covariance_matrix") as mock_cov:
+            # Return a valid 1x1 covariance (since y is fixed)
+            mock_cov.return_value = jnp.array([[0.25]])
+
+            uncertainties(nll, params, OBSERVED, fixed=fixed)
+
+            assert mock_cov.call_count == 1
+            call_kwargs = mock_cov.call_args[1]
+            assert call_kwargs["fixed"] is fixed

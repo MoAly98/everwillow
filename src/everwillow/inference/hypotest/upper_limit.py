@@ -135,8 +135,8 @@ def upper_limit_toys(
         bounds: (lower, upper) search range for POI value.
         key: JAX PRNG key for reproducibility.
         level: Target value for the objective function (default 0.05).
-        tol: Stop when objective is within tol of level (default 0.02).
-        max_iterations: Maximum bisection iterations (default 15).
+        tol: Stop when objective is within tol of level (default 1e-2).
+        max_iterations: Maximum bisection iterations (default 100).
 
     Returns:
         POI value where objective_fn(poi, key) ≈ level.

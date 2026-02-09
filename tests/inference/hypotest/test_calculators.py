@@ -12,6 +12,7 @@ import pytest
 
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
+    ExpectedBands,
     HypoTestCalculator,
     QMu,
     QTilde,
@@ -359,3 +360,28 @@ class TestHypoTestCalculatorCLsValues:
 
         # At mu=0 with background-only observation, CLs should be near 1
         assert float(result.cl_s) == pytest.approx(1.0, rel=0.1)
+
+
+class TestExpectedBandsClsBands:
+    """Tests for ExpectedBands.cls_bands() with known values."""
+
+    def test_cls_bands_with_known_pvalues(self):
+        """Test cls_bands computes CLs = palt / pnull correctly.
+
+        Each band tuple is (pnull, palt). CLs = palt / pnull.
+        """
+        bands = ExpectedBands(
+            minus_2sigma=(jnp.array(0.5), jnp.array(0.1)),  # CLs = 0.2
+            minus_1sigma=(jnp.array(0.4), jnp.array(0.2)),  # CLs = 0.5
+            median=(jnp.array(0.3), jnp.array(0.15)),  # CLs = 0.5
+            plus_1sigma=(jnp.array(0.2), jnp.array(0.1)),  # CLs = 0.5
+            plus_2sigma=(jnp.array(0.1), jnp.array(0.05)),  # CLs = 0.5
+        )
+
+        cls_values = bands.cls_bands()
+
+        assert float(cls_values[0]) == pytest.approx(0.2, rel=1e-6)
+        assert float(cls_values[1]) == pytest.approx(0.5, rel=1e-6)
+        assert float(cls_values[2]) == pytest.approx(0.5, rel=1e-6)
+        assert float(cls_values[3]) == pytest.approx(0.5, rel=1e-6)
+        assert float(cls_values[4]) == pytest.approx(0.5, rel=1e-6)

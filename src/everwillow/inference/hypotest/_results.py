@@ -67,11 +67,11 @@ class ExpectedBands(eqx.Module):
         """
 
         return (
-            cl_s(*self.minus_2sigma),
-            cl_s(*self.minus_1sigma),
-            cl_s(*self.median),
-            cl_s(*self.plus_1sigma),
-            cl_s(*self.plus_2sigma),
+            cl_s(self.minus_2sigma[1], self.minus_2sigma[0]),
+            cl_s(self.minus_1sigma[1], self.minus_1sigma[0]),
+            cl_s(self.median[1], self.median[0]),
+            cl_s(self.plus_1sigma[1], self.plus_1sigma[0]),
+            cl_s(self.plus_2sigma[1], self.plus_2sigma[0]),
         )
 
 

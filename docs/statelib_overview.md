@@ -11,10 +11,14 @@ import jax.numpy as jnp
 import everwillow as ew
 import everwillow.statelib as sl
 
+
 # Counting model: signal + two backgrounds with shape/norm modifiers
 def nll(params, obs):
     mu, norm1, norm2, shape1 = (
-        params["mu"], params["norm1"], params["norm2"], params["shape1"]
+        params["mu"],
+        params["norm1"],
+        params["norm2"],
+        params["shape1"],
     )
     # Signal + background expectation
     signal = mu * 3.0
@@ -27,9 +31,8 @@ def nll(params, obs):
     constraints = 0.5 * (norm1**2 + norm2**2 + shape1**2)
     return poisson + constraints
 
-params = sl.State.from_pytree(
-    {"mu": 1.0, "norm1": 0.0, "norm2": 0.0, "shape1": 0.0}
-)
+
+params = sl.State.from_pytree({"mu": 1.0, "norm1": 0.0, "norm2": 0.0, "shape1": 0.0})
 result = ew.fit(nll, params, {"n": 37.0})
 print(result.params)
 # {'mu': 2.33, 'norm1': ~0, 'norm2': ~0, 'shape1': ~0}
@@ -67,7 +70,7 @@ state = sl.State.from_pytree({"x": 1.0})
 
 # Access values
 state[("x",)]  # 1.0
-state["x",]    # 1.0 (shorthand)
+state["x",]  # 1.0 (shorthand)
 ```
 :::
 
@@ -129,13 +132,10 @@ Split a state by predicate, keeping structure metadata:
 state = sl.State.from_pytree({"a": 1.0, "b": 2.0, "c": 3.0})
 
 # Partition by key
-left, right = sl.partition(
-    state,
-    predicate=lambda key, value: key == ("a",)
-)
+left, right = sl.partition(state, predicate=lambda key, value: key == ("a",))
 
 # Excluded keys become None
-print(dict(left.notnone))   # {('a',): 1.0}
+print(dict(left.notnone))  # {('a',): 1.0}
 print(dict(right.notnone))  # {('b',): 2.0, ('c',): 3.0}
 
 # Recombine perfectly
@@ -160,12 +160,10 @@ Rename keys or transform values without manual mapping:
 ```python
 state = sl.State.from_pytree({"old_name": 10})
 
-transformed = sl.apply_transformations(state, {
-    ("old_name",): sl.Transform(
-        new_key=("new_name",),
-        value_fn=lambda k, v: v * 2
-    )
-})
+transformed = sl.apply_transformations(
+    state,
+    {("old_name",): sl.Transform(new_key=("new_name",), value_fn=lambda k, v: v * 2)},
+)
 
 print(transformed.to_dict())
 # {('new_name',): 20}

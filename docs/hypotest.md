@@ -13,8 +13,12 @@ import jax.numpy as jnp
 import everwillow as ew
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
-    HypoTestCalculator, QTilde, QTildeAsymptotic, upper_limit
+    HypoTestCalculator,
+    QTilde,
+    QTildeAsymptotic,
+    upper_limit,
 )
+
 
 # Poisson counting: n_expected = mu * s + b
 def nll(params, obs):
@@ -22,9 +26,11 @@ def nll(params, obs):
     expected = mu * 10.0 + 5.0  # s=10, b=5
     return expected - obs["n"] * jnp.log(expected)
 
+
 def predict(params_state):
     mu = params_state.to_pytree()["mu"]
     return {"n": mu * 10.0 + 5.0}
+
 
 params = sl.State.from_pytree({"mu": 1.0})
 observed = {"n": 12.0}
@@ -36,8 +42,7 @@ dist = QTildeAsymptotic()
 # Find 95% CL upper limit on mu
 limit = upper_limit(
     lambda poi: calc(
-        nll, params, observed, ("mu",), poi,
-        distribution=dist, predict_fn=predict
+        nll, params, observed, ("mu",), poi, distribution=dist, predict_fn=predict
     ).cl_s,
     bounds=(0.0, 5.0),
     level=0.05,
@@ -51,8 +56,12 @@ import jax.numpy as jnp
 import everwillow as ew
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
-    HypoTestCalculator, QTilde, QTildeAsymptotic, upper_limit
+    HypoTestCalculator,
+    QTilde,
+    QTildeAsymptotic,
+    upper_limit,
 )
+
 
 # EFT: cross-section scales with Wilson coefficient
 def nll(params, obs):
@@ -60,9 +69,11 @@ def nll(params, obs):
     xsec = 100.0 * (1.0 + 0.1 * c)  # Linear EFT approximation
     return xsec - obs["events"] * jnp.log(xsec)
 
+
 def predict(params_state):
     c = params_state.to_pytree()["c"]
     return {"events": 100.0 * (1.0 + 0.1 * c)}
+
 
 params = sl.State.from_pytree({"c": 0.0})
 observed = {"events": 105.0}
@@ -74,8 +85,7 @@ dist = QTildeAsymptotic()
 # Find 95% CL upper limit on Wilson coefficient
 limit = upper_limit(
     lambda poi: calc(
-        nll, params, observed, ("c",), poi,
-        distribution=dist, predict_fn=predict
+        nll, params, observed, ("c",), poi, distribution=dist, predict_fn=predict
     ).cl_s,
     bounds=(0.0, 10.0),
     level=0.05,
@@ -147,8 +157,9 @@ Use `upper_limit()` to find where CLs equals your target level:
 from everwillow.inference.hypotest import upper_limit
 
 limit = upper_limit(
-    lambda poi: calc(nll, params, obs, ("mu",), poi,
-                     distribution=dist, predict_fn=predict).cl_s,
+    lambda poi: calc(
+        nll, params, obs, ("mu",), poi, distribution=dist, predict_fn=predict
+    ).cl_s,
     bounds=(0.0, 10.0),
     level=0.05,  # 95% CL
 )
@@ -162,8 +173,9 @@ Use `expected_upper_limit()` to compute observed and expected limits at {math}`\
 from everwillow.inference.hypotest import expected_upper_limit
 
 result = expected_upper_limit(
-    lambda poi: calc(nll, params, obs, ("mu",), poi,
-                     distribution=dist, predict_fn=predict),
+    lambda poi: calc(
+        nll, params, obs, ("mu",), poi, distribution=dist, predict_fn=predict
+    ),
     bounds=(0.0, 10.0),
     level=0.05,
 )
@@ -203,18 +215,28 @@ toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=1000)
 
 # Generate toys using predict_fn (uses Poisson sampling internally)
 emp_dist = toy_gen.generate(
-    nll, params, observed, ("mu",), poi_test=1.0,
+    nll,
+    params,
+    observed,
+    ("mu",),
+    poi_test=1.0,
     key=jax.random.key(42),
     predict_fn=predict,
 )
+
 
 # Or provide custom sampling function
 def sample_fn(params_state, key):
     expected = predict(params_state)
     return {"n": jax.random.poisson(key, expected["n"])}
 
+
 emp_dist = toy_gen.generate(
-    nll, params, observed, ("mu",), poi_test=1.0,
+    nll,
+    params,
+    observed,
+    ("mu",),
+    poi_test=1.0,
     key=jax.random.key(42),
     sample_fn=sample_fn,
 )
@@ -225,7 +247,11 @@ emp_dist = toy_gen.generate(
 ```python
 # Use empirical distribution in calculator
 result = calc(
-    nll, params, observed, ("mu",), poi_test=1.0,
+    nll,
+    params,
+    observed,
+    ("mu",),
+    poi_test=1.0,
     distribution=emp_dist,
 )
 print(f"CLs (from toys): {result.cl_s:.4f}")
@@ -238,18 +264,28 @@ To find upper limits using toy-based p-values, generate toys at each POI value:
 ```python
 from everwillow.inference.hypotest import upper_limit_toys
 
+
 # Define objective that generates fresh toys for each POI
 def cls_with_toys(poi, key):
     emp_dist = toy_gen.generate(
-        nll, params, observed, ("mu",), poi_test=poi,
+        nll,
+        params,
+        observed,
+        ("mu",),
+        poi_test=poi,
         key=key,
         predict_fn=predict,
     )
     result = calc(
-        nll, params, observed, ("mu",), poi_test=poi,
+        nll,
+        params,
+        observed,
+        ("mu",),
+        poi_test=poi,
         distribution=emp_dist,
     )
     return result.cl_s
+
 
 # Find limit with stochastic bisection
 limit = upper_limit_toys(
@@ -285,6 +321,7 @@ result = calc(..., distribution=Q0Asymptotic())
 
 # Convert to significance
 import math
+
 significance = math.sqrt(float(result.q_obs))
 ```
 
@@ -311,6 +348,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import everwillow as ew
 from everwillow.inference.hypotest import TestStatistic, TestStatResult
+
 
 class ChiSquare(TestStatistic):
     """Chi-square goodness-of-fit test statistic."""
@@ -345,6 +383,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jax.scipy.stats import chi2 as chi2_dist
 from everwillow.inference.hypotest import Distribution, ExpectedBands
+
 
 class ChiSquareDistribution(Distribution):
     """Chi-square distribution for goodness-of-fit tests."""

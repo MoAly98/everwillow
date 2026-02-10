@@ -60,6 +60,7 @@ examples = [
     "iminuit>=2.32.0",
     "scipy>=1.16.3",
     "matplotlib>=3.10.8",
+    "paramore",
 ]
 dev = [
     { include-group = "test" },
@@ -159,8 +160,3 @@ unfixable = [
 ]
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]
-
-[tool.uv.sources]
-pyhs3 = { git = "https://github.com/MoAly98/pyhs3", branch = "fix/funcs_ref_funcs" }
-evermore = { git = "https://github.com/pfackeldey/evermore", branch = "main" }
-pyhf = { git = "https://github.com/scikit-hep/pyhf", branch = "main" }

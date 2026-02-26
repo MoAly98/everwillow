@@ -308,7 +308,7 @@ def _fit(
     # Return result
     return FitResult(
         params=fitted_state.to_pytree(),
-        nll=solution.state.f_info.f,
+        nll=wrapped_nll(solution.value, args),
         success=jax.numpy.asarray(solution.result == optx.RESULTS.successful),
         solver_result=solution,
     )

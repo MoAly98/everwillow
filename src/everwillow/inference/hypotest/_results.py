@@ -18,6 +18,7 @@ __all__ = [
     "HypoTestResult",
     "HypoTestToysResult",
     "TestStatResult",
+    "ToyResult",
 ]
 
 
@@ -35,6 +36,21 @@ class TestStatResult(eqx.Module):
 
     q: Array
     extras: dict[str, tp.Any] = eqx.field(default_factory=dict)
+
+
+class ToyResult(eqx.Module):
+    """Raw output from toy generation.
+
+    Contains the test statistic arrays under both hypotheses,
+    decoupled from any particular p-value computation method.
+
+    Attributes:
+        q_alt: Test statistic values under alternative (signal+background) hypothesis.
+        q_null: Test statistic values under null (background-only) hypothesis.
+    """
+
+    q_alt: Array
+    q_null: Array
 
 
 class ExpectedBands(eqx.Module):

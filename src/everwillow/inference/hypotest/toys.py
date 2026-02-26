@@ -1,7 +1,7 @@
 """Toy generation for hypothesis testing.
 
 This module provides ToyGenerator for Monte Carlo-based hypothesis testing.
-It generates toys under both hypotheses and returns an EmpiricalDistribution.
+It generates toys under both hypotheses and returns a ToyResult.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import jax
 from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
 import everwillow.statelib as sl
+from everwillow.inference.hypotest._results import ToyResult
 from everwillow.inference.hypotest._utils import constrained_fit
-from everwillow.inference.hypotest.distributions import EmpiricalDistribution
 from everwillow.inference.hypotest.test_statistics import TestStatistic
 
 __all__ = ["ToyGenerator"]
@@ -24,8 +24,9 @@ class ToyGenerator(eqx.Module):
     """Generates toy experiments for hypothesis testing.
 
     Creates toys under both alternative and null hypotheses,
-    computes test statistics for each, and returns an
-    EmpiricalDistribution for p-value computation.
+    computes test statistics for each, and returns a ToyResult.
+    The raw arrays can then be fed into any EmpiricalDistribution
+    subclass for p-value computation.
 
     Attributes:
         test_statistic: Test statistic to compute for each toy.
@@ -33,20 +34,16 @@ class ToyGenerator(eqx.Module):
 
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
-        >>> # With predict_fn (default Poisson sampler)
-        >>> dist = toy_gen.generate(
+        >>> toys = toy_gen.generate(
         ...     nll_fn, params, observed, ("mu",), 1.0,
         ...     key=jax.random.key(42),
         ...     predict_fn=my_predict_fn,
         ... )
-        >>> # Or with custom sampler
-        >>> dist = toy_gen.generate(
-        ...     nll_fn, params, observed, ("mu",), 1.0,
-        ...     key=jax.random.key(42),
-        ...     sample_fn=my_custom_sampler,
-        ... )
+        >>> # Choose how to interpret the toys (open-world)
+        >>> dist = SimpleEmpiricalDistribution.from_toys(toys)
         >>> # Use with HypoTestCalculator
-        >>> result = calc(nll_fn, params, observed, ("mu",), 1.0, distribution=dist)
+        >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=dist)
+        >>> result = calc(nll_fn, params, observed, ("mu",), 1.0)
     """
 
     test_statistic: TestStatistic
@@ -64,8 +61,8 @@ class ToyGenerator(eqx.Module):
         sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree] | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
         **fit_kwargs: tp.Any,
-    ) -> EmpiricalDistribution:
-        """Generate toys and return empirical distribution.
+    ) -> ToyResult:
+        """Generate toys and return raw test statistic arrays.
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
@@ -82,7 +79,7 @@ class ToyGenerator(eqx.Module):
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
-            EmpiricalDistribution with q_alt and q_null arrays.
+            ToyResult with q_alt and q_null arrays.
 
         Raises:
             ValueError: If neither sample_fn nor predict_fn is provided.
@@ -138,7 +135,7 @@ class ToyGenerator(eqx.Module):
             fit_kwargs,
         )
 
-        return EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        return ToyResult(q_alt=q_alt, q_null=q_null)
 
     def _run_toys(
         self,

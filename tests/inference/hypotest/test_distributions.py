@@ -12,11 +12,12 @@ import jax.numpy as jnp
 import pytest
 
 from everwillow.inference.hypotest import (
-    EmpiricalDistribution,
     Q0Asymptotic,
     QMuAsymptotic,
     QTildeAsymptotic,
+    SimpleEmpiricalDistribution,
     TMuAsymptotic,
+    ToyResult,
 )
 from everwillow.inference.hypotest import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
@@ -337,12 +338,12 @@ class TestTMuAsymptotic:
 
 
 # =============================================================================
-# EmpiricalDistribution Tests
+# SimpleEmpiricalDistribution Tests
 # =============================================================================
 
 
-class TestEmpiricalDistribution:
-    """Tests for EmpiricalDistribution from toys."""
+class TestSimpleEmpiricalDistribution:
+    """Tests for SimpleEmpiricalDistribution (tail counting)."""
 
     def test_pvalues_simple(self):
         """Test empirical p-values with known toy arrays.
@@ -360,7 +361,7 @@ class TestEmpiricalDistribution:
         expected_pnull = 0.6
         expected_palt = 0.1
 
-        dist = EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(q=jnp.array(q_obs), extras={})
         pnull, palt = dist.pvalues(result)
 
@@ -373,7 +374,7 @@ class TestEmpiricalDistribution:
         q_alt = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0])
         q_obs = 0.5
 
-        dist = EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(q=jnp.array(q_obs), extras={})
         pnull, palt = dist.pvalues(result)
 
@@ -386,7 +387,7 @@ class TestEmpiricalDistribution:
         q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5])
         q_obs = 10.0
 
-        dist = EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(q=jnp.array(q_obs), extras={})
         pnull, palt = dist.pvalues(result)
 
@@ -398,7 +399,7 @@ class TestEmpiricalDistribution:
         q_null = jnp.linspace(0, 10, 100)
         q_alt = jnp.linspace(0, 5, 100)
 
-        dist = EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(q=jnp.array(5.0), extras={})
         bands = dist.expected_pvalues(result)
 
@@ -412,10 +413,22 @@ class TestEmpiricalDistribution:
         q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
         q_obs = 5.0
 
-        dist = EmpiricalDistribution(q_alt=q_alt, q_null=q_null)
+        dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(q=jnp.array(q_obs), extras={})
         pnull, palt = dist.pvalues(result)
 
         expected_cls = 0.1 / 0.6  # 0.1667
         actual_cls = float(palt) / float(pnull)
         assert actual_cls == pytest.approx(expected_cls, rel=1e-5)
+
+    def test_from_toys(self):
+        """Test constructing SimpleEmpiricalDistribution from ToyResult."""
+        q_alt = jnp.array([1.0, 2.0, 3.0])
+        q_null = jnp.array([4.0, 5.0, 6.0])
+        toys = ToyResult(q_alt=q_alt, q_null=q_null)
+
+        dist = SimpleEmpiricalDistribution.from_toys(toys)
+
+        assert isinstance(dist, SimpleEmpiricalDistribution)
+        assert jnp.array_equal(dist.q_alt, q_alt)
+        assert jnp.array_equal(dist.q_null, q_null)

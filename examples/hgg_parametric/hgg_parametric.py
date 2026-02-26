@@ -438,7 +438,7 @@ def main():
     fitted_state = sl.State.from_pytree(result.params)
 
     # Create calculator
-    calc = HypoTestCalculator(test_statistic=QTilde())
+    calc = HypoTestCalculator(test_statistic=QTilde(), distribution=QTildeAsymptotic())
 
     # Define function that returns HypoTestResult for a given mu value
     def calc_fn(mu_test: float):
@@ -448,7 +448,6 @@ def main():
             observation,
             poi_key=("mu", "value"),
             poi_test=mu_test,
-            distribution=QTildeAsymptotic(),
             bounds=bounds,
             asimov_observation=asimov_observation,
         )

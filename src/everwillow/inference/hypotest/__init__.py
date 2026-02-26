@@ -4,21 +4,20 @@ This module provides the required pieces for hypothesis testing:
     - **Test Statistics**: Compute likelihood ratios (QTilde, QMu, Q0, TMu)
     - **Distributions**: Convert test statistics to p-values (asymptotic or empirical)
     - **Calculator**: Orchestrates test statistics and distributions
-    - **Toy Generator**: Creates empirical distributions from Monte Carlo toys
+    - **Toy Generator**: Generates Monte Carlo toys for empirical distributions
     - **Upper Limits**: Root-finding for exclusion limits
 
 Example:
     >>> from everwillow.inference.hypotest import (
     ...     HypoTestCalculator, QTilde, QTildeAsymptotic, upper_limit
     ... )
-    >>> calc = HypoTestCalculator(test_statistic=QTilde())
-    >>> dist = QTildeAsymptotic()
-    >>> result = calc(nll_fn, params, ("mu",), poi_test=1.0, distribution=dist)
+    >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=QTildeAsymptotic())
+    >>> result = calc(nll_fn, params, observed, ("mu",), poi_test=1.0)
     >>> print(f"CLs = {result.cl_s:.4f}")
     >>>
     >>> # Find 95% CL upper limit
     >>> limit = upper_limit(
-    ...     lambda poi: calc(nll_fn, params, ("mu",), poi, distribution=dist).cl_s,
+    ...     lambda poi: calc(nll_fn, params, observed, ("mu",), poi).cl_s,
     ...     bounds=(0, 5), level=0.05
     ... )
 """
@@ -31,6 +30,7 @@ from everwillow.inference.hypotest._results import (
     HypoTestResult,
     HypoTestToysResult,
     TestStatResult,
+    ToyResult,
 )
 from everwillow.inference.hypotest._utils import cl_s
 from everwillow.inference.hypotest.calculators import HypoTestCalculator
@@ -40,6 +40,7 @@ from everwillow.inference.hypotest.distributions import (
     Q0Asymptotic,
     QMuAsymptotic,
     QTildeAsymptotic,
+    SimpleEmpiricalDistribution,
     TMuAsymptotic,
 )
 from everwillow.inference.hypotest.test_statistics import (
@@ -71,11 +72,13 @@ __all__ = [
     "QMuAsymptotic",
     "QTilde",
     "QTildeAsymptotic",
+    "SimpleEmpiricalDistribution",
     "TMu",
     "TMuAsymptotic",
     "TestStatResult",
     "TestStatistic",
     "ToyGenerator",
+    "ToyResult",
     "cl_s",
     "expected_upper_limit",
     "upper_limit",

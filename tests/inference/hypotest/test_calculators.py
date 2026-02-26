@@ -75,14 +75,15 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
         )
 
         assert hasattr(result, "q_obs")
@@ -100,14 +101,15 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
         )
 
         assert result.q_obs == pytest.approx(0.0, abs=1e-5)
@@ -130,14 +132,15 @@ class TestHypoTestCalculator:
         # Asimov at null hypothesis (background only)
         asimov_null = create_observation(5.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=mu_test,
-            distribution=QTildeAsymptotic(),
             asimov_observation=asimov_null,
         )
 
@@ -152,14 +155,15 @@ class TestHypoTestCalculator:
         observed = create_observation(10.0)
         asimov = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
             asimov_observation=asimov,
         )
 
@@ -178,14 +182,15 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
             predict_fn=predict_fn,
         )
 
@@ -208,7 +213,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
 
         # Test at mu=0
         result_0 = calc(
@@ -217,7 +224,6 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=0.0,
-            distribution=QTildeAsymptotic(),
             predict_fn=predict_fn,
         )
         assert result_0.test_stat_result.extras["q_asimov"] == pytest.approx(
@@ -231,7 +237,6 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=2.0,
-            distribution=QTildeAsymptotic(),
             predict_fn=predict_fn,
         )
         assert result_2.test_stat_result.extras["q_asimov"] == pytest.approx(
@@ -243,14 +248,15 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
             predict_fn=predict_fn,
         )
 
@@ -266,14 +272,15 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
             predict_fn=predict_fn,
         )
 
@@ -288,14 +295,13 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(25.0)
 
-        calc = HypoTestCalculator(test_statistic=QMu())
+        calc = HypoTestCalculator(test_statistic=QMu(), distribution=QTildeAsymptotic())
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=1.0,
-            distribution=QTildeAsymptotic(),
         )
 
         # QMu doesn't have boundary, so q > 0 for upward fluctuation
@@ -324,14 +330,15 @@ class TestHypoTestCalculatorCLsValues:
         # Asimov at null hypothesis (background only, mu=0)
         asimov_null = create_observation(5.0)
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=2.0,
-            distribution=QTildeAsymptotic(),
             asimov_observation=asimov_null,
         )
 
@@ -348,14 +355,15 @@ class TestHypoTestCalculatorCLsValues:
         params = create_params(mu_init=0.0)
         observed = create_observation(5.0)  # background only
 
-        calc = HypoTestCalculator(test_statistic=QTilde())
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
         result = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=0.0,
-            distribution=QTildeAsymptotic(),
         )
 
         # At mu=0 with background-only observation, CLs should be near 1

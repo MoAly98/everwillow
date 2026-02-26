@@ -11,9 +11,10 @@ import pytest
 
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
-    EmpiricalDistribution,
     QTilde,
+    SimpleEmpiricalDistribution,
     ToyGenerator,
+    ToyResult,
 )
 from everwillow.inference.hypotest import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
@@ -71,7 +72,7 @@ class TestToyGenerator:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -81,9 +82,9 @@ class TestToyGenerator:
             sample_fn=sample_fn,
         )
 
-        assert isinstance(dist, EmpiricalDistribution)
-        assert dist.q_alt.shape == (100,)
-        assert dist.q_null.shape == (100,)
+        assert isinstance(toys, ToyResult)
+        assert toys.q_alt.shape == (100,)
+        assert toys.q_null.shape == (100,)
 
     def test_generate_with_predict_fn(self):
         """Test toy generation with predict_fn (default Poisson sampler)."""
@@ -91,7 +92,7 @@ class TestToyGenerator:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -101,9 +102,9 @@ class TestToyGenerator:
             predict_fn=predict_fn,
         )
 
-        assert isinstance(dist, EmpiricalDistribution)
-        assert dist.q_alt.shape == (100,)
-        assert dist.q_null.shape == (100,)
+        assert isinstance(toys, ToyResult)
+        assert toys.q_alt.shape == (100,)
+        assert toys.q_null.shape == (100,)
 
     def test_requires_sample_or_predict(self):
         """Test that either sample_fn or predict_fn is required."""
@@ -132,7 +133,7 @@ class TestToyGenerator:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=500)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -143,8 +144,8 @@ class TestToyGenerator:
         )
 
         # Mean of q_null should be larger than mean of q_alt
-        mean_q_alt = float(jnp.mean(dist.q_alt))
-        mean_q_null = float(jnp.mean(dist.q_null))
+        mean_q_alt = float(jnp.mean(toys.q_alt))
+        mean_q_null = float(jnp.mean(toys.q_null))
 
         assert mean_q_null > mean_q_alt
 
@@ -155,7 +156,7 @@ class TestToyGenerator:
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=50)
 
-        dist1 = toy_gen.generate(
+        toys1 = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -165,7 +166,7 @@ class TestToyGenerator:
             predict_fn=predict_fn,
         )
 
-        dist2 = toy_gen.generate(
+        toys2 = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -175,8 +176,8 @@ class TestToyGenerator:
             predict_fn=predict_fn,
         )
 
-        assert jnp.allclose(dist1.q_alt, dist2.q_alt)
-        assert jnp.allclose(dist1.q_null, dist2.q_null)
+        assert jnp.allclose(toys1.q_alt, toys2.q_alt)
+        assert jnp.allclose(toys1.q_null, toys2.q_null)
 
     def test_different_keys_different_results(self):
         """Test that different keys give different results."""
@@ -185,7 +186,7 @@ class TestToyGenerator:
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=50)
 
-        dist1 = toy_gen.generate(
+        toys1 = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -195,7 +196,7 @@ class TestToyGenerator:
             predict_fn=predict_fn,
         )
 
-        dist2 = toy_gen.generate(
+        toys2 = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -205,8 +206,8 @@ class TestToyGenerator:
             predict_fn=predict_fn,
         )
 
-        assert not jnp.allclose(dist1.q_alt, dist2.q_alt)
-        assert not jnp.allclose(dist1.q_null, dist2.q_null)
+        assert not jnp.allclose(toys1.q_alt, toys2.q_alt)
+        assert not jnp.allclose(toys1.q_null, toys2.q_null)
 
 
 class TestToyGeneratorPoissonSampler:
@@ -218,7 +219,7 @@ class TestToyGeneratorPoissonSampler:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -228,8 +229,8 @@ class TestToyGeneratorPoissonSampler:
             predict_fn=predict_fn,
         )
 
-        assert jnp.all(jnp.isfinite(dist.q_alt))
-        assert jnp.all(jnp.isfinite(dist.q_null))
+        assert jnp.all(jnp.isfinite(toys.q_alt))
+        assert jnp.all(jnp.isfinite(toys.q_null))
 
     def test_poisson_mean_matches_expectation(self):
         """Test that Poisson samples have correct mean.
@@ -272,7 +273,7 @@ class TestToyGeneratorIntegration:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=200)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -281,6 +282,7 @@ class TestToyGeneratorIntegration:
             key=jax.random.key(42),
             predict_fn=predict_fn,
         )
+        dist = SimpleEmpiricalDistribution.from_toys(toys)
 
         # Test p-values at q=0
         result = TSResult(q=jnp.array(0.0), extras={})
@@ -295,7 +297,7 @@ class TestToyGeneratorIntegration:
         observed = create_observation(15.0)
 
         toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=200)
-        dist = toy_gen.generate(
+        toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
@@ -304,6 +306,7 @@ class TestToyGeneratorIntegration:
             key=jax.random.key(42),
             predict_fn=predict_fn,
         )
+        dist = SimpleEmpiricalDistribution.from_toys(toys)
 
         result = TSResult(q=jnp.array(0.0), extras={})
         pnull, palt = dist.pvalues(result)

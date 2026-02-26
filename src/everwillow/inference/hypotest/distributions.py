@@ -18,7 +18,11 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from everwillow.inference.hypotest._results import ExpectedBands, TestStatResult
+from everwillow.inference.hypotest._results import (
+    ExpectedBands,
+    TestStatResult,
+    ToyResult,
+)
 
 __all__ = [
     "Distribution",
@@ -26,6 +30,7 @@ __all__ = [
     "Q0Asymptotic",
     "QMuAsymptotic",
     "QTildeAsymptotic",
+    "SimpleEmpiricalDistribution",
     "TMuAsymptotic",
 ]
 
@@ -304,10 +309,12 @@ class TMuAsymptotic(Distribution):
 
 
 class EmpiricalDistribution(Distribution):
-    """Empirical distribution from toy samples.
+    """Base class for distributions built from toy test statistics.
 
-    Unlike asymptotic distributions, this stores the toy test statistic arrays
-    directly and computes p-values empirically.
+    Stores the raw test statistic arrays from toy generation and provides
+    the ``from_toys`` factory method. Subclass this and override
+    ``pvalues`` / ``expected_pvalues`` to implement custom p-value
+    computation methods (e.g. KDE smoothing, tail extrapolation).
 
     Attributes:
         q_alt: Test statistics under alternative (signal+background) hypothesis.
@@ -316,6 +323,29 @@ class EmpiricalDistribution(Distribution):
 
     q_alt: Array
     q_null: Array
+
+    @classmethod
+    def from_toys(cls, toys: ToyResult) -> EmpiricalDistribution:
+        """Construct from a ToyResult.
+
+        Args:
+            toys: Raw toy generation output containing q_alt and q_null arrays.
+
+        Returns:
+            An instance of this distribution class.
+        """
+        return cls(q_alt=toys.q_alt, q_null=toys.q_null)
+
+
+class SimpleEmpiricalDistribution(EmpiricalDistribution):
+    """Empirical p-values via simple tail counting.
+
+    ``pnull = fraction of q_null >= q_obs``
+    ``palt  = fraction of q_alt  >= q_obs``
+
+    Expected bands are computed by evaluating p-values at each q in q_null
+    and taking percentiles at the standard normal quantiles.
+    """
 
     def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
         """Compute empirical (pnull, palt) from toy distributions."""

@@ -18,7 +18,7 @@ from jaxtyping import PyTree
 import everwillow.statelib as sl
 from everwillow.inference.hypotest._results import HypoTestResult
 from everwillow.inference.hypotest._utils import cl_s
-from everwillow.inference.hypotest.distributions import Distribution
+from everwillow.inference.hypotest.distributions import Distribution, QTildeAsymptotic
 from everwillow.inference.hypotest.test_statistics import QTilde, TestStatistic
 
 __all__ = ["HypoTestCalculator"]
@@ -34,18 +34,19 @@ class HypoTestCalculator(eqx.Module):
 
     Attributes:
         test_statistic: Test statistic to use. Defaults to QTilde.
+        distribution: Distribution to use for p-value computation. Defaults to QTildeAsymptotic.
 
     Example:
         >>> from everwillow.inference.hypotest import (
         ...     HypoTestCalculator, QTilde, QTildeAsymptotic
         ... )
-        >>> calc = HypoTestCalculator(test_statistic=QTilde())
-        >>> dist = QTildeAsymptotic()
-        >>> result = calc(nll_fn, params, observed, ("mu",), poi_test=1.0, distribution=dist)
+        >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=QTildeAsymptotic())
+        >>> result = calc(nll_fn, params, observed, ("mu",), poi_test=1.0)
         >>> print(f"CLs = {result.cl_s:.4f}")
     """
 
     test_statistic: TestStatistic = eqx.field(default_factory=QTilde)
+    distribution: Distribution = eqx.field(default_factory=QTildeAsymptotic)
 
     def __call__(
         self,
@@ -54,7 +55,6 @@ class HypoTestCalculator(eqx.Module):
         observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
-        distribution: Distribution,
         *,
         asimov_observation: PyTree | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
@@ -68,7 +68,6 @@ class HypoTestCalculator(eqx.Module):
             observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
-            distribution: Distribution object for p-value computation.
             asimov_observation: Pre-computed Asimov dataset. If provided, used
                 directly for q_asimov computation.
             predict_fn: Function to generate expected observation from parameters.
@@ -91,13 +90,13 @@ class HypoTestCalculator(eqx.Module):
         )
 
         # 2. Delegate p-value computation to distribution
-        pnull, palt = distribution.pvalues(ts_result)
+        pnull, palt = self.distribution.pvalues(ts_result)
 
         # 3. Compute CLs = palt / pnull
         cl_s_value = cl_s(palt, pnull)
 
         # 4. Delegate expected bands to distribution
-        expected_bands = distribution.expected_pvalues(ts_result)
+        expected_bands = self.distribution.expected_pvalues(ts_result)
 
         return HypoTestResult(
             q_obs=ts_result.q,

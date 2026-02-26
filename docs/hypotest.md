@@ -126,8 +126,9 @@ Distributions convert test statistics into p-values. Two approaches:
 - Requires `q_asimov` from Asimov dataset for expected bands
 
 **Empirical** (from toys):
-- `EmpiricalDistribution`
-- Built from Monte Carlo pseudo-experiments
+- `SimpleEmpiricalDistribution` (tail counting)
+- Subclass `EmpiricalDistribution` for custom methods (KDE, etc.)
+- Built from Monte Carlo pseudo-experiments via `ToyGenerator`
 - More accurate but computationally expensive
 :::
 
@@ -418,7 +419,7 @@ class ChiSquareDistribution(Distribution):
 | Component | Class/Function | Purpose |
 |-----------|---------------|---------|
 | **Test Statistics** | `QTilde`, `QMu`, `Q0`, `TMu` | Compute likelihood ratios |
-| **Distributions** | `QTildeAsymptotic`, `EmpiricalDistribution`, ... | Convert to p-values |
+| **Distributions** | `QTildeAsymptotic`, `SimpleEmpiricalDistribution`, ... | Convert to p-values |
 | **Calculator** | `HypoTestCalculator` | Orchestrate tests |
 | **Toys** | `ToyGenerator` | Monte Carlo sampling |
 | **Limits** | `upper_limit`, `expected_upper_limit` | Find exclusion limits |

@@ -1,29 +1,78 @@
 """Standalone evermore counting experiment example."""
 
-import equinox as eqx
-import evermore as evm
+from functools import partial
+import typing as tp
+
+import jax
 import jax.numpy as jnp
+from flax import nnx
+from jaxtyping import Array, Float, PyTree
 
+import evermore as evm
 import everwillow as ew
+import everwillow.statelib as sl
+
+jax.config.update("jax_enable_x64", True)
 
 
-# Define parameter structure
-class Params(eqx.Module):
-    mu: evm.Parameter
-    norm1: evm.NormalParameter
-    norm2: evm.NormalParameter
-    shape1: evm.NormalParameter
+# type defs
+Hist1D: tp.TypeAlias = Float[Array, " nbins"]
+Args: tp.TypeAlias = tuple[
+    nnx.GraphDef,    # graphdef
+    nnx.State,       # state
+    PyTree[Hist1D],  # hists
+    Hist1D,          # observation
+]
 
 
-# Initialize parameters
-params = Params(
-    mu=evm.Parameter(value=1.0, name="mu"),
-    norm1=evm.NormalParameter(value=0.0, name="norm1"),
-    norm2=evm.NormalParameter(value=0.0, name="norm2"),
-    shape1=evm.NormalParameter(value=0.0, name="shape1"),
-)
+class Model(nnx.Module):
+    def __init__(
+        self,
+        mu: evm.Parameter,
+        norm1: evm.NormalParameter,
+        norm2: evm.NormalParameter,
+        shape: evm.NormalParameter,
+    ):
+        self.mu = mu
+        self.norm1 = norm1
+        self.norm2 = norm2
+        self.shape = shape
 
-# Define histogram templates
+    def __call__(self, hists: PyTree[Hist1D]) -> PyTree[Hist1D]:
+        expectations = {}
+
+        # signal process
+        sig_mod = self.mu.scale()
+        expectations["signal"] = sig_mod(hists["nominal"]["signal"])
+
+        # bkg1 process
+        bkg1_lnN = self.norm1.scale_log_asymmetric(
+            up=jnp.array([1.1]), down=jnp.array([0.9])
+        )
+        bkg1_shape = self.shape.morphing(
+            up_template=hists["shape_up"]["bkg1"],
+            down_template=hists["shape_down"]["bkg1"],
+        )
+        # combine modifiers
+        bkg1_mod = bkg1_lnN @ bkg1_shape
+        expectations["bkg1"] = bkg1_mod(hists["nominal"]["bkg1"])
+
+        # bkg2 process
+        bkg2_lnN = self.norm2.scale_log_asymmetric(
+            up=jnp.array([1.05]), down=jnp.array([0.95])
+        )
+        bkg2_shape = self.shape.morphing(
+            up_template=hists["shape_up"]["bkg2"],
+            down_template=hists["shape_down"]["bkg2"],
+        )
+        # combine modifiers
+        bkg2_mod = bkg2_lnN @ bkg2_shape
+        expectations["bkg2"] = bkg2_mod(hists["nominal"]["bkg2"])
+
+        # return the modified expectations
+        return expectations
+
+
 hists = {
     "nominal": {
         "signal": jnp.array([3.0]),
@@ -36,79 +85,54 @@ hists = {
     },
     "shape_down": {
         "bkg1": jnp.array([8.0]),
-        "bkg2": jnp.array([17.0]),
+        "bkg2": jnp.array([19.0]),
     },
 }
 
+
+model = Model(
+    mu=evm.Parameter(name="mu"),
+    norm1=evm.NormalParameter(name="norm1"),
+    norm2=evm.NormalParameter(name="norm2"),
+    shape=evm.NormalParameter(name="shape"),
+)
+
 observation = jnp.array([37.0])
+expectations = model(hists)
 
 
-# Build the model
-def model(params_tree):
-    expectations = {}
-
-    sig_mod = params_tree.mu.scale()
-    expectations["signal"] = sig_mod(hists["nominal"]["signal"])
-
-    bkg1_lnN = params_tree.norm1.scale_log(up=jnp.array([1.1]), down=jnp.array([0.9]))
-    bkg1_shape = params_tree.shape1.morphing(
-        up_template=hists["shape_up"]["bkg1"],
-        down_template=hists["shape_down"]["bkg1"],
-    )
-    expectations["bkg1"] = (bkg1_lnN @ bkg1_shape)(hists["nominal"]["bkg1"])
-
-    bkg2_lnN = params_tree.norm2.scale_log(up=jnp.array([1.05]), down=jnp.array([0.95]))
-    bkg2_shape = params_tree.shape1.morphing(
-        up_template=hists["shape_up"]["bkg2"],
-        down_template=hists["shape_down"]["bkg2"],
-    )
-    expectations["bkg2"] = (bkg2_lnN @ bkg2_shape)(hists["nominal"]["bkg2"])
-
-    return expectations
-
-
-# Partition parameters
-dynamic, static = evm.tree.partition(params)
-
-
-# Define loss function
-@eqx.filter_jit
-def loss(dynamic_params):
-    full_params = evm.tree.combine(dynamic_params, static)
-    expectations = model(full_params)
-    constraints = evm.loss.get_log_probs(full_params)
-    log_prob = (
+@nnx.jit
+def loss(dynamic: nnx.State, args: Args) -> Float[Array, ""]:
+    # unpack
+    (graphdef, static, hists, observation) = args
+    # reconstruct model
+    model = nnx.merge(graphdef, dynamic, static)
+    # calculate expectation
+    expectations = model(hists)
+    # calculate constraints
+    constraints = evm.loss.get_log_probs(model)
+    loss_val = (
         evm.pdf.PoissonContinuous(evm.util.sum_over_leaves(expectations))
         .log_prob(observation)
         .sum()
     )
-    log_prob += evm.util.sum_over_leaves(constraints)
-    return -jnp.sum(log_prob)
+    # sum all up
+    loss_val += evm.util.sum_over_leaves(constraints)
+    return -jnp.sum(loss_val)
 
 
-# Convert to dict-based NLL for everwillow
-def nll(param_dict):
-    updated = evm.tree.update_values(
-        dynamic,
-        values=Params(
-            mu=param_dict["mu"],
-            norm1=param_dict["norm1"],
-            norm2=param_dict["norm2"],
-            shape1=param_dict["shape1"],
-        ),
-    )
-    return loss(updated)
-
-
-# Extract initial values
-initial = {
-    "mu": float(params.mu.value),
-    "norm1": float(params.norm1.value),
-    "norm2": float(params.norm2.value),
-    "shape1": float(params.shape1.value),
-}
+graphdef, dynamic, static = nnx.split(model, evm.filter.is_dynamic_parameter, ...)
 
 # Perform the fit
-result = ew.fit(nll, initial)
+result = ew.fit(
+    nll_fn=partial(loss, args=(graphdef, static, hists, observation)),
+    params=sl.State.from_pytree(dynamic),
+)
 
-print(result.params)
+print(result.params.to_pure_dict())
+# {
+#   'mu': Array(2.33333346, dtype=float64),
+#   'norm1': Array(3.0642646e-08, dtype=float64),
+#   'norm2': Array(2.33507612e-08, dtype=float64),
+#   'shape': Array(-1.66275153e-08, dtype=float64),
+# }

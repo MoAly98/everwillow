@@ -13,6 +13,7 @@ from pytensor.graph.fg import FunctionGraph
 from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
+import everwillow.statelib as sl
 
 
 def jaxify_distribution(model, distribution_name):
@@ -116,6 +117,15 @@ def nll(params):
 
 
 # Perform the fit
-result = ew.fit(nll, initial)
+result = ew.fit(
+    nll_fn=nll,
+    params=sl.State.from_pytree(initial),
+)
 
 print(result.params)
+# {
+#   'mu': Array(2.33333374, dtype=float64),
+#   'norm1': Array(-7.24415294e-09, dtype=float64),
+#   'norm2': Array(-1.6095118e-08, dtype=float64),
+#   'shape1': Array(-1.96874884e-07, dtype=float64),
+# }

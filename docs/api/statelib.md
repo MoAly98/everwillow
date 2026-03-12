@@ -6,4 +6,5 @@
 
    statelib/state
    statelib/transform
+   statelib/meta
 ```

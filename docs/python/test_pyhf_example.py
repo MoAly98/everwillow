@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import pyhf
 
 import everwillow as ew
+import everwillow.statelib as sl
 
 pyhf.set_backend("jax")
 
@@ -83,6 +84,15 @@ def nll(params):
 
 
 # Perform the fit
-result = ew.fit(nll, initial_dict)
+result = ew.fit(
+    nll_fn=nll,
+    params=sl.State.from_pytree(initial_dict),
+)
 
 print(result.params)
+#  {
+#   'mu': Array(2.33333334, dtype=float64),
+#   'norm1': Array(-3.37256584e-07, dtype=float64),
+#   'norm2': Array(4.53219024e-07, dtype=float64),
+#   'shape1': Array(-2.25047663e-08, dtype=float64),
+# }

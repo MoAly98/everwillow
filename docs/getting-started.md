@@ -19,27 +19,6 @@ If you prefer `pip`, simply run:
 python -m pip install everwillow
 ```
 
-To run the runnable examples from the documentation, install the optional
-dependencies via the `examples` group:
-
-```bash
-uv pip install '.[examples]'
-```
-
-## Verifying the Installation
-
-You can confirm that the package is available by importing it and printing the
-version:
-
-```python
-import everwillow as ew
-
-print(ew.__version__)
-```
-
-If everything is configured correctly you should see the installed version
-number without any import warnings.
-
 ## Example Data and Tutorials
 
 The repository ships with a handful of examples in the `examples/` directory,
@@ -47,15 +26,9 @@ covering common tasks such as unbinned fits and profiling nuisance parameters.
 For a guided walkthrough see the {doc}`quickstart` guide, which demonstrates
 everwillow with `pyhs3`, `evermore`, and `pyhf`.
 
-## Building the Documentation Locally
-
-The documentation is built with Sphinx using the configuration in
-`docs/conf.py`. To build the HTML locally (after installing the ``docs`` extra):
+To run the examples from the documentation, install the optional
+dependencies via the `examples` group:
 
 ```bash
-uv pip install '.[docs]'
-uv run sphinx-build -b html docs docs/_build/html
+uv pip install '.[examples]'
 ```
-
-Open `docs/_build/html/index.html` in your browser to view the result. The same
-layout is used on Read the Docs.

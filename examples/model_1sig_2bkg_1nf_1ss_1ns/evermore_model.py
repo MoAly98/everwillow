@@ -195,7 +195,7 @@ def fit_with_iminuit(
 
     minuit = iminuit.Minuit(iminuit_loss, flat_values, grad=nnx.grad(iminuit_loss))  # ty:ignore[invalid-argument-type]
     minuit.errordef = iminuit.Minuit.LIKELIHOOD
-    minuit.tol = 1e-5
+    minuit.tol = 1e-8
 
     # minimize
     minuit.migrad(ncall=max_steps, use_simplex=False)

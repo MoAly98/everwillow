@@ -3,12 +3,12 @@
 import typing as tp
 from collections.abc import Mapping
 from functools import partial
-from typing import NamedTuple
 
 import evermore as evm
 import iminuit
 import jax
 import jax.numpy as jnp
+from flax import nnx
 import numpy as np
 import optimistix as optx
 from flax import nnx
@@ -22,107 +22,141 @@ import everwillow.statelib as sl
 # Float64 scalar
 F64: tp.TypeAlias = Float[Array, ""]
 
-# histograms / templates
-Hist1D: tp.TypeAlias = Float[Array, "nbins"]  # noqa: F821
-Hists1D: tp.TypeAlias = PyTree[Hist1D]
-
-# negative log-likelihood implementation
+# type defs
+Hist1D: tp.TypeAlias = Float[Array, " nbins"]
 Args: tp.TypeAlias = tuple[
-    nnx.GraphDef,  # graphdef from `nnx.split`
-    nnx.State,  # static state from `nnx.split`
-    Hists1D,  # initial expectations for the histograms / templates
-    Hist1D,  # observation: d
+    nnx.GraphDef,  # graphdef
+    nnx.State,  # state
+    PyTree[Hist1D],  # hists
+    Hist1D,  # observation
 ]
 
-jax.config.update("jax_enable_x64", True)  # Enable 64-bit precision
+
+class Model(nnx.Module):
+    def __init__(
+        self,
+        mu: evm.Parameter,
+        norm1: evm.NormalParameter,
+        norm2: evm.NormalParameter,
+        shape1: evm.NormalParameter,
+    ):
+        self.mu = mu
+        self.norm1 = norm1
+        self.norm2 = norm2
+        self.shape1 = shape1
+
+    def __call__(self, hists: PyTree[Hist1D]) -> PyTree[Hist1D]:
+        expectations = {}
+
+        # signal process
+        sig_mod = self.mu.scale()
+        expectations["signal"] = sig_mod(hists["nominal"]["signal"])
+
+        # bkg1 process
+        bkg1_lnN = self.norm1.scale_log_asymmetric(
+            up=jnp.array([1.1]), down=jnp.array([0.9])
+        )
+        bkg1_shape = self.shape1.morphing(
+            up_template=hists["shape_up"]["bkg1"],
+            down_template=hists["shape_down"]["bkg1"],
+        )
+        # combine modifiers
+        bkg1_mod = bkg1_lnN @ bkg1_shape
+        expectations["bkg1"] = bkg1_mod(hists["nominal"]["bkg1"])
+
+        # bkg2 process
+        bkg2_lnN = self.norm2.scale_log_asymmetric(
+            up=jnp.array([1.05]), down=jnp.array([0.95])
+        )
+        bkg2_shape = self.shape1.morphing(
+            up_template=hists["shape_up"]["bkg2"],
+            down_template=hists["shape_down"]["bkg2"],
+        )
+        # combine modifiers
+        bkg2_mod = bkg2_lnN @ bkg2_shape
+        expectations["bkg2"] = bkg2_mod(hists["nominal"]["bkg2"])
+
+        # return the modified expectations
+        return expectations
 
 
-class Params(NamedTuple):
-    mu: evm.Parameter
-    norm1: evm.NormalParameter
-    norm2: evm.NormalParameter
-    shape1: evm.NormalParameter
+hists = jax.tree.map(
+    jnp.atleast_1d,
+    {
+        "nominal": {
+            "signal": DEFAULT_DATA.signal_nominal,
+            "bkg1": DEFAULT_DATA.bkg1_nominal,
+            "bkg2": DEFAULT_DATA.bkg2_nominal,
+        },
+        "shape_up": {
+            "bkg1": DEFAULT_DATA.bkg1_shape_up,
+            "bkg2": DEFAULT_DATA.bkg2_shape_up,
+        },
+        "shape_down": {
+            "bkg1": DEFAULT_DATA.bkg1_shape_down,
+            "bkg2": DEFAULT_DATA.bkg2_shape_down,
+        },
+    },
+)
 
 
 def build_components(
     data: ModelData = DEFAULT_DATA,
-) -> tuple[Params, dict[str, dict[str, jnp.ndarray]], jnp.ndarray]:
-    """Return the Params, histogram templates, and observed data."""
-
-    params = Params(
+) -> tuple[Model, PyTree[Hist1D], Hist1D]:
+    model = Model(
         mu=evm.Parameter(name="mu"),
         norm1=evm.NormalParameter(name="norm1"),
         norm2=evm.NormalParameter(name="norm2"),
         shape1=evm.NormalParameter(name="shape1"),
     )
-
-    hists = {
-        "nominal": {
-            "signal": jnp.array([data.signal_nominal]),
-            "bkg1": jnp.array([data.bkg1_nominal]),
-            "bkg2": jnp.array([data.bkg2_nominal]),
+    hists = jax.tree.map(
+        jnp.atleast_1d,
+        {
+            "nominal": {
+                "signal": data.signal_nominal,
+                "bkg1": data.bkg1_nominal,
+                "bkg2": data.bkg2_nominal,
+            },
+            "shape_up": {
+                "bkg1": data.bkg1_shape_up,
+                "bkg2": data.bkg2_shape_up,
+            },
+            "shape_down": {
+                "bkg1": data.bkg1_shape_down,
+                "bkg2": data.bkg2_shape_down,
+            },
         },
-        "shape_up": {
-            "bkg1": jnp.array([data.bkg1_shape_up]),
-            "bkg2": jnp.array([data.bkg2_shape_up]),
-        },
-        "shape_down": {
-            "bkg1": jnp.array([data.bkg1_shape_down]),
-            "bkg2": jnp.array([data.bkg2_shape_down]),
-        },
-    }
-
+    )
     observation = jnp.array([data.observed])
-    return params, hists, observation
-
-
-def model(params: Params, hists: dict[str, dict[str, jnp.ndarray]]):
-    expectations: dict[str, jnp.ndarray] = {}
-
-    sig_mod = params.mu.scale()
-    expectations["signal"] = sig_mod(hists["nominal"]["signal"])
-
-    bkg1_lnN = params.norm1.scale_log(up=jnp.array([1.1]), down=jnp.array([0.9]))
-    bkg1_shape = params.shape1.morphing(
-        up_template=hists["shape_up"]["bkg1"],
-        down_template=hists["shape_down"]["bkg1"],
-    )
-    expectations["bkg1"] = (bkg1_lnN @ bkg1_shape)(hists["nominal"]["bkg1"])
-
-    bkg2_lnN = params.norm2.scale_log(up=jnp.array([1.05]), down=jnp.array([0.95]))
-    bkg2_shape = params.shape1.morphing(
-        up_template=hists["shape_up"]["bkg2"],
-        down_template=hists["shape_down"]["bkg2"],
-    )
-    expectations["bkg2"] = (bkg2_lnN @ bkg2_shape)(hists["nominal"]["bkg2"])
-
-    return expectations
+    return model, hists, observation
 
 
 @nnx.jit
-def loss(
-    dynamic: Params,
-    args: tuple,
-) -> jnp.ndarray:
-    graphdef, static, hists, observation = args
-    params = nnx.merge(graphdef, dynamic, static)
-    expectations = model(params, hists)
-    constraints = evm.loss.get_log_probs(params)
-    log_prob = (
+def loss(dynamic: nnx.State, args: Args) -> Float[Array, ""]:
+    # unpack
+    (graphdef, static, hists, observation) = args
+    # reconstruct model
+    model = nnx.merge(graphdef, dynamic, static)
+    # calculate expectation
+    expectations = model(hists)
+    # calculate constraints
+    constraints = evm.loss.get_log_probs(model)
+    loss_val = (
         evm.pdf.PoissonContinuous(evm.util.sum_over_leaves(expectations))
         .log_prob(observation)
         .sum()
     )
-    log_prob += evm.util.sum_over_leaves(jax.tree.map(jnp.sum, constraints))
-    return -jnp.sum(log_prob)
+    # sum all up
+    loss_val += evm.util.sum_over_leaves(constraints)
+    return -jnp.sum(loss_val)
 
 
 def fit_with_optimistix(
     components,
     max_steps: int = 10_000,
 ):
-    params, hists, observation = components
-    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    model, hists, observation = components
+    graphdef, dynamic, static = nnx.split(model, evm.filter.is_parameter, ...)
 
     solver = optx.BFGS(rtol=1e-5, atol=1e-7)
     result = optx.minimise(
@@ -144,101 +178,43 @@ def fit_with_iminuit(
     components,
     max_steps: int = 10_000,
 ):
-    params, hists, observation = components
-    params.mu.set_metadata(frozen=True)
-    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    model, hists, observation = components
+    model.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(model, evm.filter.is_parameter, ...)
     args = (graphdef, static, hists, observation)
 
-    # update helper
-    def _update(path, param, value):
-        del path  # unused
-        return param.replace(value=value)
-
-    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
-        return jax.tree.map_with_path(
-            _update,
-            dynamic,
-            new_state,
-            is_leaf=evm.filter.is_parameter,
-            is_leaf_takes_path=True,
-        )
-
+    # flatten parameter.get_value()(s) for iminuit
     values = nnx.pure(dynamic)
-    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
+    flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)  # ty:ignore[possibly-missing-attribute]
 
-    # Wrapper for iminuit (operates on flat array)
-    def iminuit_loss(
-        pars: Float[Array, "n_params"],  # noqa: F821
-        *,
-        dynamic: nnx.State = dynamic,
-        args: Args = args,
-    ) -> F64:
-        flat_values = pars
+    # wrap loss that works on flat array
+    @nnx.jit
+    def iminuit_loss(flat_values: Float[Array, " nparams"]) -> Float[Array, ""]:
+        dynamic.replace_by_pure_dict(unravel_fn(flat_values))
+        return loss(dynamic, args)
 
-        # Reconstruct nested parameter state
-        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
-
-        # Compute loss
-        return loss(updated_dynamic, args)
-
-    class FcnPartial:
-        def __init__(self, fn, dynamic, args):
-            self.fn = fn
-            self.dynamic = dynamic
-            self.args = args
-
-        def __call__(self, flat_values):
-            # make a shallow copy of args to modify
-            (graphdef, static, hists, observation) = self.args
-            graphdef, dynamic, static = nnx.split(
-                nnx.merge(graphdef, self.dynamic, static, copy=True),
-                evm.filter.is_parameter,
-                ...,
-            )
-            args = (graphdef, static, hists, observation)
-            return self.fn(flat_values, dynamic=dynamic, args=args)
-
-    fcn = FcnPartial(iminuit_loss, dynamic, args).__call__
-
-    # Setup Minuit
-    minuit = iminuit.Minuit(
-        fcn,
-        flat_values,
-        grad=nnx.grad(fcn),  # analytical gradient
-    )
+    minuit = iminuit.Minuit(iminuit_loss, flat_values, grad=nnx.grad(iminuit_loss))  # ty:ignore[invalid-argument-type]
     minuit.errordef = iminuit.Minuit.LIKELIHOOD
-    minuit.strategy = 2
-    minuit.tol = 1e-8
+    minuit.tol = 1e-5
 
     # minimize
     minuit.migrad(ncall=max_steps, use_simplex=False)
-    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(minuit.values)))
-    return bestfit.to_pure_dict(), minuit.fval
+
+    # update dynamic part with bestfit values
+    dynamic.replace_by_pure_dict(unravel_fn(jnp.array(minuit.values)))
+    return dynamic.to_pure_dict(), minuit.fval
 
 
 def fit_with_scipy(
     components,
     max_steps: int = 10_000,
 ):
-    params, hists, observation = components
-    params.mu.set_metadata(frozen=True)
-    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    model, hists, observation = components
+    model.mu.set_metadata(frozen=True)
+    graphdef, dynamic, static = nnx.split(model, evm.filter.is_parameter, ...)
     args = (graphdef, static, hists, observation)
 
     # update helper
-    def _update(path, param, value):
-        del path  # unused
-        return param.replace(value=value)
-
-    def update_dynamic(dynamic: nnx.State, new_state: nnx.State) -> nnx.State:
-        return jax.tree.map_with_path(
-            _update,
-            dynamic,
-            new_state,
-            is_leaf=evm.filter.is_parameter,
-            is_leaf_takes_path=True,
-        )
-
     values = nnx.pure(dynamic)
     flat_values, unravel_fn = jax.flatten_util.ravel_pytree(values)
 
@@ -249,58 +225,22 @@ def fit_with_scipy(
         dynamic: nnx.State = dynamic,
         args: Args = args,
     ) -> F64:
-        flat_values = pars
-
-        # Reconstruct nested parameter state
-        updated_dynamic = update_dynamic(dynamic, unravel_fn(flat_values))
-
+        dynamic.replace_by_pure_dict(unravel_fn(pars))
         # Compute loss
-        return loss(updated_dynamic, args)
-
-    class FcnPartial:
-        def __init__(self, fn, dynamic, args):
-            self.fn = fn
-            self.dynamic = dynamic
-            self.args = args
-
-        def __call__(self, flat_values):
-            # make a shallow copy of args to modify
-            (graphdef, static, hists, observation) = self.args
-            graphdef, dynamic, static = nnx.split(
-                nnx.merge(graphdef, self.dynamic, static, copy=True),
-                evm.filter.is_parameter,
-                ...,
-            )
-            args = (graphdef, static, hists, observation)
-            # Convert from numpy to jax if needed
-            if isinstance(flat_values, np.ndarray):
-                flat_values = jnp.array(flat_values)
-            return self.fn(flat_values, dynamic=dynamic, args=args)
-
-    fcn = FcnPartial(scipy_loss, dynamic, args).__call__
-
-    # Gradient function using nnx.grad (similar to iminuit)
-    grad_fcn = nnx.grad(fcn)
-
-    def grad_wrapper(flat_params):
-        # Convert gradient to numpy for scipy
-        return np.array(grad_fcn(flat_params))
-
-    # Convert initial values to numpy
-    init_numpy = np.array(flat_values)
+        return loss(dynamic, args)
 
     # Minimize using scipy
     result = minimize(
-        lambda x: float(fcn(x)),  # Ensure scalar return
-        init_numpy,
+        scipy_loss,
+        flat_values,
         method="SLSQP",
-        jac=grad_wrapper,
+        jac=jax.grad(scipy_loss),
         options={"maxiter": max_steps, "ftol": 1e-8},
     )
 
-    # Convert result back to parameter dict
-    bestfit = update_dynamic(dynamic, unravel_fn(jnp.array(result.x)))
-    return bestfit.to_pure_dict(), float(result.fun)
+    # update dynamic part with bestfit values
+    dynamic.replace_by_pure_dict(unravel_fn(jnp.array(result.x)))
+    return dynamic.to_pure_dict(), float(result.fun)
 
 
 def fit_with_everwillow(
@@ -308,8 +248,8 @@ def fit_with_everwillow(
     max_steps: int = 150,
     interactive: bool = False,
 ):
-    params, hists, observation = components
-    graphdef, dynamic, static = nnx.split(params, evm.filter.is_parameter, ...)
+    model, hists, observation = components
+    graphdef, dynamic, static = nnx.split(model, evm.filter.is_parameter, ...)
 
     args = (graphdef, static, hists, observation)
     init_state = sl.State.from_pytree(dynamic)
@@ -331,4 +271,5 @@ def fit_with_everwillow(
 
 
 def summarise_evermore_fit(params: Mapping[str, float], data: ModelData = DEFAULT_DATA):
+    print(params)
     return expected_components(params, data=data)

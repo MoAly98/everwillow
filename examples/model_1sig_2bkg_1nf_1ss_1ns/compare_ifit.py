@@ -12,7 +12,7 @@ from pyhf_model import build_pyhf
 from pyhf_model import nll_fn as pyhf_nll_fn
 from pyhs3_model import build_pyhs3
 from rich.console import Console
-from utils import HistoryCallback
+from everwillow.inference import HistoryCallback
 
 import everwillow as ew
 import everwillow.statelib as sl
@@ -32,7 +32,7 @@ def fit_pyhs3_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
 
     history = HistoryCallback()
     init_state = sl.State.from_pytree(initial)
-    result = ew.ifit(nll, init_state, max_steps=max_steps, callback=history)
+    result = ew.ifit(nll, init_state, max_steps=max_steps, callbacks=[history])
     return history, float(result.nll)
 
 
@@ -43,7 +43,7 @@ def fit_pyhf_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
 
     history = HistoryCallback()
     init_state = sl.State.from_pytree(init)
-    result = ew.ifit(nll, init_state, max_steps=max_steps, callback=history)
+    result = ew.ifit(nll, init_state, max_steps=max_steps, callbacks=[history])
     return history, float(result.nll)
 
 
@@ -58,7 +58,7 @@ def fit_evermore_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
     history = HistoryCallback()
     init_state = sl.State.from_pytree(dynamic)
     result = ew.ifit(
-        partial(loss, args=args), init_state, max_steps=max_steps, callback=history
+        partial(loss, args=args), init_state, max_steps=max_steps, callbacks=[history]
     )
     return history, float(result.nll)
 

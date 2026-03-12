@@ -34,6 +34,7 @@ dependencies = [
     "optimistix>=0.0.10",
     "jaxtyping",
     "equinox>=0.10.11", # dep of optimistix but we make it explicit
+    "orbax-checkpoint",
     "tqdm", # for interactive fitting progress bars
 ]
 

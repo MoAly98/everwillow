@@ -10,6 +10,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optimistix as optx
+import orbax.checkpoint as ocp
 from jaxtyping import PyTree
 
 import everwillow.parameters as ewp
@@ -25,9 +26,8 @@ Args: tp.TypeAlias = tuple[
 # Access NLL via state.f_info.f
 SolverState = tp.TypeVar("SolverState")
 
-# Callback signature for interactive fitting: (step_idx, y, state) -> None
-# Matches the signature pattern used by solver.step and solver.terminate
-Callback: tp.TypeAlias = tp.Callable[[int, sl.State, SolverState], None]
+if tp.TYPE_CHECKING:
+    from everwillow.inference import Callback
 
 
 def _reconstruct_full_state(
@@ -124,10 +124,25 @@ def _iminimize(
     *,
     max_steps: int,
     progress: bool,
-    callback: Callback | None,
+    checkpoint_manager: ocp.CheckpointManager | None,
+    callbacks: tp.Iterable[Callback] | None,
     solver_options: dict[str, tp.Any] | None = None,
 ) -> optx.Solution:
     """Interactive minimization with step-by-step iteration and progress bar."""
+
+    # If we have a checkpoint_manager _and_ something is stored in its path, we'll
+    # automatically load and start from the latest checkpointed iteration
+    if checkpoint_manager is not None and checkpoint_manager.latest_step() is not None:
+        iteration = tp.cast(int, checkpoint_manager.latest_step())
+        abstract_y0 = jax.tree_util.tree_map(
+            ocp.utils.to_shape_dtype_struct, y0
+        )
+        y0 = tp.cast(sl.State[V], checkpoint_manager.restore(
+            iteration,
+            args=ocp.args.StandardRestore(abstract_y0),
+        ))
+    else:
+        iteration = 0
     # Convert y0 leaves to JAX arrays (required for solver.init which calls tree_full_like)
     y0 = jax.tree_util.tree_map(lambda x: jnp.asarray(x, dtype=jnp.float64), y0)
 
@@ -158,16 +173,20 @@ def _iminimize(
         )
     )
 
-    iteration = 0
     with _make_progress_context(progress, max_steps) as updater:
         while not done and iteration < max_steps:
             # Call user callback with current state (user can access state.f_info.f for NLL)
-            if callback is not None:
-                callback(iteration, y, state)
+            if callbacks is not None:
+                for callback in callbacks:
+                    callback(iteration, y, state)
 
             # Perform one solver step
             y, state, aux = step(y=y, state=state)
             iteration += 1
+
+            # checkpoint if we have a manager
+            if checkpoint_manager is not None:
+                checkpoint_manager.save(iteration, args=ocp.args.StandardSave(y))
 
             # Check termination
             done, result = terminate(y=y, state=state)
@@ -209,7 +228,8 @@ def _fit(
     interactive: bool = False,
     max_steps: int = 256,
     progress: bool = True,
-    callback: Callback | None = None,
+    checkpoint_manager: ocp.CheckpointManager | None = None,
+    callbacks: tp.Iterable[Callback] | None = None,
     solver_options: dict[str, tp.Any] | None = None,
     **minimise_kwargs,
 ) -> FitResult[V]:
@@ -270,7 +290,8 @@ def _fit(
             args,
             max_steps=max_steps,
             progress=progress,
-            callback=callback,
+            callbacks=callbacks,
+            checkpoint_manager=checkpoint_manager,
             solver_options=solver_options,
         )
     else:
@@ -392,7 +413,8 @@ def ifit(
     solver: optx.AbstractMinimiser | None = None,
     max_steps: int = 256,
     progress: bool = True,
-    callback: Callback | None = None,
+    checkpoint_manager: ocp.CheckpointManager | None = None,
+    callbacks: tp.Iterable[Callback] | None = None,
     solver_options: dict[str, tp.Any] | None = None,
 ) -> FitResult[V]:
     """Perform an interactive maximum-likelihood fit with progress bar and callbacks.
@@ -417,8 +439,11 @@ def ifit(
             :class:`optimistix.BFGS`.
         max_steps: Maximum number of optimization steps. Defaults to 256.
         progress: Whether to display a rich progress bar. Defaults to True.
-        callback: Optional function called each iteration with signature
-            ``(step_idx: int, y: State, state: SolverState) -> None``.
+        checkpoint_manager: Optional ocp.CheckpointManager that checkpoints during interactive fitting,
+            if checkpoints exist already under the provided path, the fit will automatically
+            continue from the last checkpointed step.
+        callbacks: Optional function(s) called each iteration with signature
+            ``(iteration: int, y: State, state: SolverState) -> None``.
             This matches the pattern used by ``solver.step`` and ``solver.terminate``.
             The NLL value can be accessed via ``state.f_info.f``.
         solver_options: Optional dict of solver-specific options passed to ``solver.init``.
@@ -437,13 +462,23 @@ def ifit(
         >>> result = ew.ifit(my_nll, initial_params)
 
         >>> # With custom callback to record history
-        >>> history = []
-        >>> def record_history(step, y, state):
-        ...     history.append({"step": step, "nll": float(state.f_info.f)})
-        >>> result = ew.ifit(my_nll, initial_params, callback=record_history)
+        >>> history = ew.inference.HistoryCallback()
+        >>> result = ew.ifit(my_nll, initial_params, callbacks=[history])
 
         >>> # Disable progress bar
         >>> result = ew.ifit(my_nll, initial_params, progress=False)
+
+
+    Example with Checkpointing:
+        >>> import orbax.checkpoint as ocp
+        >>> mngr = ocp.CheckpointManager('/tmp/my_fit')
+
+        >>> result = ew.ifit(my_nll, initial_params, max_steps=10, progress=False, checkpoint_manager=mngr)
+        >>> mngr.wait_until_finished() # checkpointing is async, so let's make sure everything is checkpointed
+
+        >>> # run for another 10 steps (increase max_steps to 20); recover from latest checkpoint by reusing the `mngr`:
+        >>> result = ew.ifit(my_nll, initial_params, max_steps=20, progress=False, checkpoint_manager=mngr)
+        >>> mngr.wait_until_finished()
     """
     return _fit(
         nll_fn,
@@ -454,6 +489,7 @@ def ifit(
         interactive=True,
         max_steps=max_steps,
         progress=progress,
-        callback=callback,
+        checkpoint_manager=checkpoint_manager,
+        callbacks=callbacks,
         solver_options=solver_options,
     )

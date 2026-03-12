@@ -404,3 +404,58 @@ class TestSimpleEmpiricalDistribution:
         assert isinstance(dist, SimpleEmpiricalDistribution)
         assert jnp.array_equal(dist.q_alt, q_alt)
         assert jnp.array_equal(dist.q_null, q_null)
+
+
+# =============================================================================
+# Significance Tests
+# =============================================================================
+
+
+class TestSignificance:
+    """Tests for null_significance and alt_significance."""
+
+    def test_null_significance_q0(self):
+        """For q_0=4: p = 1 - Φ(2) → Z = 2.0."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(0.0))
+        dist = Q0Asymptotic()
+        z = dist.null_significance(result)
+        assert float(z) == pytest.approx(2.0, abs=1e-5)
+
+    def test_null_significance_qmu(self):
+        """For q_μ=9: p = 1 - Φ(3) → Z = 3.0."""
+        result = TSResult(value=jnp.array(9.0), test=jnp.array(1.0))
+        dist = QMuAsymptotic()
+        z = dist.null_significance(result)
+        assert float(z) == pytest.approx(3.0, abs=1e-5)
+
+    def test_alt_significance_qmu(self):
+        """For q_μ=9, q_asimov=4: p = 1 - Φ(3-2) = 1 - Φ(1) → Z = 1.0."""
+        result = TSResult(
+            value=jnp.array(9.0), test=jnp.array(1.0), q_asimov=jnp.array(4.0)
+        )
+        dist = QMuAsymptotic()
+        z = dist.alt_significance(result)
+        assert float(z) == pytest.approx(1.0, abs=1e-5)
+
+    def test_significance_none_without_asimov(self):
+        """Significance returns None when q_asimov is missing."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        dist = QMuAsymptotic()
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert dist.alt_significance(result) is None
+
+    def test_null_significance_qtilde_standard_region(self):
+        """For q̃=4, q_asimov=4 (standard): p = 1 - Φ(2) → Z = 2.0."""
+        result = TSResult(
+            value=jnp.array(4.0), test=jnp.array(1.0), q_asimov=jnp.array(4.0)
+        )
+        dist = QTildeAsymptotic()
+        z = dist.null_significance(result)
+        assert float(z) == pytest.approx(2.0, abs=1e-5)
+
+    def test_discovery_significance(self):
+        """5σ discovery: q_0=25 → Z=5.0."""
+        result = TSResult(value=jnp.array(25.0), test=jnp.array(0.0))
+        dist = Q0Asymptotic()
+        z = dist.null_significance(result)
+        assert float(z) == pytest.approx(5.0, rel=1e-2)

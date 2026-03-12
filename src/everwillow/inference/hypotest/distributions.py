@@ -33,6 +33,7 @@ __all__ = [
 ]
 
 _PHI = jax.scipy.stats.norm.cdf
+_PPF = jax.scipy.stats.norm.ppf
 
 
 def _require_q_asimov(result: TestStatResult, cls_name: str, pval_type: str) -> bool:
@@ -104,6 +105,34 @@ class Distribution(eqx.Module):
             Alternative p-value, or None if required data (e.g. q_asimov) is missing.
         """
         ...
+
+    def null_significance(self, result: TestStatResult) -> Array | None:
+        """Significance under the null hypothesis: Z = Φ⁻¹(1 - pnull).
+
+        Args:
+            result: Test statistic result.
+
+        Returns:
+            Significance Z, or None if pnull is None.
+        """
+        pnull = self.null_pval(result)
+        if pnull is None:
+            return None
+        return -_PPF(pnull)
+
+    def alt_significance(self, result: TestStatResult) -> Array | None:
+        """Significance under the alternative hypothesis: Z = Φ⁻¹(1 - palt).
+
+        Args:
+            result: Test statistic result.
+
+        Returns:
+            Significance Z, or None if palt is None.
+        """
+        palt = self.alt_pval(result)
+        if palt is None:
+            return None
+        return -_PPF(palt)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
         """Compute expected p-values at standard sigma bands.

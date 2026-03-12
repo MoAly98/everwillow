@@ -104,9 +104,9 @@ class HypoTestResult(eqx.Module):
     """
 
     q_obs: Array
-    pnull: Array
-    palt: Array
-    cl_s: Array
+    pnull: Array | None
+    palt: Array | None
+    cl_s: Array | None
     test_stat_result: TestStatResult
     expected_bands: ExpectedBands | None = None
 

@@ -1,4 +1,4 @@
-"""Tests for HypoTestCalculator.
+"""Tests for hypothesis test calculators.
 
 Tests the calculator orchestration with concrete expected values.
 """
@@ -12,6 +12,7 @@ import pytest
 
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
+    AsymptoticCalculator,
     ExpectedBands,
     HypoTestCalculator,
     QMu,
@@ -63,22 +64,21 @@ def normal_sf(x: float) -> float:
 
 
 # =============================================================================
-# HypoTestCalculator Tests
+# AsymptoticCalculator Tests
 # =============================================================================
 
 
-class TestHypoTestCalculator:
-    """Tests for HypoTestCalculator."""
+class TestAsymptoticCalculator:
+    """Tests for AsymptoticCalculator."""
 
     def test_basic_result_structure(self):
         """Test that calculator returns proper HypoTestResult."""
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -86,6 +86,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         assert hasattr(result, "q_obs")
@@ -103,10 +104,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -114,6 +114,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         assert result.q_obs == pytest.approx(0.0, abs=1e-5)
@@ -144,7 +145,7 @@ class TestHypoTestCalculator:
     def test_q_asimov_with_predict_fn(self):
         """Test that predict_fn generates Asimov at mu_asimov.
 
-        QTildeAsymptotic has mu_asimov=0 by default.
+        mu_asimov=0 by default.
         Asimov at mu=0: n_asimov = 5
         Testing at mu=1: q_asimov = 2*(15-5-5*ln(3)) ≈ 9.014
         """
@@ -153,10 +154,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -164,6 +164,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         assert result.test_stat_result.q_asimov == pytest.approx(
@@ -179,10 +180,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
 
         # Test at mu=0
@@ -192,6 +192,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=0.0,
+            predict_fn=predict_fn,
         )
         assert result_0.test_stat_result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
@@ -203,6 +204,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=2.0,
+            predict_fn=predict_fn,
         )
         assert result_2.test_stat_result.q_asimov == pytest.approx(
             expected_q_asimov_2, rel=1e-3
@@ -213,10 +215,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -224,6 +225,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         assert jnp.isfinite(result.pnull)
@@ -234,10 +236,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -245,6 +246,7 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         assert result.expected_bands is None
@@ -254,10 +256,9 @@ class TestHypoTestCalculator:
         params = create_params(mu_init=1.0)
         observed = create_observation(25.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QMu(),
             distribution=QTildeAsymptotic(),
-            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -265,15 +266,75 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
+            predict_fn=predict_fn,
         )
 
         # QMu doesn't have boundary, so q > 0 for upward fluctuation
         assert float(result.q_obs) > 0.0
 
+
+# =============================================================================
+# HypoTestCalculator Tests (generic base)
+# =============================================================================
+
+
+class TestHypoTestCalculator:
+    """Tests for the generic HypoTestCalculator base."""
+
     def test_default_test_statistic(self):
         """Test that default test statistic is QTilde."""
         calc = HypoTestCalculator()
         assert isinstance(calc.test_statistic, QTilde)
+
+    def test_kwargs_passthrough(self):
+        """Test that kwargs are forwarded to test statistic."""
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
+
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
+        # predict_fn passed as kwarg, forwarded to CowanTestStatistic
+        result = calc(
+            poisson_nll,
+            params,
+            observed,
+            ("mu",),
+            poi_test=1.0,
+            predict_fn=predict_fn,
+        )
+
+        assert result.test_stat_result.q_asimov is not None
+
+    def test_without_predict_fn(self):
+        """Test that calculator works without predict_fn (no Asimov).
+
+        Without Asimov, q_asimov is None and piecewise distributions
+        (QTildeAsymptotic) return None for p-values that need it.
+        """
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
+
+        calc = HypoTestCalculator(
+            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+        )
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            result = calc(
+                poisson_nll,
+                params,
+                observed,
+                ("mu",),
+                poi_test=1.0,
+            )
+
+        assert result.test_stat_result.q_asimov is None
+        assert result.pnull is None
+        assert result.palt is None
+
+
+# =============================================================================
+# ExpectedBands Tests
+# =============================================================================
 
 
 class TestExpectedBandsClsBands:

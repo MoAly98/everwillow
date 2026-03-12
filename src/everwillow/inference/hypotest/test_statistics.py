@@ -42,16 +42,90 @@ class TestStatistic(eqx.Module):
     TestStatResult.extras dict. The statistical interpretation (p-values) is
     handled separately by Distribution classes.
 
+    Subclasses must implement:
+        - ``_compute_q``: Compute the core test statistic formula.
+
+    """
+
+    def __call__(
+        self,
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
+        params: sl.State,
+        observation: PyTree,
+        poi_key: sl.K,
+        poi_test: float,
+        **fit_kwargs: tp.Any,
+    ) -> TestStatResult:
+        """Compute the test statistic.
+
+        Args:
+            nll_fn: Negative log-likelihood function taking (params, observation).
+            params: Initial parameter state.
+            observation: Observed data passed to nll_fn.
+            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_test: Test value for the POI.
+            **fit_kwargs: Additional arguments passed to fit().
+
+        Returns:
+            TestStatResult with value, test, q_asimov, and extras.
+        """
+        q_obs, extras = self._compute_q(
+            nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
+        )
+
+        return TestStatResult(
+            value=q_obs, test=jnp.asarray(poi_test), q_asimov=None, extras=extras
+        )
+
+    @abc.abstractmethod
+    def _compute_q(
+        self,
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
+        params: sl.State,
+        observation: PyTree,
+        poi_key: sl.K,
+        poi_test: float,
+        **fit_kwargs: tp.Any,
+    ) -> tuple[Array, dict[str, tp.Any]]:
+        """Compute the core test statistic formula.
+
+        Subclasses implement this method with their specific formula.
+
+        Args:
+            nll_fn: Negative log-likelihood function taking (params, observation).
+            params: Initial parameter state.
+            observation: Observed data passed to nll_fn.
+            poi_key: Canonical key for the parameter of interest.
+            poi_test: Test value for the POI.
+            **fit_kwargs: Additional arguments passed to fit().
+
+        Returns:
+            Tuple of (q_value, extras_dict).
+        """
+        ...
+
+
+class CowanTestStatistic(TestStatistic):
+    """
+    This is a subclass of TestStatistic that implements the Cowan test statistics.
+    There is five of these:
+        1. TMu: used for two-sided confidence intervals
+        2. TMuTilde: used for confidence intervals with a positive signal (feldman-cousins)
+        3. Q0: used for discovery tests (rejecting the mu = 0 hypothesis)
+        4. QMu: used for exclusion of a non-zero signal hypothesis
+        5. QMuTilde: used for exclusion of a non-zero signal hypothesis with a positive signal
+
+    The subclass is specifically designed to extend the abstract class with methods to efficiently
+    compute the variance of :math:`\\hat{\\mu}` using the asimov dataset, as described in the Cowan paper.
+
     Asimov data can be provided in two ways:
 
     1. ``asimov_observation``: pre-computed Asimov dataset.
     2. ``predict_fn``: generate Asimov at ``mu_asimov`` (default depends on
        the test statistic; override via the ``mu_asimov`` kwarg).
 
-    If neither is provided, ``q_asimov`` will be None.
-
-    Subclasses must implement:
-        - ``_compute_q``: Compute the core test statistic formula.
+    If neither is provided, ``q_asimov`` will be None. This can cause p-value computations for test statistics
+    that require ``q_asimov`` to fail.
 
     Attributes:
         mu_asimov: Default POI value for Asimov dataset generation.
@@ -133,35 +207,8 @@ class TestStatistic(eqx.Module):
             return predict_fn(asimov_params)
         return None
 
-    @abc.abstractmethod
-    def _compute_q(
-        self,
-        nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
-        observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
-        **fit_kwargs: tp.Any,
-    ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute the core test statistic formula.
 
-        Subclasses implement this method with their specific formula.
-
-        Args:
-            nll_fn: Negative log-likelihood function taking (params, observation).
-            params: Initial parameter state.
-            observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest.
-            poi_test: Test value for the POI.
-            **fit_kwargs: Additional arguments passed to fit().
-
-        Returns:
-            Tuple of (q_value, extras_dict).
-        """
-        ...
-
-
-class QTilde(TestStatistic):
+class QTilde(CowanTestStatistic):
     """Profile likelihood ratio with boundary handling for upper limits.
 
     The test statistic is:
@@ -206,13 +253,12 @@ class QTilde(TestStatistic):
             "fit_constrained": fit_constrained,
             "fit_free": fit_free,
             "mu_hat": mu_hat,
-            "poi_test": poi_test,
         }
 
         return q, extras
 
 
-class QMu(TestStatistic):
+class QMu(CowanTestStatistic):
     """Profile likelihood ratio without boundary handling.
 
     The test statistic is:
@@ -251,7 +297,7 @@ class QMu(TestStatistic):
         return q, extras
 
 
-class Q0(TestStatistic):
+class Q0(CowanTestStatistic):
     """Discovery test statistic for testing μ = 0.
 
     The test statistic is:
@@ -332,7 +378,7 @@ class Q0(TestStatistic):
         return q, extras
 
 
-class TMu(TestStatistic):
+class TMu(CowanTestStatistic):
     """Signed test statistic for two-sided confidence intervals.
 
     The test statistic is:

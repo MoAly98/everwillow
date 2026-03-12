@@ -33,7 +33,10 @@ from everwillow.inference.hypotest._results import (
     ToyResult,
 )
 from everwillow.inference.hypotest._utils import cl_s
-from everwillow.inference.hypotest.calculators import HypoTestCalculator
+from everwillow.inference.hypotest.calculators import (
+    AsymptoticCalculator,
+    HypoTestCalculator,
+)
 from everwillow.inference.hypotest.distributions import (
     Distribution,
     EmpiricalDistribution,
@@ -61,6 +64,7 @@ from everwillow.inference.hypotest.upper_limit import (
 
 __all__ = [
     "Q0",
+    "AsymptoticCalculator",
     "Distribution",
     "EmpiricalDistribution",
     "ExpectedBands",

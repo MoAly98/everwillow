@@ -298,7 +298,7 @@ class TestExpectedUpperLimit:
                 palt=cls_val * jnp.array(0.5),
                 cl_s=cls_val,
                 expected_bands=bands,
-                test_stat_result=TSResult(q=jnp.array(0.0), extras={}),
+                test_stat_result=TSResult(value=jnp.array(0.0), test=jnp.array(0.0)),
             )
 
         result = expected_upper_limit(mock_calc_fn, bounds=(0.0, 5.0), level=0.05)
@@ -338,7 +338,7 @@ class TestExpectedUpperLimit:
                 palt=cls_obs * 0.5,
                 cl_s=cls_obs,
                 expected_bands=bands,
-                test_stat_result=TSResult(q=jnp.array(0.0), extras={}),
+                test_stat_result=TSResult(value=jnp.array(0.0), test=jnp.array(0.0)),
             )
 
         result = expected_upper_limit(mock_calc_fn, bounds=(0.0, 10.0), level=0.05)

@@ -42,15 +42,22 @@ class TestStatistic(eqx.Module):
     TestStatResult.extras dict. The statistical interpretation (p-values) is
     handled separately by Distribution classes.
 
-    Subclasses must implement:
-        - `_compute_q`: Compute the core test statistic formula
+    Asimov data can be provided in two ways:
 
-    The extras dict typically contains:
-        - q_asimov: Test statistic value from Asimov dataset
-        - mu_hat: MLE of the POI
-        - fit_free: Free fit result
-        - fit_constrained: Constrained fit result
+    1. ``asimov_observation``: pre-computed Asimov dataset.
+    2. ``predict_fn``: generate Asimov at ``mu_asimov`` (default depends on
+       the test statistic; override via the ``mu_asimov`` kwarg).
+
+    If neither is provided, ``q_asimov`` will be None.
+
+    Subclasses must implement:
+        - ``_compute_q``: Compute the core test statistic formula.
+
+    Attributes:
+        mu_asimov: Default POI value for Asimov dataset generation.
     """
+
+    mu_asimov: float = 0.0
 
     def __call__(
         self,
@@ -62,6 +69,7 @@ class TestStatistic(eqx.Module):
         *,
         asimov_observation: PyTree | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
+        mu_asimov: float | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute the test statistic.
@@ -72,37 +80,38 @@ class TestStatistic(eqx.Module):
             observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
-            asimov_observation: Pre-computed Asimov dataset. If provided, used
-                directly for q_asimov computation.
+            asimov_observation: Pre-computed Asimov dataset.
             predict_fn: Function to generate expected observation from parameters.
-                Used to compute Asimov data if asimov_observation not provided.
+            mu_asimov: POI value at which to generate the Asimov dataset.
+                Defaults to ``self.mu_asimov``.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
-            TestStatResult with q value and extras.
+            TestStatResult with value, test, q_asimov, and extras.
         """
-        # Compute observed q
         q_obs, extras = self._compute_q(
             nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
         )
 
-        # Resolve Asimov observation
+        if mu_asimov is None:
+            mu_asimov = self.mu_asimov
+
         asimov_obs = self._resolve_asimov(
-            asimov_observation, predict_fn, params, poi_key, poi_test
+            asimov_observation, predict_fn, params, poi_key, mu_asimov
         )
 
-        # Compute Asimov q if available
+        q_asimov = None
         if asimov_obs is not None:
-            q_asimov, asimov_extras = self._compute_q(
+            q_asimov_val, asimov_extras = self._compute_q(
                 nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs
             )
-            extras["q_asimov"] = q_asimov
+            q_asimov = q_asimov_val
             extras["asimov_fit_constrained"] = asimov_extras.get("fit_constrained")
             extras["asimov_fit_free"] = asimov_extras.get("fit_free")
-        else:
-            extras["q_asimov"] = q_obs
 
-        return TestStatResult(q=q_obs, extras=extras)
+        return TestStatResult(
+            value=q_obs, test=jnp.asarray(poi_test), q_asimov=q_asimov, extras=extras
+        )
 
     @staticmethod
     def _resolve_asimov(
@@ -110,13 +119,17 @@ class TestStatistic(eqx.Module):
         predict_fn: tp.Callable[[sl.State], PyTree] | None,
         params: sl.State,
         poi_key: sl.K,
-        poi_test: float,
+        mu_asimov: float,
     ) -> PyTree | None:
-        """Resolve Asimov observation from explicit data or predict_fn."""
+        """Resolve Asimov observation from explicit data or predict_fn.
+
+        When ``predict_fn`` is used, the Asimov dataset is generated at
+        ``mu_asimov`` (not at ``poi_test``).
+        """
         if asimov_observation is not None:
             return asimov_observation
         if predict_fn is not None:
-            asimov_params = sl.update(params, updates={poi_key: poi_test})
+            asimov_params = sl.update(params, updates={poi_key: mu_asimov})
             return predict_fn(asimov_params)
         return None
 
@@ -246,7 +259,13 @@ class Q0(TestStatistic):
             = 0                  if μ̂ < 0
 
     The boundary at μ̂ < 0 prevents "discovery" of negative signal.
+
+    Attributes:
+        mu_asimov: Default POI value for Asimov generation. Defaults to 1.0
+            (signal hypothesis).
     """
+
+    mu_asimov: float = 1.0
 
     def __call__(
         self,
@@ -258,6 +277,7 @@ class Q0(TestStatistic):
         *,
         asimov_observation: PyTree | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
+        mu_asimov: float | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute q_0 discovery test statistic.
@@ -265,7 +285,6 @@ class Q0(TestStatistic):
         Note:
             The ``poi_test`` argument is ignored; Q0 always tests μ=0 by design.
         """
-        # Q0 always tests at μ=0, override poi_test
         return super().__call__(
             nll_fn,
             params,
@@ -274,6 +293,7 @@ class Q0(TestStatistic):
             0.0,
             asimov_observation=asimov_observation,
             predict_fn=predict_fn,
+            mu_asimov=mu_asimov,
             **fit_kwargs,
         )
 

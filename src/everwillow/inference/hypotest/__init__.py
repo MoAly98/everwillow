@@ -42,6 +42,7 @@ from everwillow.inference.hypotest.distributions import (
     QTildeAsymptotic,
     SimpleEmpiricalDistribution,
     TMuAsymptotic,
+    TMuTildeAsymptotic,
 )
 from everwillow.inference.hypotest.test_statistics import (
     Q0,
@@ -75,6 +76,7 @@ __all__ = [
     "SimpleEmpiricalDistribution",
     "TMu",
     "TMuAsymptotic",
+    "TMuTildeAsymptotic",
     "TestStatResult",
     "TestStatistic",
     "ToyGenerator",

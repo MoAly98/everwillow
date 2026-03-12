@@ -86,7 +86,7 @@ class TestQTilde:
 
         result = QTilde()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
-        assert result.q == pytest.approx(0.0, abs=1e-5)
+        assert result.value == pytest.approx(0.0, abs=1e-5)
         assert result.extras["mu_hat"] == pytest.approx(1.0, rel=1e-3)
 
     def test_downward_fluctuation(self):
@@ -105,7 +105,7 @@ class TestQTilde:
         result = QTilde()(poisson_nll, params, observed, ("mu",), poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(0.5, rel=1e-3)
-        assert result.q == pytest.approx(expected_q_value, rel=1e-3)
+        assert result.value == pytest.approx(expected_q_value, rel=1e-3)
 
     def test_upward_fluctuation_boundary(self):
         """Test q̃=0 boundary when mu_hat > mu_test.
@@ -119,7 +119,7 @@ class TestQTilde:
         result = QTilde()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(2.0, rel=1e-3)
-        assert result.q == pytest.approx(0.0, abs=1e-5)
+        assert result.value == pytest.approx(0.0, abs=1e-5)
 
     def test_with_asimov_observation(self):
         """Test q_asimov=0 when Asimov matches mu_test."""
@@ -136,10 +136,13 @@ class TestQTilde:
             asimov_observation=asimov,
         )
 
-        assert result.extras["q_asimov"] == pytest.approx(0.0, abs=1e-4)
+        assert result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
     def test_with_predict_fn(self):
-        """Test q_asimov=0 when using predict_fn at mu_test."""
+        """Test q_asimov with predict_fn at explicit mu_asimov=1.
+
+        Asimov at mu=1 gives n=15. Testing at mu=1: q_asimov=0.
+        """
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
@@ -150,9 +153,31 @@ class TestQTilde:
             ("mu",),
             poi_test=1.0,
             predict_fn=predict_fn,
+            mu_asimov=1.0,
         )
 
-        assert result.extras["q_asimov"] == pytest.approx(0.0, abs=1e-4)
+        assert result.q_asimov == pytest.approx(0.0, abs=1e-4)
+
+    def test_with_predict_fn_default_mu_asimov(self):
+        """Test q_asimov with predict_fn at default mu_asimov=0.
+
+        Asimov at mu=0 gives n=5. Testing at mu=1:
+        q_asimov = 2*(15 - 5 - 5*ln(3)) ≈ 9.014
+        """
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
+        expected_q_asimov = expected_q(5.0, 1.0)  # ~9.014
+
+        result = QTilde()(
+            poisson_nll,
+            params,
+            observed,
+            ("mu",),
+            poi_test=1.0,
+            predict_fn=predict_fn,
+        )
+
+        assert result.q_asimov == pytest.approx(expected_q_asimov, rel=1e-3)
 
 
 # =============================================================================
@@ -170,7 +195,7 @@ class TestQMu:
 
         result = QMu()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
-        assert result.q == pytest.approx(0.0, abs=1e-5)
+        assert result.value == pytest.approx(0.0, abs=1e-5)
 
     def test_downward_fluctuation(self):
         """Test q_mu value for downward fluctuation.
@@ -186,7 +211,7 @@ class TestQMu:
 
         result = QMu()(poisson_nll, params, observed, ("mu",), poi_test=mu_test)
 
-        assert result.q == pytest.approx(expected_q_value, rel=1e-3)
+        assert result.value == pytest.approx(expected_q_value, rel=1e-3)
 
     def test_upward_fluctuation_no_boundary(self):
         """Test q_mu > 0 for upward fluctuation (no boundary unlike QTilde).
@@ -204,15 +229,15 @@ class TestQMu:
         result = QMu()(poisson_nll, params, observed, ("mu",), poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(2.0, rel=1e-3)
-        assert result.q == pytest.approx(expected_q_value, rel=1e-3)
+        assert result.value == pytest.approx(expected_q_value, rel=1e-3)
 
     def test_comparison_with_qtilde_upward(self):
         """QMu > 0 while QTilde = 0 for upward fluctuation."""
         params = create_params(mu_init=1.0)
         observed = create_observation(25.0)
 
-        q_mu = QMu()(poisson_nll, params, observed, ("mu",), poi_test=1.0).q
-        q_tilde = QTilde()(poisson_nll, params, observed, ("mu",), poi_test=1.0).q
+        q_mu = QMu()(poisson_nll, params, observed, ("mu",), poi_test=1.0).value
+        q_tilde = QTilde()(poisson_nll, params, observed, ("mu",), poi_test=1.0).value
 
         assert float(q_mu) > 5.0  # Should be ~5.56
         assert q_tilde == pytest.approx(0.0, abs=1e-5)
@@ -236,8 +261,8 @@ class TestQ0:
         result2 = Q0()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
         result3 = Q0()(poisson_nll, params, observed, ("mu",), poi_test=2.0)
 
-        assert result1.q == pytest.approx(float(result2.q), rel=1e-5)
-        assert result1.q == pytest.approx(float(result3.q), rel=1e-5)
+        assert result1.value == pytest.approx(float(result2.value), rel=1e-5)
+        assert result1.value == pytest.approx(float(result3.value), rel=1e-5)
 
     def test_discovery_significance(self):
         """Test Q0 value for signal-like observation.
@@ -255,7 +280,7 @@ class TestQ0:
         result = Q0()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(1.0, rel=1e-3)
-        assert result.q == pytest.approx(expected_q0, rel=1e-3)
+        assert result.value == pytest.approx(expected_q0, rel=1e-3)
 
     def test_background_only_observation(self):
         """Test Q0=0 when observation matches background.
@@ -268,7 +293,7 @@ class TestQ0:
         result = Q0()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(0.0, abs=1e-3)
-        assert result.q == pytest.approx(0.0, abs=1e-5)
+        assert result.value == pytest.approx(0.0, abs=1e-5)
 
 
 # =============================================================================
@@ -295,7 +320,7 @@ class TestTMu:
         result = TMu()(poisson_nll, params, observed, ("mu",), poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(2.0, rel=1e-3)
-        assert result.q == pytest.approx(expected_t, rel=1e-3)
+        assert result.value == pytest.approx(expected_t, rel=1e-3)
 
     def test_negative_sign_downward(self):
         """Test t_mu < 0 when mu_hat < mu_test.
@@ -313,7 +338,7 @@ class TestTMu:
         result = TMu()(poisson_nll, params, observed, ("mu",), poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(0.5, rel=1e-3)
-        assert result.q == pytest.approx(expected_t, rel=1e-3)
+        assert result.value == pytest.approx(expected_t, rel=1e-3)
 
     def test_zero_at_mle(self):
         """Test t_mu=0 when mu_hat = mu_test."""
@@ -322,7 +347,7 @@ class TestTMu:
 
         result = TMu()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
-        assert result.q == pytest.approx(0.0, abs=1e-5)
+        assert result.value == pytest.approx(0.0, abs=1e-5)
 
 
 # =============================================================================
@@ -341,7 +366,9 @@ class TestTestStatisticGeneral:
 
         result = TestStatClass()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
-        assert hasattr(result, "q")
+        assert hasattr(result, "value")
+        assert hasattr(result, "test")
+        assert hasattr(result, "q_asimov")
         assert hasattr(result, "extras")
         assert "fit_free" in result.extras
         assert "fit_constrained" in result.extras
@@ -356,20 +383,20 @@ class TestTestStatisticGeneral:
         @jax.jit
         def compute_q(obs_n):
             obs = {"n": obs_n}
-            return test_stat(poisson_nll, params, obs, ("mu",), poi_test=1.0).q
+            return test_stat(poisson_nll, params, obs, ("mu",), poi_test=1.0).value
 
         q = compute_q(15.0)
         assert jnp.isfinite(q)
 
     @pytest.mark.parametrize("TestStatClass", [QTilde, QMu, Q0, TMu])
-    def test_asimov_defaults_to_observed(self, TestStatClass):
-        """Without predict_fn, q_asimov equals q."""
+    def test_q_asimov_none_without_asimov(self, TestStatClass):
+        """Without predict_fn or asimov_observation, q_asimov is None."""
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
         result = TestStatClass()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
 
-        assert result.extras["q_asimov"] == pytest.approx(float(result.q), rel=1e-5)
+        assert result.q_asimov is None
 
 
 # =============================================================================
@@ -411,7 +438,7 @@ class TestWithNuisanceParameters:
         # mu_hat should be close to (12 - 5) / 10 = 0.7
         assert result.extras["mu_hat"] == pytest.approx(0.7, rel=0.1)
         # q should be small since we're testing near the best fit
-        assert float(result.q) >= 0.0
+        assert float(result.value) >= 0.0
 
     def test_qmu_with_nuisance(self):
         """Test QMu with nuisance parameter."""
@@ -433,4 +460,4 @@ class TestWithNuisanceParameters:
         # With n_obs=20, mu_hat > 1 (upward fluctuation)
         assert result.extras["mu_hat"] > 1.0
         # QMu doesn't have boundary, so q > 0
-        assert float(result.q) > 0.0
+        assert float(result.value) > 0.0

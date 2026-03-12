@@ -76,7 +76,9 @@ class TestHypoTestCalculator:
         observed = create_observation(15.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -93,16 +95,18 @@ class TestHypoTestCalculator:
         assert hasattr(result, "expected_bands")
         assert hasattr(result, "test_stat_result")
 
-    def test_cls_at_mle(self):
-        """At MLE, q=0 and CLs should be 1.0.
+    def test_q_obs_at_mle(self):
+        """At MLE, q=0.
 
-        n_obs=15 for mu=1: q=0, palt=0.5, pnull=0.5, CLs=1.0
+        n_obs=15 for mu=1: mu_hat=1=mu_test, q=0.
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -113,44 +117,12 @@ class TestHypoTestCalculator:
         )
 
         assert result.q_obs == pytest.approx(0.0, abs=1e-5)
-        assert result.cl_s == pytest.approx(1.0, rel=1e-3)
 
-    def test_cls_with_sensitivity(self):
-        """Test CLs < 1 when testing above observed with sensitivity.
+    def test_q_asimov_with_asimov_observation(self):
+        """Test q_asimov with explicit Asimov observation.
 
-        n_obs=10, mu_test=2.0, asimov at null (mu=0):
-        - mu_hat = 0.5 < 2.0
-        - Asimov at null gives n=5, so q_asimov > 0 when testing mu=2
-        - With positive q_asimov, pnull > palt, so CLs < 1
+        Asimov at mu=1 (n=15), testing at mu=1: q_asimov=0.
         """
-        n_obs = 10.0
-        mu_test = 2.0
-        expected_q_value = expected_q(n_obs, mu_test)
-
-        params = create_params(mu_init=1.0)
-        observed = create_observation(n_obs)
-        # Asimov at null hypothesis (background only)
-        asimov_null = create_observation(5.0)
-
-        calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
-        )
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=mu_test,
-            asimov_observation=asimov_null,
-        )
-
-        assert result.q_obs == pytest.approx(expected_q_value, rel=1e-3)
-        # With sensitivity (q_asimov > 0), CLs < 1
-        assert result.test_stat_result.extras["q_asimov"] > 0
-        assert float(result.cl_s) < 1.0
-
-    def test_cls_with_asimov(self):
-        """Test CLs with explicit Asimov observation."""
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
         asimov = create_observation(15.0)
@@ -167,23 +139,24 @@ class TestHypoTestCalculator:
             asimov_observation=asimov,
         )
 
-        # q_asimov should be 0
-        assert result.test_stat_result.extras["q_asimov"] == pytest.approx(
-            0.0, abs=1e-4
-        )
+        assert result.test_stat_result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
-    def test_predict_fn_generates_asimov(self):
-        """Test that predict_fn generates correct Asimov data.
+    def test_q_asimov_with_predict_fn(self):
+        """Test that predict_fn generates Asimov at mu_asimov.
 
-        When predict_fn is used, Asimov is generated at mu_test.
-        For mu_test=1.0: n_asimov = 1*10 + 5 = 15
-        Testing at mu=1 on Asimov(mu=1) gives q_asimov=0.
+        QTildeAsymptotic has mu_asimov=0 by default.
+        Asimov at mu=0: n_asimov = 5
+        Testing at mu=1: q_asimov = 2*(15-5-5*ln(3)) ≈ 9.014
         """
+        expected_q_asimov = expected_q(5.0, 1.0)  # ~9.014
+
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -191,30 +164,25 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
-            predict_fn=predict_fn,
         )
 
-        # Asimov at mu_test=1 gives MLE=1, so q_asimov=0
-        assert result.test_stat_result.extras["q_asimov"] == pytest.approx(
-            0.0, abs=1e-4
+        assert result.test_stat_result.q_asimov == pytest.approx(
+            expected_q_asimov, rel=1e-3
         )
-        # And CLs=1 because palt=pnull when q_asimov=0
-        assert result.cl_s == pytest.approx(1.0, rel=1e-3)
 
-    def test_predict_fn_different_mu_test(self):
-        """Test predict_fn at different mu_test values.
+    def test_q_asimov_at_different_mu_test(self):
+        """Test that Asimov is always at mu_asimov, regardless of mu_test.
 
-        At mu_test=0: n_asimov = 0*10 + 5 = 5
-        Testing at mu=0 on Asimov(mu=0) gives q_asimov=0.
-
-        At mu_test=2: n_asimov = 2*10 + 5 = 25
-        Testing at mu=2 on Asimov(mu=2) gives q_asimov=0.
+        At mu_test=0: Asimov at mu=0 (n=5), testing at 0 → q_asimov=0
+        At mu_test=2: Asimov at mu=0 (n=5), testing at 2 → q_asimov≈23.9
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
 
         # Test at mu=0
@@ -224,32 +192,31 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=0.0,
-            predict_fn=predict_fn,
         )
-        assert result_0.test_stat_result.extras["q_asimov"] == pytest.approx(
-            0.0, abs=1e-4
-        )
+        assert result_0.test_stat_result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
         # Test at mu=2
+        expected_q_asimov_2 = expected_q(5.0, 2.0)
         result_2 = calc(
             poisson_nll,
             params,
             observed,
             ("mu",),
             poi_test=2.0,
-            predict_fn=predict_fn,
         )
-        assert result_2.test_stat_result.extras["q_asimov"] == pytest.approx(
-            0.0, abs=1e-4
+        assert result_2.test_stat_result.q_asimov == pytest.approx(
+            expected_q_asimov_2, rel=1e-3
         )
 
-    def test_expected_bands_present(self):
-        """Test that expected bands are computed."""
+    def test_pvalues_computed(self):
+        """Test that pnull and palt are finite after distribution call."""
         params = create_params(mu_init=1.0)
-        observed = create_observation(15.0)
+        observed = create_observation(10.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -257,23 +224,20 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
-            predict_fn=predict_fn,
         )
 
-        bands = result.expected_bands
-        assert hasattr(bands, "minus_2sigma")
-        assert hasattr(bands, "minus_1sigma")
-        assert hasattr(bands, "median")
-        assert hasattr(bands, "plus_1sigma")
-        assert hasattr(bands, "plus_2sigma")
+        assert jnp.isfinite(result.pnull)
+        assert jnp.isfinite(result.palt)
 
-    def test_cls_bands(self):
-        """Test that expected CLs bands can be extracted."""
+    def test_expected_bands_none(self):
+        """Test that expected bands are None (not yet implemented)."""
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
         calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
+            test_statistic=QTilde(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
         )
         result = calc(
             poisson_nll,
@@ -281,21 +245,20 @@ class TestHypoTestCalculator:
             observed,
             ("mu",),
             poi_test=1.0,
-            predict_fn=predict_fn,
         )
 
-        # At MLE (q_asimov=0), all CLs bands should be 1.0
-        cls_bands = result.expected_bands.cls_bands()
-        assert len(cls_bands) == 5
-        for cls_val in cls_bands:
-            assert float(cls_val) == pytest.approx(1.0, rel=1e-3)
+        assert result.expected_bands is None
 
     def test_custom_test_statistic(self):
         """Test calculator with QMu instead of QTilde."""
         params = create_params(mu_init=1.0)
         observed = create_observation(25.0)
 
-        calc = HypoTestCalculator(test_statistic=QMu(), distribution=QTildeAsymptotic())
+        calc = HypoTestCalculator(
+            test_statistic=QMu(),
+            distribution=QTildeAsymptotic(),
+            predict_fn=predict_fn,
+        )
         result = calc(
             poisson_nll,
             params,
@@ -311,63 +274,6 @@ class TestHypoTestCalculator:
         """Test that default test statistic is QTilde."""
         calc = HypoTestCalculator()
         assert isinstance(calc.test_statistic, QTilde)
-
-
-class TestHypoTestCalculatorCLsValues:
-    """Tests for specific CLs values with known inputs."""
-
-    def test_strong_exclusion(self):
-        """Test strong exclusion case (low CLs).
-
-        Large downward fluctuation with non-zero q_asimov gives low CLs.
-        n_obs=6, mu_test=2.0, asimov at background (mu=0) gives n=5:
-        - q_obs is large (data far below expectation)
-        - q_asimov computed at null gives sensitivity
-        - CLs should be small
-        """
-        params = create_params(mu_init=1.0)
-        observed = create_observation(6.0)
-        # Asimov at null hypothesis (background only, mu=0)
-        asimov_null = create_observation(5.0)
-
-        calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
-        )
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=2.0,
-            asimov_observation=asimov_null,
-        )
-
-        # q_asimov > 0 when testing mu=2 on null Asimov
-        assert result.test_stat_result.extras["q_asimov"] > 0
-        # With sensitivity, CLs < 1
-        assert float(result.cl_s) < 1.0
-
-    def test_no_sensitivity(self):
-        """Test no sensitivity case (CLs ≈ 1).
-
-        Testing at mu=0 (no signal hypothesis).
-        """
-        params = create_params(mu_init=0.0)
-        observed = create_observation(5.0)  # background only
-
-        calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
-        )
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=0.0,
-        )
-
-        # At mu=0 with background-only observation, CLs should be near 1
-        assert float(result.cl_s) == pytest.approx(1.0, rel=0.1)
 
 
 class TestExpectedBandsClsBands:

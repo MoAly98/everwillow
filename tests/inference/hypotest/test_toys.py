@@ -285,8 +285,9 @@ class TestToyGeneratorIntegration:
         dist = SimpleEmpiricalDistribution.from_toys(toys)
 
         # Test p-values at q=0
-        result = TSResult(q=jnp.array(0.0), extras={})
-        pnull, palt = dist.pvalues(result)
+        result = TSResult(value=jnp.array(0.0), test=jnp.array(1.0))
+        pnull = dist.null_pval(result)
+        palt = dist.alt_pval(result)
 
         assert 0.0 <= float(pnull) <= 1.0
         assert 0.0 <= float(palt) <= 1.0
@@ -308,8 +309,9 @@ class TestToyGeneratorIntegration:
         )
         dist = SimpleEmpiricalDistribution.from_toys(toys)
 
-        result = TSResult(q=jnp.array(0.0), extras={})
-        pnull, palt = dist.pvalues(result)
+        result = TSResult(value=jnp.array(0.0), test=jnp.array(1.0))
+        pnull = dist.null_pval(result)
+        palt = dist.alt_pval(result)
 
         # At q=0, all toys with q >= 0 contribute
         assert float(palt) > 0.8

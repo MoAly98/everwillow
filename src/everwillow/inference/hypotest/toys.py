@@ -173,7 +173,7 @@ class ToyGenerator(eqx.Module):
             result = self.test_statistic(
                 nll_fn, fit_params, toy_observation, poi_key, poi_test, **fit_kwargs
             )
-            return result.q
+            return result.value
 
         # Run toys in parallel using vmap
         return jax.vmap(single_toy)(keys)

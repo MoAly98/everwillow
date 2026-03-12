@@ -25,16 +25,16 @@ __all__ = [
 class TestStatResult(eqx.Module):
     """Result of computing a test statistic.
 
-    Only the test statistic value `q` is required. All other data
-    (fits, asimov values, etc.) is stored in `extras` and is
-    setup-dependent.
-
     Attributes:
-        q: Test statistic value (required).
-        extras: Arbitrary additional data (e.g., fits, q_asimov).
+        value: Test statistic value.
+        test: POI value being tested (μ).
+        q_asimov: Test statistic evaluated on Asimov data. None if not computed.
+        extras: Arbitrary additional data (e.g., fits, mu_hat).
     """
 
-    q: Array
+    value: Array
+    test: Array
+    q_asimov: Array | None = None
     extras: dict[str, tp.Any] = eqx.field(default_factory=dict)
 
 
@@ -107,8 +107,8 @@ class HypoTestResult(eqx.Module):
     pnull: Array
     palt: Array
     cl_s: Array
-    expected_bands: ExpectedBands
     test_stat_result: TestStatResult
+    expected_bands: ExpectedBands | None = None
 
 
 class HypoTestToysResult(eqx.Module):

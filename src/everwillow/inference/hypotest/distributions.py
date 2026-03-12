@@ -1,12 +1,8 @@
-"""Distributions for test statistics.
+"""Distributions for converting test statistics to p-values.
 
-This module provides distribution classes that convert test statistic values
-to p-values. Each distribution encapsulates the statistical formulas for a
-specific test statistic type, separating these assumptions from the calculators.
-
-References:
-    Cowan et al., "Asymptotic formulae for likelihood-based tests of new physics"
-    Eur. Phys. J. C 71 (2011) 1554, arXiv:1007.1727
+Provides asymptotic distribution classes (Cowan et al., arXiv:1007.1727)
+and empirical distributions from toy Monte Carlo. Each class exposes
+``cdf``, ``null_pval``, and ``alt_pval``.
 """
 
 from __future__ import annotations
@@ -32,43 +28,85 @@ __all__ = [
     "QTildeAsymptotic",
     "SimpleEmpiricalDistribution",
     "TMuAsymptotic",
+    "TMuTildeAsymptotic",
 ]
+
+_PHI = jax.scipy.stats.norm.cdf
+
+
+# =============================================================================
+# Base Distribution
+# =============================================================================
 
 
 class Distribution(eqx.Module):
     """Abstract base for test statistic distributions.
 
-    Distributions receive the full TestStatResult, allowing them to extract
-    whatever data they need from the extras dict.
+    Asymptotic distributions derive σ from the Asimov test statistic stored
+    in ``result.q_asimov``. The ``mu_asimov`` field specifies the POI value
+    at which the Asimov dataset was generated.
 
     Subclasses must implement:
-        - pvalues: Compute (pnull, palt) from test statistic result
-        - expected_pvalues: Compute expected p-values at sigma bands
+        - ``cdf``: CDF F(q | μ') with explicit σ.
+        - ``null_pval``: p-value under null hypothesis (μ' = μ).
+        - ``alt_pval``: p-value under alternative hypothesis (μ' = μ_asimov).
+
+    Attributes:
+        mu_asimov: POI value for Asimov dataset generation.
     """
 
+    mu_asimov: float = eqx.field(default=0.0, kw_only=True)
+
     @abc.abstractmethod
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Compute (pnull, palt) from test statistic result.
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """CDF F(q | μ') with known σ.
 
         Args:
-            result: Full TestStatResult with q value and extras dict.
+            q: Test statistic value.
+            mu: POI value being tested.
+            mu_prime: Assumed true POI value.
+            sigma: Standard deviation of μ̂.
 
         Returns:
-            Tuple of (pnull, palt) arrays.
+            Cumulative distribution function value.
         """
         ...
 
     @abc.abstractmethod
+    def null_pval(self, result: TestStatResult) -> Array:
+        """p-value under null hypothesis (μ' = μ).
+
+        Args:
+            result: Test statistic result. Uses ``result.q_asimov`` for σ
+                where needed.
+
+        Returns:
+            Null p-value.
+        """
+        ...
+
+    @abc.abstractmethod
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """p-value under alternative hypothesis (μ' = μ_asimov).
+
+        Args:
+            result: Test statistic result. Uses ``result.q_asimov`` for σ.
+
+        Returns:
+            Alternative p-value.
+        """
+        ...
+
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
         """Compute expected p-values at standard sigma bands.
 
         Args:
-            result: Full TestStatResult (used to extract q_asimov, etc.)
+            result: Test statistic result (uses q_asimov).
 
         Returns:
             ExpectedBands with (pnull, palt) at each sigma level.
         """
-        ...
+        raise NotImplementedError
 
 
 # =============================================================================
@@ -76,231 +114,215 @@ class Distribution(eqx.Module):
 # =============================================================================
 
 
-class QTildeAsymptotic(Distribution):
-    """Asymptotic distribution for QTilde (upper limits).
-
-    Used with the q̃_μ test statistic for hypothesis testing.
-    Expects result.extras to contain 'q_asimov' for expected band computation.
-
-    References:
-        Cowan et al., Eq. 59-64 (standard) and Eq. 66-67 (boundary), arXiv:1007.1727
-    """
-
-    def _pnull(self, q: Array, q_asimov: Array, nsigma: float = 0.0) -> Array:
-        """p-value under null hypothesis (background-only).
-
-        For expected bands (q=q_asimov), this reduces to Φ(nsigma).
-        """
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        sqrt_q_asimov = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
-
-        # Standard case: 1 - Φ(√q - √q_A - nsigma)
-        pnull = 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - sqrt_q_asimov - nsigma)
-
-        # Boundary case: q > q_asimov (Eq. 66)
-        cond = (q > q_asimov) & (q_asimov > 0)
-        pnull_boundary = 1.0 - jax.scipy.stats.norm.cdf(
-            (q - q_asimov) / (2.0 * sqrt_q_asimov) - nsigma
-        )
-        return jnp.where(cond, pnull_boundary, pnull)
-
-    def _palt(self, q: Array, q_asimov: Array, nsigma: float = 0.0) -> Array:
-        """p-value under alternative hypothesis (signal+background).
-
-        Implements Eq. 66-67 boundary handling from Cowan et al.
-        """
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        sqrt_q_asimov = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
-
-        # Standard case (Eq. 64)
-        palt = 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - nsigma)
-
-        # Boundary case: q > q_asimov (Eq. 66 second branch)
-        cond = (q > q_asimov) & (q_asimov > 0)
-        palt_boundary = 1.0 - jax.scipy.stats.norm.cdf(
-            (q + q_asimov) / (2.0 * sqrt_q_asimov) - nsigma
-        )
-        return jnp.where(cond, palt_boundary, palt)
-
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Return (pnull, palt)."""
-        q = result.q
-        q_asimov = result.extras.get("q_asimov", q)
-        return self._pnull(q, q_asimov, 0.0), self._palt(q, q_asimov, 0.0)
-
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
-        """Expected p-values at sigma bands.
-
-        At q=q_asimov:
-        - pnull = Φ(nsigma)
-        - palt = 1 - Φ(√q_asimov - nsigma)
-
-        At poi=0 (q_asimov=0), CLs = palt/pnull = 1.0 for all bands.
-        """
-        q_asimov = result.extras.get("q_asimov", result.q)
-
-        def compute_band(nsigma: float) -> tuple[Array, Array]:
-            return (
-                self._pnull(q_asimov, q_asimov, nsigma),
-                self._palt(q_asimov, q_asimov, nsigma),
-            )
-
-        return ExpectedBands(
-            minus_2sigma=compute_band(-2.0),
-            minus_1sigma=compute_band(-1.0),
-            median=compute_band(0.0),
-            plus_1sigma=compute_band(1.0),
-            plus_2sigma=compute_band(2.0),
-        )
-
-
-class QMuAsymptotic(Distribution):
-    """Asymptotic distribution for QMu.
-
-    Used with the q_μ test statistic (no boundary handling).
-    Expects result.extras to contain 'q_asimov'.
-
-    References:
-        Cowan et al., Eq. 57 arXiv:1007.1727
-    """
-
-    def _pnull(self, q: Array, q_asimov: Array, nsigma: float = 0.0) -> Array:
-        """p-value under null hypothesis (background-only).
-
-        For expected bands (q=q_asimov), this reduces to Φ(nsigma).
-        """
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        sqrt_q_asimov = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
-        return 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - sqrt_q_asimov - nsigma)
-
-    def _palt(self, q: Array, q_asimov: Array, nsigma: float = 0.0) -> Array:
-        """p-value under alternative hypothesis (signal+background)."""
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        return 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - nsigma)
-
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Return (pnull, palt)."""
-        q = result.q
-        q_asimov = result.extras.get("q_asimov", q)
-        return self._pnull(q, q_asimov, 0.0), self._palt(q, q_asimov, 0.0)
-
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
-        """Expected p-values at sigma bands."""
-        q_asimov = result.extras.get("q_asimov", result.q)
-
-        def compute_band(nsigma: float) -> tuple[Array, Array]:
-            return (
-                self._pnull(q_asimov, q_asimov, nsigma),
-                self._palt(q_asimov, q_asimov, nsigma),
-            )
-
-        return ExpectedBands(
-            minus_2sigma=compute_band(-2.0),
-            minus_1sigma=compute_band(-1.0),
-            median=compute_band(0.0),
-            plus_1sigma=compute_band(1.0),
-            plus_2sigma=compute_band(2.0),
-        )
-
-
-class Q0Asymptotic(Distribution):
-    """Asymptotic distribution for Q0 (discovery).
-
-    Used with the q_0 test statistic for discovery significance.
-    Expects result.extras to contain 'q_asimov'.
-
-    References:
-        Cowan et al., Eq. 49-52, arXiv:1007.1727
-    """
-
-    def _pnull(self, q: Array, nsigma: float = 0.0) -> Array:
-        """p-value under null hypothesis (background-only).
-
-        For discovery, this is the main quantity of interest.
-        """
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        return 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - nsigma)
-
-    def _palt(self, q: Array, q_asimov: Array, nsigma: float = 0.0) -> Array:
-        """p-value under alternative hypothesis (signal+background).
-
-        For expected bands (q=q_asimov), this reduces to Φ(nsigma).
-        """
-        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
-        sqrt_q_asimov = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
-        return 1.0 - jax.scipy.stats.norm.cdf(sqrt_q - sqrt_q_asimov - nsigma)
-
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Return (pnull, palt) - raw hypothesis p-values."""
-        q = result.q
-        q_asimov = result.extras.get("q_asimov", q)
-        return self._pnull(q, 0.0), self._palt(q, q_asimov, 0.0)
-
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
-        """Expected p-values at sigma bands using unified formulas."""
-        q_asimov = result.extras.get("q_asimov", result.q)
-
-        def compute_band(nsigma: float) -> tuple[Array, Array]:
-            return (
-                self._pnull(q_asimov, nsigma),
-                self._palt(q_asimov, q_asimov, nsigma),
-            )
-
-        return ExpectedBands(
-            minus_2sigma=compute_band(-2.0),
-            minus_1sigma=compute_band(-1.0),
-            median=compute_band(0.0),
-            plus_1sigma=compute_band(1.0),
-            plus_2sigma=compute_band(2.0),
-        )
+def _sigma_from_asimov(mu: Array, mu_asimov: float, q_asimov: Array) -> Array:
+    """Derive σ from the Asimov test statistic: σ = |μ - μ_asimov| / √q_asimov."""
+    return jnp.abs(mu - mu_asimov) / jnp.sqrt(jnp.maximum(q_asimov, 1e-10))
 
 
 class TMuAsymptotic(Distribution):
-    """Asymptotic distribution for TMu (two-sided).
+    """Asymptotic distribution for t_μ (two-sided, Eq. 38).
 
-    Used with the t_μ signed test statistic for two-sided confidence intervals.
-    Expects result.extras to contain 'q_asimov' (which is t_asimov for TMu).
+    Used with the t_μ test statistic for two-sided confidence intervals.
 
-    References:
-        Cowan et al., Eq. 33-37, arXiv:1007.1727
+    Attributes:
+        mu_asimov: POI for Asimov generation. Defaults to 0.0 (exclusion).
     """
 
-    def _pnull(self, t: Array, t_asimov: Array, nsigma: float = 0.0) -> Array:
-        """Two-sided p-value under null hypothesis (background-only)."""
-        sigma = jnp.sqrt(jnp.maximum(jnp.abs(t_asimov), 1e-10))
-        return 2.0 * (1.0 - jax.scipy.stats.norm.cdf(jnp.abs(t) / sigma - nsigma))
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """F(t_μ | μ') = Φ(√t + (μ-μ')/σ) + Φ(√t - (μ-μ')/σ) - 1."""
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        delta = (mu - mu_prime) / sigma
+        return _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
 
-    def _palt(self, t: Array, t_asimov: Array, nsigma: float = 0.0) -> Array:
-        """Two-sided p-value under alternative hypothesis (signal+background)."""
-        sigma = jnp.sqrt(jnp.maximum(jnp.abs(t_asimov), 1e-10))
-        shift = jnp.sqrt(jnp.abs(t_asimov))
-        return 2.0 * (
-            1.0 - jax.scipy.stats.norm.cdf((jnp.abs(t) + shift) / sigma - nsigma)
+    def null_pval(self, result: TestStatResult) -> Array:
+        """p = 2(1 - Φ(√t_μ)). No σ needed."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        return 2.0 * (1.0 - _PHI(sqrt_q))
+
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """p = 2 - Φ(√t + √q_A) - Φ(√t - √q_A)."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        return 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI(sqrt_q - sqrt_qa)
+
+
+class TMuTildeAsymptotic(Distribution):
+    """Asymptotic distribution for t̃_μ (two-sided with physical bound, Eq. 40/44).
+
+    Used with the t̃_μ test statistic for two-sided tests with the physical
+    constraint μ ≥ 0. The CDF has a piecewise structure with the Φ+Φ-1
+    form in both regions (Eq. 44).
+
+    Attributes:
+        mu_asimov: POI for Asimov generation. Defaults to 0.0.
+    """
+
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """F(t̃_μ | μ') — piecewise at threshold μ²/σ²."""
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        delta = (mu - mu_prime) / sigma
+        threshold = (mu / sigma) ** 2
+
+        # Standard region: Φ(√t̃ + δ) + Φ(√t̃ - δ) - 1
+        f_standard = _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
+
+        # Boundary region: Φ(√t̃ + δ) + Φ((t̃ + μ²/σ²)/(2μ/σ) - δ) - 1
+        f_boundary = (
+            _PHI(sqrt_q + delta)
+            + _PHI((q + threshold) / (2.0 * mu / sigma) - delta)
+            - 1.0
         )
 
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Return (pnull, palt) - raw hypothesis p-values."""
-        t = result.q
-        t_asimov = result.extras.get("q_asimov", t)
-        return self._pnull(t, t_asimov, 0.0), self._palt(t, t_asimov, 0.0)
+        return jnp.where(q <= threshold, f_standard, f_boundary)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
-        """Expected p-values at sigma bands using unified formulas."""
-        t_asimov = result.extras.get("q_asimov", result.q)
+    def null_pval(self, result: TestStatResult) -> Array:
+        """Null p-value (μ' = μ).
 
-        def compute_band(nsigma: float) -> tuple[Array, Array]:
-            return (
-                self._pnull(t_asimov, t_asimov, nsigma),
-                self._palt(t_asimov, t_asimov, nsigma),
-            )
+        Standard: p = 2(1 - Φ(√t̃))
+        Boundary: p = 2 - Φ(√t̃) - Φ((t̃ + q_A)/(2√q_A))
+        """
+        q = result.value
+        q_asimov = result.q_asimov
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
-        return ExpectedBands(
-            minus_2sigma=compute_band(-2.0),
-            minus_1sigma=compute_band(-1.0),
-            median=compute_band(0.0),
-            plus_1sigma=compute_band(1.0),
-            plus_2sigma=compute_band(2.0),
+        p_standard = 2.0 * (1.0 - _PHI(sqrt_q))
+        p_boundary = 2.0 - _PHI(sqrt_q) - _PHI((q + q_asimov) / (2.0 * sqrt_qa))
+
+        return jnp.where(q <= q_asimov, p_standard, p_boundary)
+
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
+
+        Standard: p = 2 - Φ(√t̃ + √q_A) - Φ(√t̃ - √q_A)
+        Boundary: p = 2 - Φ(√t̃ + √q_A) - Φ((t̃ - q_A)/(2√q_A))
+        """
+        q = result.value
+        q_asimov = result.q_asimov
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
+
+        p_standard = 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI(sqrt_q - sqrt_qa)
+        p_boundary = (
+            2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI((q - q_asimov) / (2.0 * sqrt_qa))
         )
+
+        return jnp.where(q <= q_asimov, p_standard, p_boundary)
+
+
+class Q0Asymptotic(Distribution):
+    """Asymptotic distribution for q_0 (discovery, Eq. 49).
+
+    Used with the q_0 test statistic for discovery significance.
+
+    Attributes:
+        mu_asimov: POI for Asimov generation. Defaults to 1.0
+            (signal hypothesis).
+    """
+
+    mu_asimov: float = 1.0
+
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """F(q_0 | μ') = Φ(√q_0 - μ'/σ)."""
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        return _PHI(sqrt_q - mu_prime / sigma)
+
+    def null_pval(self, result: TestStatResult) -> Array:
+        """p = 1 - Φ(√q_0). No σ needed."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        return 1.0 - _PHI(sqrt_q)
+
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """p = 1 - Φ(√q_0 - √q_A)."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        return 1.0 - _PHI(sqrt_q - sqrt_qa)
+
+
+class QMuAsymptotic(Distribution):
+    """Asymptotic distribution for q_μ (upper limit, Eq. 57).
+
+    Used with the q_μ test statistic (no boundary handling).
+
+    Attributes:
+        mu_asimov: POI for Asimov generation. Defaults to 0.0.
+    """
+
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """F(q_μ | μ') = Φ(√q_μ - (μ - μ')/σ)."""
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        return _PHI(sqrt_q - (mu - mu_prime) / sigma)
+
+    def null_pval(self, result: TestStatResult) -> Array:
+        """p = 1 - Φ(√q_μ). No σ needed."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        return 1.0 - _PHI(sqrt_q)
+
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """p = 1 - Φ(√q_μ - √q_A)."""
+        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        return 1.0 - _PHI(sqrt_q - sqrt_qa)
+
+
+class QTildeAsymptotic(Distribution):
+    """Asymptotic distribution for q̃_μ (upper limit with physical bound, Eq. 64).
+
+    Used with the q̃_μ test statistic for hypothesis testing with the
+    physical constraint μ ≥ 0. The CDF is piecewise at q̃ = μ²/σ² = q_asimov.
+
+    Attributes:
+        mu_asimov: POI for Asimov generation. Defaults to 0.0.
+    """
+
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """F(q̃_μ | μ') — piecewise at threshold μ²/σ²."""
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        threshold = (mu / sigma) ** 2
+
+        # Standard region: Φ(√q̃ - (μ-μ')/σ)
+        f_standard = _PHI(sqrt_q - (mu - mu_prime) / sigma)
+
+        # Boundary region: Φ((q̃ - (μ²-2μμ')/σ²) / (2μ/σ))
+        f_boundary = _PHI(
+            (q - (mu**2 - 2 * mu * mu_prime) / sigma**2) / (2.0 * mu / sigma)
+        )
+
+        return jnp.where(q <= threshold, f_standard, f_boundary)
+
+    def null_pval(self, result: TestStatResult) -> Array:
+        """Null p-value (μ' = μ).
+
+        q̃ = 0: p = 1
+        Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃)
+        Boundary (q̃ > q_A): p = 1 - Φ((q̃ + q_A)/(2√q_A))
+        """
+        q = result.value
+        q_asimov = result.q_asimov
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
+
+        p_standard = 1.0 - _PHI(sqrt_q)
+        p_boundary = 1.0 - _PHI((q + q_asimov) / (2.0 * sqrt_qa))
+
+        return jnp.where(q <= q_asimov, p_standard, p_boundary)
+
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
+
+        q̃ = 0: p = 1
+        Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃ - √q_A)
+        Boundary (q̃ > q_A): p = 1 - Φ((q̃ - q_A)/(2√q_A))
+        """
+        q = result.value
+        q_asimov = result.q_asimov
+        sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
+
+        p_standard = 1.0 - _PHI(sqrt_q - sqrt_qa)
+        p_boundary = 1.0 - _PHI((q - q_asimov) / (2.0 * sqrt_qa))
+
+        return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
 
 # =============================================================================
@@ -313,8 +335,8 @@ class EmpiricalDistribution(Distribution):
 
     Stores the raw test statistic arrays from toy generation and provides
     the ``from_toys`` factory method. Subclass this and override
-    ``pvalues`` / ``expected_pvalues`` to implement custom p-value
-    computation methods (e.g. KDE smoothing, tail extrapolation).
+    ``null_pval`` / ``alt_pval`` to implement custom p-value computation
+    methods (e.g. KDE smoothing, tail extrapolation).
 
     Attributes:
         q_alt: Test statistics under alternative (signal+background) hypothesis.
@@ -336,47 +358,22 @@ class EmpiricalDistribution(Distribution):
         """
         return cls(q_alt=toys.q_alt, q_null=toys.q_null)
 
+    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
+        """Not applicable for empirical distributions."""
+        raise NotImplementedError("Empirical distributions do not have an analytic CDF")
+
 
 class SimpleEmpiricalDistribution(EmpiricalDistribution):
     """Empirical p-values via simple tail counting.
 
     ``pnull = fraction of q_null >= q_obs``
     ``palt  = fraction of q_alt  >= q_obs``
-
-    Expected bands are computed by evaluating p-values at each q in q_null
-    and taking percentiles at the standard normal quantiles.
     """
 
-    def pvalues(self, result: TestStatResult) -> tuple[Array, Array]:
-        """Compute empirical (pnull, palt) from toy distributions."""
-        q = result.q
-        pnull = jnp.mean(self.q_null >= q)
-        palt = jnp.mean(self.q_alt >= q)
-        return pnull, palt
+    def null_pval(self, result: TestStatResult) -> Array:
+        """Empirical p-value under null: fraction of q_null >= q_obs."""
+        return jnp.mean(self.q_null >= result.value)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
-        """Compute expected p-values at standard sigma bands from toy distributions.
-
-        For each test statistic value in q_null, computes what the p-values would be,
-        then takes percentiles at the standard normal quantiles.
-        """
-        # For each q in q_null, compute p-values
-        pnulls = jax.vmap(lambda q: jnp.mean(self.q_null >= q))(self.q_null)
-        palts = jax.vmap(lambda q: jnp.mean(self.q_alt >= q))(self.q_null)
-
-        # Normal distribution percentiles at -2σ, -1σ, 0, +1σ, +2σ
-        # These are CDF values: Φ(-2), Φ(-1), Φ(0), Φ(1), Φ(2)
-        percentiles = jnp.array(
-            [2.27501319, 15.86552539, 50.0, 84.13447461, 97.72498681]
-        )
-
-        pnull_bands = jnp.percentile(pnulls, percentiles)
-        palt_bands = jnp.percentile(palts, percentiles)
-
-        return ExpectedBands(
-            minus_2sigma=(pnull_bands[0], palt_bands[0]),
-            minus_1sigma=(pnull_bands[1], palt_bands[1]),
-            median=(pnull_bands[2], palt_bands[2]),
-            plus_1sigma=(pnull_bands[3], palt_bands[3]),
-            plus_2sigma=(pnull_bands[4], palt_bands[4]),
-        )
+    def alt_pval(self, result: TestStatResult) -> Array:
+        """Empirical p-value under alternative: fraction of q_alt >= q_obs."""
+        return jnp.mean(self.q_alt >= result.value)

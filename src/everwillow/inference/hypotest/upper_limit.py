@@ -32,7 +32,11 @@ import jax.numpy as jnp
 import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
-from everwillow.inference.hypotest._results import ExpectedLimitResult, HypoTestResult
+from everwillow.inference.hypotest._results import (
+    ExpectedBands,
+    ExpectedLimitResult,
+    HypoTestResult,
+)
 from everwillow.inference.hypotest._utils import cl_s
 
 __all__ = [
@@ -294,32 +298,37 @@ def expected_upper_limit(
     )
 
     # Expected limits at each sigma band
+    def _get_bands(poi: Array) -> ExpectedBands:
+        bands = calc_fn(poi).expected_bands
+        assert bands is not None, "expected_bands required for expected_upper_limit"
+        return bands
+
     minus_2sigma = upper_limit(
-        lambda poi: objective_fn(calc_fn(poi).expected_bands.minus_2sigma),
+        lambda poi: objective_fn(_get_bands(poi).minus_2sigma),
         bounds,
         level,
         **solver_kwargs,
     )
     minus_1sigma = upper_limit(
-        lambda poi: objective_fn(calc_fn(poi).expected_bands.minus_1sigma),
+        lambda poi: objective_fn(_get_bands(poi).minus_1sigma),
         bounds,
         level,
         **solver_kwargs,
     )
     expected = upper_limit(
-        lambda poi: objective_fn(calc_fn(poi).expected_bands.median),
+        lambda poi: objective_fn(_get_bands(poi).median),
         bounds,
         level,
         **solver_kwargs,
     )
     plus_1sigma = upper_limit(
-        lambda poi: objective_fn(calc_fn(poi).expected_bands.plus_1sigma),
+        lambda poi: objective_fn(_get_bands(poi).plus_1sigma),
         bounds,
         level,
         **solver_kwargs,
     )
     plus_2sigma = upper_limit(
-        lambda poi: objective_fn(calc_fn(poi).expected_bands.plus_2sigma),
+        lambda poi: objective_fn(_get_bands(poi).plus_2sigma),
         bounds,
         level,
         **solver_kwargs,

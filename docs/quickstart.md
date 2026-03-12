@@ -3,7 +3,7 @@
 Everwillow is a inference-only library for statistical measurements performed in HEP.
 It is build on JAX and focusses on strong interopability with JAX transformations to allow auto-differentiation, JIT-compilation, vectorization for any inference step.
 
-The main entry point to everwillow is having a (potentially unnormalized) log-probability density function compatible with JAX, see the following example of two stacked gaussians:
+The main entry point to everwillow is having a log-probability density function compatible with JAX, see the following example of a gaussian fit:
 
 ```python
 from functools import partial
@@ -43,5 +43,8 @@ result = ew.fit(
 assert result.success
 
 print(result.params)
-# {'loc': Array(0.39995897, dtype=float64), 'scale': Array(0.40000754, dtype=float64)}
+# {
+#   'loc': Array(0.39995897, dtype=float64),
+#   'scale': Array(0.40000754, dtype=float64),
+# }
 ```

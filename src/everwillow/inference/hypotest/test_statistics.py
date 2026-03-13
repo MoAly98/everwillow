@@ -24,7 +24,7 @@ from jaxtyping import Array, PyTree
 import everwillow as ew
 import everwillow.statelib as sl
 from everwillow.inference.hypotest._results import TestStatResult
-from everwillow.inference.hypotest._utils import constrained_fit
+from everwillow.inference.hypotest._utils import constrained_fit, make_asimov
 
 __all__ = [
     "Q0",
@@ -203,8 +203,7 @@ class CowanTestStatistic(TestStatistic):
         if asimov_observation is not None:
             return asimov_observation
         if predict_fn is not None:
-            asimov_params = sl.update(params, updates={poi_key: mu_asimov})
-            return predict_fn(asimov_params)
+            return make_asimov(predict_fn, params, poi_key, mu_asimov)
         return None
 
 

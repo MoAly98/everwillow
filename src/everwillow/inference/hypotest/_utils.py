@@ -11,6 +11,30 @@ import everwillow as ew
 import everwillow.statelib as sl
 
 
+def make_asimov(
+    predict_fn: tp.Callable[[sl.State], PyTree],
+    params: sl.State,
+    poi_key: sl.K,
+    mu_asimov: float,
+) -> PyTree:
+    """Generate an Asimov dataset at a given POI value.
+
+    Sets the POI to ``mu_asimov`` in the parameter state and calls
+    ``predict_fn`` to produce the expected observation.
+
+    Args:
+        predict_fn: Function mapping parameter state to expected observation.
+        params: Parameter state (used as template).
+        poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+        mu_asimov: POI value at which to generate the Asimov dataset.
+
+    Returns:
+        Expected observation (Asimov dataset).
+    """
+    asimov_params = sl.update(params, updates={poi_key: mu_asimov})
+    return predict_fn(asimov_params)
+
+
 def cl_s(palt: Array, pnull: Array) -> Array:
     """Compute CLs = palt / pnull.
 

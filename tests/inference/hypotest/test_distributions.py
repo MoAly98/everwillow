@@ -459,3 +459,182 @@ class TestSignificance:
         dist = Q0Asymptotic()
         z = dist.null_significance(result)
         assert float(z) == pytest.approx(5.0, rel=1e-2)
+
+
+# =============================================================================
+# Expected P-values Tests
+# =============================================================================
+
+
+class TestExpectedPvalues:
+    """Tests for expected_pvalues (Brazil band computation).
+
+    Setup: μ=2, σ=1 → q_asimov = μ²/σ² = 4.
+    Expected √q at band N = max(0, μ/σ - N) = max(0, 2 - N).
+    """
+
+    @pytest.fixture
+    def asimov_result(self):
+        """TestStatResult with μ=2, q_asimov=4 (σ=1)."""
+        return TSResult(
+            value=jnp.array(4.0),
+            test=jnp.array(2.0),
+            q_asimov=jnp.array(4.0),
+        )
+
+    def test_median_clb_equals_half(self, asimov_result):
+        """At median (N=0), CL_b = Φ(0) = 0.5."""
+        dist = QMuAsymptotic()
+        bands = dist.expected_pvalues(asimov_result)
+        _pnull, palt = bands.median
+        assert float(palt) == pytest.approx(0.5, abs=1e-5)
+
+    def test_median_cls_equals_double_pnull(self, asimov_result):
+        """At median (N=0), CLs = CL_{s+b} / 0.5 = 2 × pnull."""
+        dist = QMuAsymptotic()
+        bands = dist.expected_pvalues(asimov_result)
+        pnull, palt = bands.median
+        cls = float(pnull) / float(palt)
+        assert cls == pytest.approx(2 * float(pnull), rel=1e-5)
+
+    @pytest.mark.parametrize(
+        ("band_name", "expected_pnull", "expected_palt"),
+        [
+            # N=-2: √q=4, pnull=1-Φ(4)≈3.167e-5, palt=Φ(-2)≈0.02275
+            ("minus_2sigma", 3.167e-5, 0.02275),
+            # N=-1: √q=3, pnull=1-Φ(3)≈0.00135, palt=Φ(-1)≈0.15866
+            ("minus_1sigma", 0.00135, 0.15866),
+            # N=0: √q=2, pnull=1-Φ(2)≈0.02275, palt=Φ(0)=0.5
+            ("median", 0.02275, 0.5),
+            # N=+1: √q=1, pnull=1-Φ(1)≈0.15866, palt=Φ(1)≈0.84134
+            ("plus_1sigma", 0.15866, 0.84134),
+            # N=+2: √q=0, pnull=1-Φ(0)=0.5, palt=Φ(2)≈0.97725
+            ("plus_2sigma", 0.5, 0.97725),
+        ],
+    )
+    def test_expected_pvalues_qmu_all_bands(
+        self, asimov_result, band_name, expected_pnull, expected_palt
+    ):
+        """QMu expected p-values at each band match hand-computed values."""
+        dist = QMuAsymptotic()
+        bands = dist.expected_pvalues(asimov_result)
+        pnull, palt = getattr(bands, band_name)
+        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+
+    def test_expected_pvalues_requires_q_asimov(self):
+        """expected_pvalues raises when q_asimov is missing."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(2.0))
+        dist = QMuAsymptotic()
+        with pytest.raises((ValueError, TypeError)):
+            dist.expected_pvalues(result)
+
+    @pytest.mark.parametrize(
+        ("band_name", "expected_pnull", "expected_palt"),
+        [
+            # N=-2: boundary q=12, pnull=1-Φ((12+4)/4)=1-Φ(4), palt=1-Φ((12-4)/4)=1-Φ(2)
+            ("minus_2sigma", 3.167e-5, 0.02275),
+            # N=-1: boundary q=8, pnull=1-Φ((8+4)/4)=1-Φ(3), palt=1-Φ((8-4)/4)=1-Φ(1)
+            ("minus_1sigma", 0.00135, 0.15866),
+            # N=0: standard q=4, pnull=1-Φ(2), palt=1-Φ(0)=0.5
+            ("median", 0.02275, 0.5),
+            # N=+1: standard q=1, pnull=1-Φ(1), palt=1-Φ(-1)=Φ(1)
+            ("plus_1sigma", 0.15866, 0.84134),
+            # N=+2: standard q=0, pnull=1-Φ(0)=0.5, palt=1-Φ(-2)=Φ(2)
+            ("plus_2sigma", 0.5, 0.97725),
+        ],
+    )
+    def test_expected_pvalues_qtilde_all_bands(
+        self, asimov_result, band_name, expected_pnull, expected_palt
+    ):
+        """QTilde expected p-values at each band (μ=2, σ=1, q_A=4).
+
+        Standard (N≥0): q=max(0,μ/σ-N)², pnull=1-Φ(√q), palt=1-Φ(√q-√q_A).
+        Boundary (N<0): q=(μ/σ)²-2(μ/σ)N, pnull=1-Φ((q+q_A)/(2√q_A)), palt=1-Φ((q-q_A)/(2√q_A)).
+        """
+        dist = QTildeAsymptotic()
+        bands = dist.expected_pvalues(asimov_result)
+        pnull, palt = getattr(bands, band_name)
+        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+
+    def test_expected_pvalues_qtilde_requires_q_asimov(self):
+        """QTilde expected_pvalues raises when q_asimov is missing."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(2.0))
+        dist = QTildeAsymptotic()
+        with pytest.raises((ValueError, TypeError)):
+            dist.expected_pvalues(result)
+
+    @pytest.mark.parametrize(
+        ("band_name", "expected_pnull", "expected_palt"),
+        [
+            # N=-2: q=max(0,2-2)²=0, pnull=1-Φ(0)=0.5, palt=1-Φ(0-2)=Φ(2)
+            ("minus_2sigma", 0.5, 0.97725),
+            # N=-1: q=max(0,2-1)²=1, pnull=1-Φ(1), palt=1-Φ(1-2)=Φ(1)
+            ("minus_1sigma", 0.15866, 0.84134),
+            # N=0: q=max(0,2)²=4, pnull=1-Φ(2), palt=1-Φ(2-2)=0.5
+            ("median", 0.02275, 0.5),
+            # N=+1: q=max(0,3)²=9, pnull=1-Φ(3), palt=1-Φ(3-2)=1-Φ(1)
+            ("plus_1sigma", 0.00135, 0.15866),
+            # N=+2: q=max(0,4)²=16, pnull=1-Φ(4), palt=1-Φ(4-2)=1-Φ(2)
+            ("plus_2sigma", 3.167e-5, 0.02275),
+        ],
+    )
+    def test_expected_pvalues_q0_all_bands(
+        self, band_name, expected_pnull, expected_palt
+    ):
+        """Q0 discovery expected p-values with q_asimov=4 (√q_A=2).
+
+        q=max(0,√q_A+N)², pnull=1-Φ(√q), palt=1-Φ(√q-√q_A).
+        """
+        result = TSResult(
+            value=jnp.array(4.0),
+            test=jnp.array(0.0),
+            q_asimov=jnp.array(4.0),
+        )
+        dist = Q0Asymptotic()
+        bands = dist.expected_pvalues(result)
+        pnull, palt = getattr(bands, band_name)
+        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+
+    def test_expected_pvalues_q0_requires_q_asimov(self):
+        """Q0 expected_pvalues raises when q_asimov is missing."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(0.0))
+        dist = Q0Asymptotic()
+        with pytest.raises((ValueError, TypeError)):
+            dist.expected_pvalues(result)
+
+    def test_expected_pvalues_not_implemented_for_tmu(self, asimov_result):
+        """TMuAsymptotic does not support expected_pvalues."""
+        dist = TMuAsymptotic()
+        with pytest.raises(NotImplementedError):
+            dist.expected_pvalues(asimov_result)
+
+    def test_analytic_upper_limit_crosscheck_median(self):
+        """Numeric expected CLs upper limit matches analytic formula at N=0.
+
+        Analytic: μ_up = σ × (Φ⁻¹(1 - α × Φ(0)) + 0) = σ × Φ⁻¹(1 - 0.025)
+                       = 1.0 × 1.95996 ≈ 1.96
+        """
+        # σ=1, α=0.05, N=0
+        # Φ(0) = 0.5, α×Φ(0) = 0.025, 1-0.025 = 0.975
+        # Φ⁻¹(0.975) = 1.95996
+        expected_mu_up = 1.95996
+
+        # Build expected_pvalues at various mu values and check CLs = 0.05
+        dist = QMuAsymptotic()
+        sigma = 1.0
+
+        # At mu = expected_mu_up, the median CLs should be alpha=0.05
+        q_asimov = (expected_mu_up / sigma) ** 2
+        result = TSResult(
+            value=jnp.array(q_asimov),
+            test=jnp.array(expected_mu_up),
+            q_asimov=jnp.array(q_asimov),
+        )
+        bands = dist.expected_pvalues(result)
+        pnull, palt = bands.median
+        cls_median = float(pnull) / float(palt)
+
+        assert cls_median == pytest.approx(0.05, rel=1e-3)

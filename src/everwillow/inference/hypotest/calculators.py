@@ -12,6 +12,7 @@ Distribution objects.
 
 from __future__ import annotations
 
+import contextlib
 import typing as tp
 
 import equinox as eqx
@@ -19,6 +20,7 @@ from jaxtyping import PyTree
 
 import everwillow.statelib as sl
 from everwillow.inference.hypotest._results import HypoTestResult
+from everwillow.inference.hypotest._utils import cl_s
 from everwillow.inference.hypotest.distributions import Distribution, QTildeAsymptotic
 from everwillow.inference.hypotest.test_statistics import QTilde, TestStatistic
 
@@ -77,8 +79,14 @@ class HypoTestCalculator(eqx.Module):
         pnull = self.distribution.null_pval(ts_result)
         palt = self.distribution.alt_pval(ts_result)
 
-        # TODO: CLs convention (pnull/palt vs palt/pnull) needs resolution
         cl_s_value = None
+        if pnull is not None and palt is not None:
+            cl_s_value = cl_s(pnull, palt)
+
+        expected_bands = None
+        if ts_result.q_asimov is not None:
+            with contextlib.suppress(NotImplementedError):
+                expected_bands = self.distribution.expected_pvalues(ts_result)
 
         return HypoTestResult(
             q_obs=ts_result.value,
@@ -86,7 +94,7 @@ class HypoTestCalculator(eqx.Module):
             palt=palt,
             cl_s=cl_s_value,
             test_stat_result=ts_result,
-            expected_bands=None,
+            expected_bands=expected_bands,
         )
 
 

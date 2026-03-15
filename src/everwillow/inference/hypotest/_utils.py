@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typing as tp
 
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PyTree
 
@@ -35,20 +36,53 @@ def make_asimov(
     return predict_fn(asimov_params)
 
 
-def cl_s(palt: Array, pnull: Array) -> Array:
-    """Compute CLs = palt / pnull.
+def sigma_from_asimov(mu: Array, q_asimov: Array, mu_asimov: float = 0.0) -> Array:
+    """Extract σ (uncertainty on μ̂) from an Asimov test statistic.
 
-    The CLs method protects against excluding signal
-    hypotheses when there is no sensitivity.
+    Uses the relation t_{μ,A} ≈ (μ - μ')²/σ² to solve for σ.
 
     Args:
-        palt: p-value under alternative hypothesis (signal+background).
-        pnull: p-value under null hypothesis (background-only).
+        mu: POI value being tested.
+        q_asimov: Test statistic evaluated on Asimov data.
+        mu_asimov: POI value used to generate the Asimov dataset.
+            Defaults to 0.0 (background-only, for exclusion tests).
+
+    Returns:
+        Estimated σ = |μ - μ_asimov| / √q_asimov.
+    """
+    return jnp.abs(mu - mu_asimov) / jnp.sqrt(jnp.maximum(q_asimov, 1e-10))
+
+
+def significance(p: Array) -> Array:
+    """Convert p-value to significance: Z = Φ⁻¹(1 - p).
+
+    Args:
+        p: p-value (scalar or array).
+
+    Returns:
+        Significance Z.
+    """
+    return -jax.scipy.stats.norm.ppf(p)
+
+
+def cl_s(pnull: Array, palt: Array) -> Array:
+    """Compute CLs = pnull / palt (Cowan et al., ATLAS convention).
+
+    CLs = CL_{s+b} / CL_b = p_μ / (1 - p_b), where (1 - p_b) = palt
+    in our convention where palt = P(q ≥ q_obs | background).
+
+    The CLs method protects against excluding signal
+    hypotheses when there is no sensitivity: if palt is small
+    (background also finds data unlikely), CLs stays large.
+
+    Args:
+        pnull: p-value under null hypothesis (μ' = μ, signal+background).
+        palt: p-value under alternative hypothesis (μ' = 0, background-only).
 
     Returns:
         CLs value. Protected against division by zero.
     """
-    return palt / jnp.maximum(pnull, 1e-10)
+    return pnull / jnp.maximum(palt, 1e-10)
 
 
 def constrained_fit(

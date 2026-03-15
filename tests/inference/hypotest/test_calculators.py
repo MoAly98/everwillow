@@ -18,6 +18,8 @@ from everwillow.inference.hypotest import (
     QMu,
     QTilde,
     QTildeAsymptotic,
+    cl_s,
+    significance,
 )
 
 # =============================================================================
@@ -231,26 +233,6 @@ class TestAsymptoticCalculator:
         assert jnp.isfinite(result.pnull)
         assert jnp.isfinite(result.palt)
 
-    def test_expected_bands_none(self):
-        """Test that expected bands are None (not yet implemented)."""
-        params = create_params(mu_init=1.0)
-        observed = create_observation(15.0)
-
-        calc = AsymptoticCalculator(
-            test_statistic=QTilde(),
-            distribution=QTildeAsymptotic(),
-        )
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=1.0,
-            predict_fn=predict_fn,
-        )
-
-        assert result.expected_bands is None
-
     def test_custom_test_statistic(self):
         """Test calculator with QMu instead of QTilde."""
         params = create_params(mu_init=1.0)
@@ -333,30 +315,143 @@ class TestHypoTestCalculator:
 
 
 # =============================================================================
+# CLs Tests
+# =============================================================================
+
+
+class TestClS:
+    """Tests for cl_s utility: CLs = pnull / palt (Cowan et al., ATLAS convention).
+
+    Uses QMu asymptotic p-values (Cowan Eq. 57-59) as reference values.
+    For QMu with μ tested, σ=1, Asimov at μ'=0:
+        pnull = 1 - Φ(√q)        (p_μ: upper tail under signal)
+        palt  = 1 - Φ(√q - μ/σ)  (CL_b: upper tail under background)
+    """
+
+    @pytest.mark.parametrize(
+        ("pnull", "palt", "expected_cls"),
+        [
+            # QMu at median upper limit (μ=1.96σ, band N=0):
+            # q = 1.96², pnull = 1-Φ(1.96) = 0.025, palt = 1-Φ(0) = 0.5
+            (0.025, 0.5, 0.05),
+            # QMu at +1σ band (μ=2.727σ, band N=1):
+            # q = 1.727², pnull = 1-Φ(1.727) ≈ 0.0421, palt = Φ(1) ≈ 0.8413
+            (0.0421, 0.8413, 0.05004),
+            # QMu at -1σ band (μ=1.412σ, band N=-1):
+            # q = 2.412², pnull = 1-Φ(2.412) ≈ 0.00793, palt = Φ(-1) ≈ 0.1587
+            (0.00793, 0.1587, 0.04997),
+        ],
+        ids=["median-band", "plus-1sigma-band", "minus-1sigma-band"],
+    )
+    def test_qmu_cls_at_expected_upper_limit(self, pnull, palt, expected_cls):
+        """CLs ≈ 0.05 at each band's expected upper limit (σ=1, α=0.05)."""
+        result = float(cl_s(jnp.array(pnull), jnp.array(palt)))
+        assert result == pytest.approx(expected_cls, rel=1e-3)
+
+    def test_cls_inflated_when_no_sensitivity(self):
+        """CLs method protects against false exclusion.
+
+        When background also finds data unlikely (small palt), CLs
+        is inflated even if pnull is small. This is the key property
+        of the CLs method — it prevents excluding signals when
+        the experiment has no sensitivity.
+        """
+        result = float(cl_s(jnp.array(0.001), jnp.array(0.002)))
+        assert result == pytest.approx(0.5)
+
+
+# =============================================================================
 # ExpectedBands Tests
 # =============================================================================
 
 
 class TestExpectedBandsClsBands:
-    """Tests for ExpectedBands.cls_bands() with known values."""
+    """Tests for ExpectedBands.cls_bands() with known QMu values.
 
-    def test_cls_bands_with_known_pvalues(self):
-        """Test cls_bands computes CLs = palt / pnull correctly.
+    Uses QMu p-values at the expected upper limit (σ=1, α=0.05).
+    At the upper limit for each band, CLs = pnull/palt = 0.05.
+    Different bands have different pnull and palt, verifying that
+    cls_bands() correctly pairs the right elements of each tuple.
+    """
 
-        Each band tuple is (pnull, palt). CLs = palt / pnull.
+    def test_cls_bands_qmu_at_expected_upper_limit(self):
+        """CLs = 0.05 at each band's expected upper limit.
+
+        QMu expected p-values at μ_up(N) = Φ⁻¹(1 - α·Φ(N)) + N:
+            Band N | μ_up  | pnull = 1-Φ(μ_up-N) | palt = Φ(N)  | CLs
+            -2     | 1.052 | 1-Φ(3.052)=0.001138 | Φ(-2)=0.02275| 0.05
+            -1     | 1.412 | 1-Φ(2.412)=0.00793  | Φ(-1)=0.15866| 0.05
+             0     | 1.960 | 1-Φ(1.960)=0.02500  | Φ(0) =0.50000| 0.05
+            +1     | 2.727 | 1-Φ(1.727)=0.04213  | Φ(1) =0.84134| 0.05
+            +2     | 3.656 | 1-Φ(1.656)=0.04883  | Φ(2) =0.97725| 0.05
         """
         bands = ExpectedBands(
-            minus_2sigma=(jnp.array(0.5), jnp.array(0.1)),  # CLs = 0.2
-            minus_1sigma=(jnp.array(0.4), jnp.array(0.2)),  # CLs = 0.5
-            median=(jnp.array(0.3), jnp.array(0.15)),  # CLs = 0.5
-            plus_1sigma=(jnp.array(0.2), jnp.array(0.1)),  # CLs = 0.5
-            plus_2sigma=(jnp.array(0.1), jnp.array(0.05)),  # CLs = 0.5
+            minus_2sigma=(jnp.array(0.001138), jnp.array(0.02275)),
+            minus_1sigma=(jnp.array(0.00793), jnp.array(0.15866)),
+            median=(jnp.array(0.02500), jnp.array(0.50000)),
+            plus_1sigma=(jnp.array(0.04213), jnp.array(0.84134)),
+            plus_2sigma=(jnp.array(0.04883), jnp.array(0.97725)),
         )
 
         cls_values = bands.cls_bands()
 
-        assert float(cls_values[0]) == pytest.approx(0.2, rel=1e-6)
-        assert float(cls_values[1]) == pytest.approx(0.5, rel=1e-6)
-        assert float(cls_values[2]) == pytest.approx(0.5, rel=1e-6)
-        assert float(cls_values[3]) == pytest.approx(0.5, rel=1e-6)
-        assert float(cls_values[4]) == pytest.approx(0.5, rel=1e-6)
+        # abs=1e-3 accounts for rounding in the hardcoded p-values above
+        assert float(cls_values[0]) == pytest.approx(0.05, abs=1e-3)
+        assert float(cls_values[1]) == pytest.approx(0.05, abs=1e-3)
+        assert float(cls_values[2]) == pytest.approx(0.05, abs=1e-3)
+        assert float(cls_values[3]) == pytest.approx(0.05, abs=1e-3)
+        assert float(cls_values[4]) == pytest.approx(0.05, abs=1e-3)
+
+
+class TestExpectedBandsSignificanceBands:
+    """Tests for ExpectedBands significance band methods.
+
+    Uses known QMu p-values for μ=2, σ=1, q_A=4:
+        Z = Φ⁻¹(1-p) converts p-value to significance.
+    """
+
+    @pytest.fixture
+    def qmu_bands(self) -> ExpectedBands:
+        """ExpectedBands with known QMu p-values (μ=2, σ=1, q_A=4).
+
+        Band   | pnull      | palt
+        -2σ    | 3.167e-5   | 0.02275
+        -1σ    | 0.00135    | 0.15866
+        median | 0.02275    | 0.5
+        +1σ    | 0.15866    | 0.84134
+        +2σ    | 0.5        | 0.97725
+        """
+        return ExpectedBands(
+            minus_2sigma=(jnp.array(3.167e-5), jnp.array(0.02275)),
+            minus_1sigma=(jnp.array(0.00135), jnp.array(0.15866)),
+            median=(jnp.array(0.02275), jnp.array(0.5)),
+            plus_1sigma=(jnp.array(0.15866), jnp.array(0.84134)),
+            plus_2sigma=(jnp.array(0.5), jnp.array(0.97725)),
+        )
+
+    def test_null_significance_bands(self, qmu_bands: ExpectedBands):
+        """Z_null at each band: 4.0, 3.0, 2.0, 1.0, 0.0."""
+        z_bands = qmu_bands.null_significance_bands()
+
+        assert float(z_bands[0]) == pytest.approx(4.0, abs=0.01)
+        assert float(z_bands[1]) == pytest.approx(3.0, abs=0.01)
+        assert float(z_bands[2]) == pytest.approx(2.0, abs=0.01)
+        assert float(z_bands[3]) == pytest.approx(1.0, abs=0.01)
+        assert float(z_bands[4]) == pytest.approx(0.0, abs=0.01)
+
+    def test_alt_significance_bands(self, qmu_bands: ExpectedBands):
+        """Z_alt at each band: 2.0, 1.0, 0.0, -1.0, -2.0."""
+        z_bands = qmu_bands.alt_significance_bands()
+
+        assert float(z_bands[0]) == pytest.approx(2.0, abs=0.01)
+        assert float(z_bands[1]) == pytest.approx(1.0, abs=0.01)
+        assert float(z_bands[2]) == pytest.approx(0.0, abs=0.01)
+        assert float(z_bands[3]) == pytest.approx(-1.0, abs=0.01)
+        assert float(z_bands[4]) == pytest.approx(-2.0, abs=0.01)
+
+    def test_significance_utility_known_values(self):
+        """Test standalone significance() with known p-value → Z mappings."""
+        assert float(significance(jnp.array(0.5))) == pytest.approx(0.0, abs=1e-6)
+        assert float(significance(jnp.array(0.02275))) == pytest.approx(2.0, abs=0.01)
+        assert float(significance(jnp.array(0.15866))) == pytest.approx(1.0, abs=0.01)
+        assert float(significance(jnp.array(0.00135))) == pytest.approx(3.0, abs=0.01)

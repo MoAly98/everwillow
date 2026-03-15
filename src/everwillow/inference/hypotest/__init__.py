@@ -32,7 +32,12 @@ from everwillow.inference.hypotest._results import (
     TestStatResult,
     ToyResult,
 )
-from everwillow.inference.hypotest._utils import cl_s, make_asimov
+from everwillow.inference.hypotest._utils import (
+    cl_s,
+    make_asimov,
+    sigma_from_asimov,
+    significance,
+)
 from everwillow.inference.hypotest.calculators import (
     AsymptoticCalculator,
     HypoTestCalculator,
@@ -88,6 +93,8 @@ __all__ = [
     "cl_s",
     "expected_upper_limit",
     "make_asimov",
+    "sigma_from_asimov",
+    "significance",
     "upper_limit",
     "upper_limit_scan",
     "upper_limit_toys",

@@ -16,6 +16,8 @@ import pytest
 from everwillow.inference.hypotest import (
     ExpectedBands,
     HypoTestResult,
+    QMuAsymptotic,
+    cl_s,
     expected_upper_limit,
     upper_limit,
     upper_limit_scan,
@@ -278,24 +280,28 @@ class TestExpectedUpperLimit:
         Mock CLs(poi) = exp(-poi), so:
         - observed limit: exp(-poi) = 0.05 → poi = 2.996
         - All expected bands use the same formula, so all limits = 2.996
+
+        CLs = pnull/palt, so pnull = exp(-poi)*palt with palt = 0.5.
         """
         expected_limit = -math.log(0.05)  # 2.9957...
 
         def mock_calc_fn(poi):
             """Mock calculator returning CLs = exp(-poi)."""
             cls_val = jnp.exp(-poi)
+            palt = jnp.array(0.5)
+            pnull = cls_val * palt
             # Create mock expected bands - all return same CLs for simplicity
             bands = ExpectedBands(
-                minus_2sigma=(jnp.array(0.5), cls_val * jnp.array(0.5)),
-                minus_1sigma=(jnp.array(0.5), cls_val * jnp.array(0.5)),
-                median=(jnp.array(0.5), cls_val * jnp.array(0.5)),
-                plus_1sigma=(jnp.array(0.5), cls_val * jnp.array(0.5)),
-                plus_2sigma=(jnp.array(0.5), cls_val * jnp.array(0.5)),
+                minus_2sigma=(pnull, palt),
+                minus_1sigma=(pnull, palt),
+                median=(pnull, palt),
+                plus_1sigma=(pnull, palt),
+                plus_2sigma=(pnull, palt),
             )
             return HypoTestResult(
                 q_obs=jnp.array(0.0),
-                pnull=jnp.array(0.5),
-                palt=cls_val * jnp.array(0.5),
+                pnull=pnull,
+                palt=palt,
                 cl_s=cls_val,
                 expected_bands=bands,
                 test_stat_result=TSResult(value=jnp.array(0.0), test=jnp.array(0.0)),
@@ -311,6 +317,7 @@ class TestExpectedUpperLimit:
     def test_with_varying_bands(self):
         """Test expected_upper_limit with different CLs for each band.
 
+        CLs = pnull/palt, with palt=0.5 constant.
         Mock where:
         - observed CLs = exp(-poi)     → limit = 2.996
         - median CLs = exp(-0.8*poi)   → limit = 3.745
@@ -324,19 +331,20 @@ class TestExpectedUpperLimit:
 
         def mock_calc_fn(poi):
             """Mock with different sensitivities per band."""
-            cls_obs = jnp.exp(-poi)
+            palt = jnp.array(0.5)
+            pnull_obs = jnp.exp(-poi) * palt
             bands = ExpectedBands(
-                minus_2sigma=(jnp.array(0.5), jnp.exp(-0.5 * poi) * 0.5),
-                minus_1sigma=(jnp.array(0.5), jnp.exp(-0.6 * poi) * 0.5),
-                median=(jnp.array(0.5), jnp.exp(-0.8 * poi) * 0.5),
-                plus_1sigma=(jnp.array(0.5), jnp.exp(-1.0 * poi) * 0.5),
-                plus_2sigma=(jnp.array(0.5), jnp.exp(-1.2 * poi) * 0.5),
+                minus_2sigma=(jnp.exp(-0.5 * poi) * palt, palt),
+                minus_1sigma=(jnp.exp(-0.6 * poi) * palt, palt),
+                median=(jnp.exp(-0.8 * poi) * palt, palt),
+                plus_1sigma=(jnp.exp(-1.0 * poi) * palt, palt),
+                plus_2sigma=(jnp.exp(-1.2 * poi) * palt, palt),
             )
             return HypoTestResult(
                 q_obs=jnp.array(0.0),
-                pnull=jnp.array(0.5),
-                palt=cls_obs * 0.5,
-                cl_s=cls_obs,
+                pnull=pnull_obs,
+                palt=palt,
+                cl_s=jnp.exp(-poi),
                 expected_bands=bands,
                 test_stat_result=TSResult(value=jnp.array(0.0), test=jnp.array(0.0)),
             )
@@ -347,3 +355,98 @@ class TestExpectedUpperLimit:
         assert float(result.expected) == pytest.approx(expected_median, rel=1e-3)
         assert float(result.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
         assert float(result.plus_1sigma) == pytest.approx(expected_plus1, rel=1e-3)
+
+
+# =============================================================================
+# expected_upper_limit with real asymptotic distributions
+# =============================================================================
+
+
+def _normal_ppf(p: float) -> float:
+    """Inverse standard normal CDF (Φ⁻¹)."""
+    return float(jax.scipy.stats.norm.ppf(jnp.array(p)))
+
+
+def _normal_cdf(x: float) -> float:
+    """Standard normal CDF Φ(x)."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+class TestExpectedUpperLimitAsymptotic:
+    """Integration test: expected_upper_limit with QMuAsymptotic.
+
+    Uses a distribution-level calc_fn with constant σ=1 so the
+    analytic formula μ_up(N) = σ·(Φ⁻¹(1 - α·Φ(N)) + N) applies.
+    """
+
+    SIGMA = 1.0
+    ALPHA = 0.05
+
+    @staticmethod
+    def _analytic_upper_limit(n_sigma: float, sigma: float, alpha: float) -> float:
+        """μ_up(N) = σ·(Φ⁻¹(1 - α·Φ(N)) + N)."""
+        phi_n = _normal_cdf(n_sigma)
+        return sigma * (_normal_ppf(1.0 - alpha * phi_n) + n_sigma)
+
+    def _make_calc_fn(self):
+        """Build a calc_fn wrapping QMuAsymptotic with constant σ=1."""
+        dist = QMuAsymptotic()
+
+        def calc_fn(poi):
+            # q_asimov = (poi/σ)² with σ=1 → q_asimov = poi²
+            q_asimov = poi**2
+            # Observed: use q_obs = q_asimov (Asimov observation)
+            result = TSResult(
+                value=q_asimov,
+                test=poi,
+                q_asimov=q_asimov,
+            )
+            pnull = dist.null_pval(result)
+            palt = dist.alt_pval(result)
+            bands = dist.expected_pvalues(result)
+
+            return HypoTestResult(
+                q_obs=result.value,
+                pnull=pnull,
+                palt=palt,
+                cl_s=cl_s(pnull, palt),
+                expected_bands=bands,
+                test_stat_result=result,
+            )
+
+        return calc_fn
+
+    @pytest.mark.parametrize(
+        ("band_name", "n_sigma"),
+        [
+            ("minus_2sigma", -2.0),
+            ("minus_1sigma", -1.0),
+            ("expected", 0.0),
+            ("plus_1sigma", 1.0),
+            ("plus_2sigma", 2.0),
+        ],
+    )
+    def test_expected_band(self, band_name: str, n_sigma: float):
+        """Each expected band matches the analytic formula.
+
+        Hardcoded expected values (σ=1, α=0.05):
+            -2σ: 1.052, -1σ: 1.412, median: 1.960, +1σ: 2.727, +2σ: 3.656
+        """
+        expected_values = {
+            "minus_2sigma": 1.052,
+            "minus_1sigma": 1.412,
+            "expected": 1.960,
+            "plus_1sigma": 2.727,
+            "plus_2sigma": 3.656,
+        }
+        expected = expected_values[band_name]
+
+        # Cross-check with analytic formula
+        analytic = self._analytic_upper_limit(n_sigma, self.SIGMA, self.ALPHA)
+        assert analytic == pytest.approx(expected, abs=0.001)
+
+        calc_fn = self._make_calc_fn()
+        result = expected_upper_limit(calc_fn, bounds=(0.01, 8.0), level=self.ALPHA)
+        actual = float(getattr(result, band_name))
+
+        assert actual == pytest.approx(expected, rel=1e-2)

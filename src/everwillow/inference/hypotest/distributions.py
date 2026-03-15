@@ -8,6 +8,7 @@ and empirical distributions from toy Monte Carlo. Each class exposes
 from __future__ import annotations
 
 import abc
+import typing as tp
 import warnings
 
 import equinox as eqx
@@ -20,6 +21,7 @@ from everwillow.inference.hypotest._results import (
     TestStatResult,
     ToyResult,
 )
+from everwillow.inference.hypotest._utils import sigma_from_asimov
 
 __all__ = [
     "Distribution",
@@ -34,6 +36,38 @@ __all__ = [
 
 _PHI = jax.scipy.stats.norm.cdf
 _PPF = jax.scipy.stats.norm.ppf
+
+_BAND_SIGMAS = (-2.0, -1.0, 0.0, 1.0, 2.0)
+
+
+def _build_expected_bands(
+    dist: Distribution,
+    result: TestStatResult,
+    expected_q_fn: tp.Callable[[float], Array],
+) -> ExpectedBands:
+    """Build ExpectedBands by evaluating p-values at each sigma fluctuation.
+
+    Args:
+        dist: Distribution whose null_pval/alt_pval will be called.
+        result: Original result (used as template for test and q_asimov).
+        expected_q_fn: Maps band index N to the expected test statistic value.
+
+    Returns:
+        ExpectedBands with (pnull, palt) at each sigma level.
+    """
+    pvals = []
+    for n in _BAND_SIGMAS:
+        synthetic = TestStatResult(
+            value=expected_q_fn(n), test=result.test, q_asimov=result.q_asimov
+        )
+        pvals.append((dist.null_pval(synthetic), dist.alt_pval(synthetic)))
+    return ExpectedBands(
+        minus_2sigma=pvals[0],
+        minus_1sigma=pvals[1],
+        median=pvals[2],
+        plus_1sigma=pvals[3],
+        plus_2sigma=pvals[4],
+    )
 
 
 def _require_q_asimov(result: TestStatResult, cls_name: str, pval_type: str) -> bool:
@@ -170,7 +204,10 @@ class TMuAsymptotic(Distribution):
         return 2.0 * (1.0 - _PHI(sqrt_q))
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 2 - Φ(√t + √q_A) - Φ(√t - √q_A)."""
+        """p = 2 - Φ(√t + √q_A) - Φ(√t - √q_A).
+
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ = (μ-μ')/σ.
+        """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
@@ -208,6 +245,7 @@ class TMuTildeAsymptotic(Distribution):
     def null_pval(self, result: TestStatResult) -> Array | None:
         """Null p-value (μ' = μ).
 
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
         Standard: p = 2(1 - Φ(√t̃))
         Boundary: p = 2 - Φ(√t̃) - Φ((t̃ + q_A)/(2√q_A))
         """
@@ -226,6 +264,7 @@ class TMuTildeAsymptotic(Distribution):
     def alt_pval(self, result: TestStatResult) -> Array | None:
         """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
 
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
         Standard: p = 2 - Φ(√t̃ + √q_A) - Φ(√t̃ - √q_A)
         Boundary: p = 2 - Φ(√t̃ + √q_A) - Φ((t̃ - q_A)/(2√q_A))
         """
@@ -261,12 +300,42 @@ class Q0Asymptotic(Distribution):
         return 1.0 - _PHI(sqrt_q)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 1 - Φ(√q_0 - √q_A)."""
+        """p = 1 - Φ(√q_0 - √q_A).
+
+        q_A = μ_asimov²/σ² (Asimov under signal), so √q_A = μ_asimov/σ.
+        """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
+
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+        """Expected p-values at ±Nσ fluctuations under signal hypothesis.
+
+        q_A = μ_asimov²/σ² (Asimov under signal), so √q_A = μ_asimov/σ.
+        q = max(0, √q_A + N)². Upward fluctuations (+N) increase
+        discovery significance, opposite to exclusion tests.
+
+        Args:
+            result: Must contain q_asimov for √q_A.
+
+        Returns:
+            ExpectedBands with (pnull, palt) at each sigma level.
+
+        Raises:
+            ValueError: If q_asimov is None.
+        """
+        if result.q_asimov is None:
+            msg = "expected_pvalues requires q_asimov to extract sigma"
+            raise ValueError(msg)
+
+        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+
+        def expected_q_fn(n: float) -> Array:
+            return jnp.maximum(sqrt_qa + n, 0.0) ** 2
+
+        return _build_expected_bands(self, result, expected_q_fn)
 
 
 class QMuAsymptotic(Distribution):
@@ -287,12 +356,44 @@ class QMuAsymptotic(Distribution):
         return 1.0 - _PHI(sqrt_q)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 1 - Φ(√q_μ - √q_A)."""
+        """p = 1 - Φ(√q_μ - √q_A).
+
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
+        """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
+
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+        """Expected p-values at ±Nσ fluctuations under background-only.
+
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
+        At band N, the expected μ̂ = Nσ, giving √q = max(0, μ/σ - N).
+        Synthetic TestStatResult objects are passed through the existing
+        null_pval/alt_pval methods to reuse the CDF logic.
+
+        Args:
+            result: Must contain q_asimov for σ extraction.
+
+        Returns:
+            ExpectedBands with (pnull, palt) at each sigma level.
+
+        Raises:
+            ValueError: If q_asimov is None.
+        """
+        if result.q_asimov is None:
+            msg = "expected_pvalues requires q_asimov to extract sigma"
+            raise ValueError(msg)
+
+        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        mu_over_sigma = result.test / sigma
+
+        def expected_q_fn(n: float) -> Array:
+            return jnp.maximum(mu_over_sigma - n, 0.0) ** 2
+
+        return _build_expected_bands(self, result, expected_q_fn)
 
 
 class QTildeAsymptotic(Distribution):
@@ -321,6 +422,7 @@ class QTildeAsymptotic(Distribution):
     def null_pval(self, result: TestStatResult) -> Array | None:
         """Null p-value (μ' = μ).
 
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
         q̃ = 0: p = 1
         Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃)
         Boundary (q̃ > q_A): p = 1 - Φ((q̃ + q_A)/(2√q_A))
@@ -340,6 +442,7 @@ class QTildeAsymptotic(Distribution):
     def alt_pval(self, result: TestStatResult) -> Array | None:
         """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
 
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
         q̃ = 0: p = 1
         Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃ - √q_A)
         Boundary (q̃ > q_A): p = 1 - Φ((q̃ - q_A)/(2√q_A))
@@ -355,6 +458,38 @@ class QTildeAsymptotic(Distribution):
         p_boundary = 1.0 - _PHI((q - q_asimov) / (2.0 * sqrt_qa))
 
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
+
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+        """Expected p-values at ±Nσ fluctuations under background-only.
+
+        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
+        Standard (N≥0): q = max(0, μ/σ - N)².
+        Boundary (N<0): q = (μ/σ)² - 2(μ/σ)N (μ̂ < 0 region).
+
+        Args:
+            result: Must contain q_asimov for σ extraction.
+
+        Returns:
+            ExpectedBands with (pnull, palt) at each sigma level.
+
+        Raises:
+            ValueError: If q_asimov is None.
+        """
+        if result.q_asimov is None:
+            msg = "expected_pvalues requires q_asimov to extract sigma"
+            raise ValueError(msg)
+
+        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        mu_over_sigma = result.test / sigma
+
+        def expected_q_fn(n: float) -> Array:
+            standard = jnp.maximum(mu_over_sigma - n, 0.0) ** 2
+            boundary = mu_over_sigma**2 - 2.0 * mu_over_sigma * n
+            # q̃ is piecewise in μ̂: standard for μ̂ ≥ 0, boundary for μ̂ < 0.
+            # At band N, μ̂ = Nσ, so μ̂ ≥ 0 ⟺ N ≥ 0.
+            return jnp.where(n >= 0, standard, boundary)
+
+        return _build_expected_bands(self, result, expected_q_fn)
 
 
 # =============================================================================

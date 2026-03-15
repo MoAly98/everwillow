@@ -10,7 +10,7 @@ import typing as tp
 import equinox as eqx
 from jaxtyping import Array
 
-from everwillow.inference.hypotest._utils import cl_s
+from everwillow.inference.hypotest._utils import cl_s, significance
 
 __all__ = [
     "ExpectedBands",
@@ -83,11 +83,39 @@ class ExpectedBands(eqx.Module):
         """
 
         return (
-            cl_s(self.minus_2sigma[1], self.minus_2sigma[0]),
-            cl_s(self.minus_1sigma[1], self.minus_1sigma[0]),
-            cl_s(self.median[1], self.median[0]),
-            cl_s(self.plus_1sigma[1], self.plus_1sigma[0]),
-            cl_s(self.plus_2sigma[1], self.plus_2sigma[0]),
+            cl_s(self.minus_2sigma[0], self.minus_2sigma[1]),
+            cl_s(self.minus_1sigma[0], self.minus_1sigma[1]),
+            cl_s(self.median[0], self.median[1]),
+            cl_s(self.plus_1sigma[0], self.plus_1sigma[1]),
+            cl_s(self.plus_2sigma[0], self.plus_2sigma[1]),
+        )
+
+    def null_significance_bands(self) -> tuple[Array, Array, Array, Array, Array]:
+        """Return null significance Z = Φ⁻¹(1 - pnull) at each band.
+
+        Returns:
+            Tuple of Z_null at (-2σ, -1σ, median, +1σ, +2σ).
+        """
+        return (
+            significance(self.minus_2sigma[0]),
+            significance(self.minus_1sigma[0]),
+            significance(self.median[0]),
+            significance(self.plus_1sigma[0]),
+            significance(self.plus_2sigma[0]),
+        )
+
+    def alt_significance_bands(self) -> tuple[Array, Array, Array, Array, Array]:
+        """Return alternative significance Z = Φ⁻¹(1 - palt) at each band.
+
+        Returns:
+            Tuple of Z_alt at (-2σ, -1σ, median, +1σ, +2σ).
+        """
+        return (
+            significance(self.minus_2sigma[1]),
+            significance(self.minus_1sigma[1]),
+            significance(self.median[1]),
+            significance(self.plus_1sigma[1]),
+            significance(self.plus_2sigma[1]),
         )
 
 
@@ -98,7 +126,7 @@ class HypoTestResult(eqx.Module):
         q_obs: Observed test statistic value.
         pnull: p-value under null hypothesis (background-only).
         palt: p-value under alternative hypothesis (signal+background).
-        cl_s: CLs value (palt / pnull).
+        cl_s: CLs value (pnull / palt).
         expected_bands: Expected p-values at sigma bands (from Asimov).
         test_stat_result: Full test statistic result with fit information.
     """
@@ -118,7 +146,7 @@ class HypoTestToysResult(eqx.Module):
         q_obs: Observed test statistic value.
         pnull: p-value under null hypothesis (background-only).
         palt: p-value under alternative hypothesis (signal+background).
-        cl_s: CLs value (palt / pnull).
+        cl_s: CLs value (pnull / palt).
         expected_bands: Expected p-values at sigma bands (from toy distributions).
         ntoys: Number of toys used in each hypothesis.
         q_alt: Test statistic values from alternative toys.

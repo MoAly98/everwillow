@@ -284,7 +284,7 @@ def expected_upper_limit(
     """
 
     def _default_objective(pvals: tuple[Array, Array]) -> Array:
-        return cl_s(pvals[1], pvals[0])
+        return cl_s(pvals[0], pvals[1])
 
     if objective_fn is None:
         objective_fn = _default_objective

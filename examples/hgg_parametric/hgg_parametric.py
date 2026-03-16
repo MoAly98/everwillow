@@ -466,11 +466,11 @@ def main():
     print("\nUpper Limits (95% CL):")
     print("-" * 40)
     print(f"  Observed:    {float(limit_result.observed):.3f}")
-    print(f"  Expected:    {float(limit_result.expected):.3f}")
-    print(f"    -2 sigma:  {float(limit_result.minus_2sigma):.3f}")
-    print(f"    -1 sigma:  {float(limit_result.minus_1sigma):.3f}")
-    print(f"    +1 sigma:  {float(limit_result.plus_1sigma):.3f}")
-    print(f"    +2 sigma:  {float(limit_result.plus_2sigma):.3f}")
+    print(f"  Expected:    {float(limit_result.expected.median):.3f}")
+    print(f"    -2 sigma:  {float(limit_result.expected.minus_2sigma):.3f}")
+    print(f"    -1 sigma:  {float(limit_result.expected.minus_1sigma):.3f}")
+    print(f"    +1 sigma:  {float(limit_result.expected.plus_1sigma):.3f}")
+    print(f"    +2 sigma:  {float(limit_result.expected.plus_2sigma):.3f}")
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
 from everwillow.inference.hypotest._results import (
+    BandValues,
     ExpectedBands,
     ExpectedLimitResult,
     HypoTestResult,
@@ -252,7 +253,7 @@ def expected_upper_limit(
     calc_fn: tp.Callable[[float], HypoTestResult],
     bounds: tuple[float, float],
     level: float = 0.05,
-    objective_fn: tp.Callable[[tuple[Array, Array]], Array] | None = None,
+    objective_fn: tp.Callable[[Array, Array], Array] | None = None,
     **solver_kwargs: tp.Any,
 ) -> ExpectedLimitResult:
     """Compute observed and expected upper limits with Brazil bands.
@@ -265,8 +266,8 @@ def expected_upper_limit(
                  Should call AsymptoticCalculator and return its result.
         bounds: (lower, upper) search range for POI value.
         level: Target level (default 0.05 for 95% CL).
-        objective_fn: Function mapping (pnull, palt) tuple to scalar objective.
-                      Defaults to CLs = palt / pnull.
+        objective_fn: Function mapping (pnull, palt) to scalar objective.
+                      Defaults to CLs = pnull / palt.
         **solver_kwargs: Additional arguments passed to :func:`upper_limit`
             (e.g., ``rtol``, ``atol``, ``max_steps``).
 
@@ -280,18 +281,19 @@ def expected_upper_limit(
         ...     bounds=(0, 5),
         ... )
         >>> print(f"Observed: {result.observed:.3f}")
-        >>> print(f"Expected: {result.expected:.3f} (+1σ: {result.plus_1sigma:.3f})")
+        >>> print(f"Expected: {result.expected.median:.3f} (+1σ: {result.expected.plus_1sigma:.3f})")
     """
 
-    def _default_objective(pvals: tuple[Array, Array]) -> Array:
-        return cl_s(pvals[0], pvals[1])
-
     if objective_fn is None:
-        objective_fn = _default_objective
+        objective_fn = cl_s
 
     # Observed limit
+    def _observed_objective(poi: float) -> Array:
+        r = calc_fn(poi)
+        return objective_fn(r.pnull, r.palt)
+
     observed = upper_limit(
-        lambda poi: objective_fn((calc_fn(poi).pnull, calc_fn(poi).palt)),
+        _observed_objective,
         bounds,
         level,
         **solver_kwargs,
@@ -303,42 +305,23 @@ def expected_upper_limit(
         assert bands is not None, "expected_bands required for expected_upper_limit"
         return bands
 
-    minus_2sigma = upper_limit(
-        lambda poi: objective_fn(_get_bands(poi).minus_2sigma),
-        bounds,
-        level,
-        **solver_kwargs,
-    )
-    minus_1sigma = upper_limit(
-        lambda poi: objective_fn(_get_bands(poi).minus_1sigma),
-        bounds,
-        level,
-        **solver_kwargs,
-    )
-    expected = upper_limit(
-        lambda poi: objective_fn(_get_bands(poi).median),
-        bounds,
-        level,
-        **solver_kwargs,
-    )
-    plus_1sigma = upper_limit(
-        lambda poi: objective_fn(_get_bands(poi).plus_1sigma),
-        bounds,
-        level,
-        **solver_kwargs,
-    )
-    plus_2sigma = upper_limit(
-        lambda poi: objective_fn(_get_bands(poi).plus_2sigma),
-        bounds,
-        level,
-        **solver_kwargs,
-    )
+    def _band_objective(band: str) -> tp.Callable[[float], Array]:
+        def fn(poi: float) -> Array:
+            bands = _get_bands(poi)
+            return objective_fn(bands.null_pvalue[band], bands.alt_pvalue[band])
+
+        return fn
+
+    band_limits = {}
+    for band_name in BandValues._NAMES:
+        band_limits[band_name] = upper_limit(
+            _band_objective(band_name),
+            bounds,
+            level,
+            **solver_kwargs,
+        )
 
     return ExpectedLimitResult(
         observed=observed,
-        expected=expected,
-        minus_2sigma=minus_2sigma,
-        minus_1sigma=minus_1sigma,
-        plus_1sigma=plus_1sigma,
-        plus_2sigma=plus_2sigma,
+        expected=BandValues(**band_limits),
     )

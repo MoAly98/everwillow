@@ -486,16 +486,15 @@ class TestExpectedPvalues:
         """At median (N=0), CL_b = Φ(0) = 0.5."""
         dist = QMuAsymptotic()
         bands = dist.expected_pvalues(asimov_result)
-        _pnull, palt = bands.median
-        assert float(palt) == pytest.approx(0.5, abs=1e-5)
+        assert float(bands.alt_pvalue.median) == pytest.approx(0.5, abs=1e-5)
 
     def test_median_cls_equals_double_pnull(self, asimov_result):
         """At median (N=0), CLs = CL_{s+b} / 0.5 = 2 × pnull."""
         dist = QMuAsymptotic()
         bands = dist.expected_pvalues(asimov_result)
-        pnull, palt = bands.median
-        cls = float(pnull) / float(palt)
-        assert cls == pytest.approx(2 * float(pnull), rel=1e-5)
+        pnull = float(bands.null_pvalue.median)
+        cls = float(bands.cl_s.median)
+        assert cls == pytest.approx(2 * pnull, rel=1e-5)
 
     @pytest.mark.parametrize(
         ("band_name", "expected_pnull", "expected_palt"),
@@ -518,9 +517,12 @@ class TestExpectedPvalues:
         """QMu expected p-values at each band match hand-computed values."""
         dist = QMuAsymptotic()
         bands = dist.expected_pvalues(asimov_result)
-        pnull, palt = getattr(bands, band_name)
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
+            expected_pnull, rel=1e-2
+        )
+        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
+            expected_palt, rel=1e-2
+        )
 
     def test_expected_pvalues_requires_q_asimov(self):
         """expected_pvalues raises when q_asimov is missing."""
@@ -554,9 +556,12 @@ class TestExpectedPvalues:
         """
         dist = QTildeAsymptotic()
         bands = dist.expected_pvalues(asimov_result)
-        pnull, palt = getattr(bands, band_name)
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
+            expected_pnull, rel=1e-2
+        )
+        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
+            expected_palt, rel=1e-2
+        )
 
     def test_expected_pvalues_qtilde_requires_q_asimov(self):
         """QTilde expected_pvalues raises when q_asimov is missing."""
@@ -594,9 +599,12 @@ class TestExpectedPvalues:
         )
         dist = Q0Asymptotic()
         bands = dist.expected_pvalues(result)
-        pnull, palt = getattr(bands, band_name)
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
+            expected_pnull, rel=1e-2
+        )
+        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
+            expected_palt, rel=1e-2
+        )
 
     def test_expected_pvalues_q0_requires_q_asimov(self):
         """Q0 expected_pvalues raises when q_asimov is missing."""
@@ -634,7 +642,6 @@ class TestExpectedPvalues:
             q_asimov=jnp.array(q_asimov),
         )
         bands = dist.expected_pvalues(result)
-        pnull, palt = bands.median
-        cls_median = float(pnull) / float(palt)
+        cls_median = float(bands.cl_s.median)
 
         assert cls_median == pytest.approx(0.05, rel=1e-3)

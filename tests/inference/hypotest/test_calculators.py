@@ -13,6 +13,7 @@ import pytest
 import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
     AsymptoticCalculator,
+    BandValues,
     ExpectedBands,
     HypoTestCalculator,
     QMu,
@@ -366,12 +367,12 @@ class TestClS:
 
 
 class TestExpectedBandsClsBands:
-    """Tests for ExpectedBands.cls_bands() with known QMu values.
+    """Tests for ExpectedBands.cl_s with known QMu values.
 
     Uses QMu p-values at the expected upper limit (σ=1, α=0.05).
     At the upper limit for each band, CLs = pnull/palt = 0.05.
     Different bands have different pnull and palt, verifying that
-    cls_bands() correctly pairs the right elements of each tuple.
+    cl_s correctly pairs the right elements.
     """
 
     def test_cls_bands_qmu_at_expected_upper_limit(self):
@@ -385,26 +386,53 @@ class TestExpectedBandsClsBands:
             +1     | 2.727 | 1-Φ(1.727)=0.04213  | Φ(1) =0.84134| 0.05
             +2     | 3.656 | 1-Φ(1.656)=0.04883  | Φ(2) =0.97725| 0.05
         """
+        pnulls = [0.001138, 0.00793, 0.02500, 0.04213, 0.04883]
+        palts = [0.02275, 0.15866, 0.50000, 0.84134, 0.97725]
+        band_names = [
+            "minus_2sigma",
+            "minus_1sigma",
+            "median",
+            "plus_1sigma",
+            "plus_2sigma",
+        ]
+
         bands = ExpectedBands(
-            minus_2sigma=(jnp.array(0.001138), jnp.array(0.02275)),
-            minus_1sigma=(jnp.array(0.00793), jnp.array(0.15866)),
-            median=(jnp.array(0.02500), jnp.array(0.50000)),
-            plus_1sigma=(jnp.array(0.04213), jnp.array(0.84134)),
-            plus_2sigma=(jnp.array(0.04883), jnp.array(0.97725)),
+            null_pvalue=BandValues(
+                **{n: jnp.array(p) for n, p in zip(band_names, pnulls, strict=False)}
+            ),
+            alt_pvalue=BandValues(
+                **{n: jnp.array(p) for n, p in zip(band_names, palts, strict=False)}
+            ),
+            cl_s=BandValues(
+                **{
+                    n: cl_s(jnp.array(pn), jnp.array(pa))
+                    for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
+                }
+            ),
+            null_sig=BandValues(
+                **{
+                    n: significance(jnp.array(p))
+                    for n, p in zip(band_names, pnulls, strict=False)
+                }
+            ),
+            alt_sig=BandValues(
+                **{
+                    n: significance(jnp.array(p))
+                    for n, p in zip(band_names, palts, strict=False)
+                }
+            ),
         )
 
-        cls_values = bands.cls_bands()
-
         # abs=1e-3 accounts for rounding in the hardcoded p-values above
-        assert float(cls_values[0]) == pytest.approx(0.05, abs=1e-3)
-        assert float(cls_values[1]) == pytest.approx(0.05, abs=1e-3)
-        assert float(cls_values[2]) == pytest.approx(0.05, abs=1e-3)
-        assert float(cls_values[3]) == pytest.approx(0.05, abs=1e-3)
-        assert float(cls_values[4]) == pytest.approx(0.05, abs=1e-3)
+        assert float(bands.cl_s.minus_2sigma) == pytest.approx(0.05, abs=1e-3)
+        assert float(bands.cl_s.minus_1sigma) == pytest.approx(0.05, abs=1e-3)
+        assert float(bands.cl_s.median) == pytest.approx(0.05, abs=1e-3)
+        assert float(bands.cl_s.plus_1sigma) == pytest.approx(0.05, abs=1e-3)
+        assert float(bands.cl_s.plus_2sigma) == pytest.approx(0.05, abs=1e-3)
 
 
 class TestExpectedBandsSignificanceBands:
-    """Tests for ExpectedBands significance band methods.
+    """Tests for ExpectedBands null_sig / alt_sig BandValues.
 
     Uses known QMu p-values for μ=2, σ=1, q_A=4:
         Z = Φ⁻¹(1-p) converts p-value to significance.
@@ -421,33 +449,58 @@ class TestExpectedBandsSignificanceBands:
         +1σ    | 0.15866    | 0.84134
         +2σ    | 0.5        | 0.97725
         """
+        pnulls = [3.167e-5, 0.00135, 0.02275, 0.15866, 0.5]
+        palts = [0.02275, 0.15866, 0.5, 0.84134, 0.97725]
+        band_names = [
+            "minus_2sigma",
+            "minus_1sigma",
+            "median",
+            "plus_1sigma",
+            "plus_2sigma",
+        ]
+
         return ExpectedBands(
-            minus_2sigma=(jnp.array(3.167e-5), jnp.array(0.02275)),
-            minus_1sigma=(jnp.array(0.00135), jnp.array(0.15866)),
-            median=(jnp.array(0.02275), jnp.array(0.5)),
-            plus_1sigma=(jnp.array(0.15866), jnp.array(0.84134)),
-            plus_2sigma=(jnp.array(0.5), jnp.array(0.97725)),
+            null_pvalue=BandValues(
+                **{n: jnp.array(p) for n, p in zip(band_names, pnulls, strict=False)}
+            ),
+            alt_pvalue=BandValues(
+                **{n: jnp.array(p) for n, p in zip(band_names, palts, strict=False)}
+            ),
+            cl_s=BandValues(
+                **{
+                    n: cl_s(jnp.array(pn), jnp.array(pa))
+                    for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
+                }
+            ),
+            null_sig=BandValues(
+                **{
+                    n: significance(jnp.array(p))
+                    for n, p in zip(band_names, pnulls, strict=False)
+                }
+            ),
+            alt_sig=BandValues(
+                **{
+                    n: significance(jnp.array(p))
+                    for n, p in zip(band_names, palts, strict=False)
+                }
+            ),
         )
 
     def test_null_significance_bands(self, qmu_bands: ExpectedBands):
         """Z_null at each band: 4.0, 3.0, 2.0, 1.0, 0.0."""
-        z_bands = qmu_bands.null_significance_bands()
-
-        assert float(z_bands[0]) == pytest.approx(4.0, abs=0.01)
-        assert float(z_bands[1]) == pytest.approx(3.0, abs=0.01)
-        assert float(z_bands[2]) == pytest.approx(2.0, abs=0.01)
-        assert float(z_bands[3]) == pytest.approx(1.0, abs=0.01)
-        assert float(z_bands[4]) == pytest.approx(0.0, abs=0.01)
+        assert float(qmu_bands.null_sig.minus_2sigma) == pytest.approx(4.0, abs=0.01)
+        assert float(qmu_bands.null_sig.minus_1sigma) == pytest.approx(3.0, abs=0.01)
+        assert float(qmu_bands.null_sig.median) == pytest.approx(2.0, abs=0.01)
+        assert float(qmu_bands.null_sig.plus_1sigma) == pytest.approx(1.0, abs=0.01)
+        assert float(qmu_bands.null_sig.plus_2sigma) == pytest.approx(0.0, abs=0.01)
 
     def test_alt_significance_bands(self, qmu_bands: ExpectedBands):
         """Z_alt at each band: 2.0, 1.0, 0.0, -1.0, -2.0."""
-        z_bands = qmu_bands.alt_significance_bands()
-
-        assert float(z_bands[0]) == pytest.approx(2.0, abs=0.01)
-        assert float(z_bands[1]) == pytest.approx(1.0, abs=0.01)
-        assert float(z_bands[2]) == pytest.approx(0.0, abs=0.01)
-        assert float(z_bands[3]) == pytest.approx(-1.0, abs=0.01)
-        assert float(z_bands[4]) == pytest.approx(-2.0, abs=0.01)
+        assert float(qmu_bands.alt_sig.minus_2sigma) == pytest.approx(2.0, abs=0.01)
+        assert float(qmu_bands.alt_sig.minus_1sigma) == pytest.approx(1.0, abs=0.01)
+        assert float(qmu_bands.alt_sig.median) == pytest.approx(0.0, abs=0.01)
+        assert float(qmu_bands.alt_sig.plus_1sigma) == pytest.approx(-1.0, abs=0.01)
+        assert float(qmu_bands.alt_sig.plus_2sigma) == pytest.approx(-2.0, abs=0.01)
 
     def test_significance_utility_known_values(self):
         """Test standalone significance() with known p-value → Z mappings."""
@@ -455,3 +508,75 @@ class TestExpectedBandsSignificanceBands:
         assert float(significance(jnp.array(0.02275))) == pytest.approx(2.0, abs=0.01)
         assert float(significance(jnp.array(0.15866))) == pytest.approx(1.0, abs=0.01)
         assert float(significance(jnp.array(0.00135))) == pytest.approx(3.0, abs=0.01)
+
+
+# =============================================================================
+# BandValues iteration / indexing tests
+# =============================================================================
+
+
+class TestBandValues:
+    """Tests for BandValues __iter__, __getitem__, and __len__."""
+
+    @pytest.fixture
+    def bv(self) -> BandValues:
+        return BandValues(
+            minus_2sigma=jnp.array(1.0),
+            minus_1sigma=jnp.array(2.0),
+            median=jnp.array(3.0),
+            plus_1sigma=jnp.array(4.0),
+            plus_2sigma=jnp.array(5.0),
+        )
+
+    def test_iter_yields_name_value_pairs_in_order(self, bv: BandValues):
+        """__iter__ yields (name, value) pairs in _NAMES order."""
+        pairs = list(bv)
+        expected_names = [
+            "minus_2sigma",
+            "minus_1sigma",
+            "median",
+            "plus_1sigma",
+            "plus_2sigma",
+        ]
+        expected_values = [1.0, 2.0, 3.0, 4.0, 5.0]
+        for (name, value), exp_name, exp_val in zip(
+            pairs, expected_names, expected_values, strict=True
+        ):
+            assert name == exp_name
+            assert float(value) == exp_val
+
+    def test_getitem_returns_correct_value(self, bv: BandValues):
+        """bv["median"] returns the median value."""
+        assert float(bv["median"]) == 3.0
+        assert float(bv["minus_2sigma"]) == 1.0
+        assert float(bv["plus_2sigma"]) == 5.0
+
+    def test_getitem_invalid_key_raises_keyerror(self, bv: BandValues):
+        """Invalid key raises KeyError."""
+        with pytest.raises(KeyError, match="nonexistent"):
+            bv["nonexistent"]
+
+    def test_len(self, bv: BandValues):
+        """len(bv) == 5."""
+        assert len(bv) == 5
+
+    def test_dict_roundtrip(self, bv: BandValues):
+        """dict(bv) produces {name: value} mapping that roundtrips."""
+        d = dict(bv)
+        assert list(d.keys()) == list(BandValues._NAMES)
+        reconstructed = BandValues(**d)
+        for (_, orig), (_, recon) in zip(bv, reconstructed, strict=True):
+            assert float(orig) == float(recon)
+
+    def test_zip_two_bandvalues(self, bv: BandValues):
+        """zip of two BandValues yields paired (name, value) tuples."""
+        bv2 = BandValues(
+            minus_2sigma=jnp.array(10.0),
+            minus_1sigma=jnp.array(20.0),
+            median=jnp.array(30.0),
+            plus_1sigma=jnp.array(40.0),
+            plus_2sigma=jnp.array(50.0),
+        )
+        for (n1, v1), (n2, v2) in zip(bv, bv2, strict=True):
+            assert n1 == n2
+            assert float(v2) == float(v1) * 10.0

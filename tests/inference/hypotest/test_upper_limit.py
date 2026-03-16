@@ -14,11 +14,13 @@ import optimistix as optx
 import pytest
 
 from everwillow.inference.hypotest import (
+    BandValues,
     ExpectedBands,
     HypoTestResult,
     QMuAsymptotic,
     cl_s,
     expected_upper_limit,
+    significance,
     upper_limit,
     upper_limit_scan,
     upper_limit_toys,
@@ -271,6 +273,33 @@ class TestUpperLimitToys:
 # =============================================================================
 
 
+def _make_mock_bands(pnulls, palts):
+    """Build ExpectedBands from parallel lists of pnull/palt values."""
+    band_names = [
+        "minus_2sigma",
+        "minus_1sigma",
+        "median",
+        "plus_1sigma",
+        "plus_2sigma",
+    ]
+    return ExpectedBands(
+        null_pvalue=BandValues(**dict(zip(band_names, pnulls, strict=False))),
+        alt_pvalue=BandValues(**dict(zip(band_names, palts, strict=False))),
+        cl_s=BandValues(
+            **{
+                n: cl_s(pn, pa)
+                for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
+            }
+        ),
+        null_sig=BandValues(
+            **{n: significance(pn) for n, pn in zip(band_names, pnulls, strict=False)}
+        ),
+        alt_sig=BandValues(
+            **{n: significance(pa) for n, pa in zip(band_names, palts, strict=False)}
+        ),
+    )
+
+
 class TestExpectedUpperLimit:
     """Tests for expected_upper_limit with concrete expected values."""
 
@@ -291,12 +320,9 @@ class TestExpectedUpperLimit:
             palt = jnp.array(0.5)
             pnull = cls_val * palt
             # Create mock expected bands - all return same CLs for simplicity
-            bands = ExpectedBands(
-                minus_2sigma=(pnull, palt),
-                minus_1sigma=(pnull, palt),
-                median=(pnull, palt),
-                plus_1sigma=(pnull, palt),
-                plus_2sigma=(pnull, palt),
+            bands = _make_mock_bands(
+                [pnull] * 5,
+                [palt] * 5,
             )
             return HypoTestResult(
                 q_obs=jnp.array(0.0),
@@ -310,9 +336,9 @@ class TestExpectedUpperLimit:
         result = expected_upper_limit(mock_calc_fn, bounds=(0.0, 5.0), level=0.05)
 
         assert float(result.observed) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.expected) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.minus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.plus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
+        assert float(result.expected.median) == pytest.approx(expected_limit, rel=1e-3)
+        assert float(result.expected.minus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
+        assert float(result.expected.plus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
 
     def test_with_varying_bands(self):
         """Test expected_upper_limit with different CLs for each band.
@@ -333,13 +359,10 @@ class TestExpectedUpperLimit:
             """Mock with different sensitivities per band."""
             palt = jnp.array(0.5)
             pnull_obs = jnp.exp(-poi) * palt
-            bands = ExpectedBands(
-                minus_2sigma=(jnp.exp(-0.5 * poi) * palt, palt),
-                minus_1sigma=(jnp.exp(-0.6 * poi) * palt, palt),
-                median=(jnp.exp(-0.8 * poi) * palt, palt),
-                plus_1sigma=(jnp.exp(-1.0 * poi) * palt, palt),
-                plus_2sigma=(jnp.exp(-1.2 * poi) * palt, palt),
-            )
+            rates = [0.5, 0.6, 0.8, 1.0, 1.2]
+            pnulls = [jnp.exp(-r * poi) * palt for r in rates]
+            palts = [palt] * 5
+            bands = _make_mock_bands(pnulls, palts)
             return HypoTestResult(
                 q_obs=jnp.array(0.0),
                 pnull=pnull_obs,
@@ -352,9 +375,9 @@ class TestExpectedUpperLimit:
         result = expected_upper_limit(mock_calc_fn, bounds=(0.0, 10.0), level=0.05)
 
         assert float(result.observed) == pytest.approx(expected_observed, rel=1e-3)
-        assert float(result.expected) == pytest.approx(expected_median, rel=1e-3)
-        assert float(result.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
-        assert float(result.plus_1sigma) == pytest.approx(expected_plus1, rel=1e-3)
+        assert float(result.expected.median) == pytest.approx(expected_median, rel=1e-3)
+        assert float(result.expected.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
+        assert float(result.expected.plus_1sigma) == pytest.approx(expected_plus1, rel=1e-3)
 
 
 # =============================================================================
@@ -421,7 +444,7 @@ class TestExpectedUpperLimitAsymptotic:
         [
             ("minus_2sigma", -2.0),
             ("minus_1sigma", -1.0),
-            ("expected", 0.0),
+            ("median", 0.0),
             ("plus_1sigma", 1.0),
             ("plus_2sigma", 2.0),
         ],
@@ -435,7 +458,7 @@ class TestExpectedUpperLimitAsymptotic:
         expected_values = {
             "minus_2sigma": 1.052,
             "minus_1sigma": 1.412,
-            "expected": 1.960,
+            "median": 1.960,
             "plus_1sigma": 2.727,
             "plus_2sigma": 3.656,
         }
@@ -447,6 +470,6 @@ class TestExpectedUpperLimitAsymptotic:
 
         calc_fn = self._make_calc_fn()
         result = expected_upper_limit(calc_fn, bounds=(0.01, 8.0), level=self.ALPHA)
-        actual = float(getattr(result, band_name))
+        actual = float(result.expected[band_name])
 
         assert actual == pytest.approx(expected, rel=1e-2)

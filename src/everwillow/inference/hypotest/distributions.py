@@ -17,11 +17,12 @@ import jax.numpy as jnp
 from jaxtyping import Array
 
 from everwillow.inference.hypotest._results import (
+    BandValues,
     ExpectedBands,
     TestStatResult,
     ToyResult,
 )
-from everwillow.inference.hypotest._utils import sigma_from_asimov
+from everwillow.inference.hypotest._utils import cl_s, sigma_from_asimov, significance
 
 __all__ = [
     "Distribution",
@@ -47,26 +48,44 @@ def _build_expected_bands(
 ) -> ExpectedBands:
     """Build ExpectedBands by evaluating p-values at each sigma fluctuation.
 
+    Eagerly computes all derived quantities (CLs, significance) so that
+    the returned ExpectedBands contains fully populated BandValues.
+
     Args:
         dist: Distribution whose null_pval/alt_pval will be called.
         result: Original result (used as template for test and q_asimov).
         expected_q_fn: Maps band index N to the expected test statistic value.
 
     Returns:
-        ExpectedBands with (pnull, palt) at each sigma level.
+        ExpectedBands with BandValues for null_pvalue, alt_pvalue, cl_s,
+        null_sig, and alt_sig.
     """
-    pvals = []
+    pnulls = []
+    palts = []
     for n in _BAND_SIGMAS:
         synthetic = TestStatResult(
             value=expected_q_fn(n), test=result.test, q_asimov=result.q_asimov
         )
-        pvals.append((dist.null_pval(synthetic), dist.alt_pval(synthetic)))
+        pnulls.append(dist.null_pval(synthetic))
+        palts.append(dist.alt_pval(synthetic))
+
+    null_pvalue = BandValues(*pnulls)
+    alt_pvalue = BandValues(*palts)
+    cls_values = BandValues(
+        **{
+            n: cl_s(pn, pa)
+            for (n, pn), (_, pa) in zip(null_pvalue, alt_pvalue, strict=False)
+        }
+    )
+    null_sig = BandValues(**{n: significance(pn) for n, pn in null_pvalue})
+    alt_sig = BandValues(**{n: significance(pa) for n, pa in alt_pvalue})
+
     return ExpectedBands(
-        minus_2sigma=pvals[0],
-        minus_1sigma=pvals[1],
-        median=pvals[2],
-        plus_1sigma=pvals[3],
-        plus_2sigma=pvals[4],
+        null_pvalue=null_pvalue,
+        alt_pvalue=alt_pvalue,
+        cl_s=cls_values,
+        null_sig=null_sig,
+        alt_sig=alt_sig,
     )
 
 

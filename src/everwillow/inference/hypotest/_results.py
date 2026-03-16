@@ -10,13 +10,11 @@ import typing as tp
 import equinox as eqx
 from jaxtyping import Array
 
-from everwillow.inference.hypotest._utils import cl_s, significance
-
 __all__ = [
+    "BandValues",
     "ExpectedBands",
     "ExpectedLimitResult",
     "HypoTestResult",
-    "HypoTestToysResult",
     "TestStatResult",
     "ToyResult",
 ]
@@ -53,70 +51,67 @@ class ToyResult(eqx.Module):
     q_null: Array
 
 
-class ExpectedBands(eqx.Module):
-    """Expected p-values at standard sigma bands.
+class BandValues(eqx.Module):
+    """Scalar values at standard ±Nσ fluctuation bands.
 
-    Computed from Asimov dataset under background-only hypothesis.
-    Each band contains (pnull, palt) tuple.
+    Supports iteration via ``for name, value in bv``, indexing via
+    ``bv["median"]``, and ``len(bv) == 5``.  ``dict(bv)`` produces a
+    ``{name: value}`` mapping, and ``BandValues(**dict(bv))`` roundtrips.
 
     Attributes:
-        minus_2sigma: Expected at -2σ fluctuation.
-        minus_1sigma: Expected at -1σ fluctuation.
-        median: Expected at median (0σ).
-        plus_1sigma: Expected at +1σ fluctuation.
-        plus_2sigma: Expected at +2σ fluctuation.
+        minus_2sigma: Value at -2σ fluctuation.
+        minus_1sigma: Value at -1σ fluctuation.
+        median: Value at median (0σ).
+        plus_1sigma: Value at +1σ fluctuation.
+        plus_2sigma: Value at +2σ fluctuation.
     """
 
-    minus_2sigma: tuple[Array, Array]
-    minus_1sigma: tuple[Array, Array]
-    median: tuple[Array, Array]
-    plus_1sigma: tuple[Array, Array]
-    plus_2sigma: tuple[Array, Array]
+    _NAMES: tp.ClassVar[tuple[str, ...]] = (
+        "minus_2sigma",
+        "minus_1sigma",
+        "median",
+        "plus_1sigma",
+        "plus_2sigma",
+    )
 
-    def cls_bands(self) -> tuple[Array, Array, Array, Array, Array]:
-        """Return CLs values at each band.
+    minus_2sigma: Array
+    minus_1sigma: Array
+    median: Array
+    plus_1sigma: Array
+    plus_2sigma: Array
 
-        ``CLs = palt / pnull``
+    def __iter__(self) -> tp.Iterator[tuple[str, Array]]:
+        for name in self._NAMES:
+            yield name, getattr(self, name)
 
-        Returns:
-            Tuple of CLs at (-2σ, -1σ, median, +1σ, +2σ).
-        """
+    def __getitem__(self, key: str) -> Array:
+        if key not in self._NAMES:
+            raise KeyError(key)
+        return getattr(self, key)
 
-        return (
-            cl_s(self.minus_2sigma[0], self.minus_2sigma[1]),
-            cl_s(self.minus_1sigma[0], self.minus_1sigma[1]),
-            cl_s(self.median[0], self.median[1]),
-            cl_s(self.plus_1sigma[0], self.plus_1sigma[1]),
-            cl_s(self.plus_2sigma[0], self.plus_2sigma[1]),
-        )
+    def __len__(self) -> int:
+        return 5
 
-    def null_significance_bands(self) -> tuple[Array, Array, Array, Array, Array]:
-        """Return null significance Z = Φ⁻¹(1 - pnull) at each band.
 
-        Returns:
-            Tuple of Z_null at (-2σ, -1σ, median, +1σ, +2σ).
-        """
-        return (
-            significance(self.minus_2sigma[0]),
-            significance(self.minus_1sigma[0]),
-            significance(self.median[0]),
-            significance(self.plus_1sigma[0]),
-            significance(self.plus_2sigma[0]),
-        )
+class ExpectedBands(eqx.Module):
+    """Expected quantities at standard sigma bands.
 
-    def alt_significance_bands(self) -> tuple[Array, Array, Array, Array, Array]:
-        """Return alternative significance Z = Φ⁻¹(1 - palt) at each band.
+    All derived quantities (CLs, significance) are eagerly computed
+    at construction time so access is a simple attribute lookup.
 
-        Returns:
-            Tuple of Z_alt at (-2σ, -1σ, median, +1σ, +2σ).
-        """
-        return (
-            significance(self.minus_2sigma[1]),
-            significance(self.minus_1sigma[1]),
-            significance(self.median[1]),
-            significance(self.plus_1sigma[1]),
-            significance(self.plus_2sigma[1]),
-        )
+    Attributes:
+        null_pvalue: p-value under null hypothesis (p_μ) at each band.
+        alt_pvalue: p-value under alternative hypothesis (CL_b) at each band.
+        cl_s: CLs = pnull/palt at each band.
+        null_sig: Null significance Φ⁻¹(1 - pnull) at each band.
+        alt_sig: Alternative significance Φ⁻¹(1 - palt) at each band.
+    """
+
+    null_pvalue: BandValues
+    alt_pvalue: BandValues
+    cl_s: BandValues
+    null_sig: BandValues
+    alt_sig: BandValues
 
 
 class HypoTestResult(eqx.Module):
@@ -139,32 +134,6 @@ class HypoTestResult(eqx.Module):
     expected_bands: ExpectedBands | None = None
 
 
-class HypoTestToysResult(eqx.Module):
-    """Result of a toy-based hypothesis test.
-
-    Attributes:
-        q_obs: Observed test statistic value.
-        pnull: p-value under null hypothesis (background-only).
-        palt: p-value under alternative hypothesis (signal+background).
-        cl_s: CLs value (pnull / palt).
-        expected_bands: Expected p-values at sigma bands (from toy distributions).
-        ntoys: Number of toys used in each hypothesis.
-        q_alt: Test statistic values from alternative toys.
-        q_null: Test statistic values from null toys.
-        test_stat_result: Full test statistic result with fit information.
-    """
-
-    q_obs: Array
-    pnull: Array
-    palt: Array
-    cl_s: Array
-    expected_bands: ExpectedBands
-    ntoys: int
-    q_alt: Array
-    q_null: Array
-    test_stat_result: TestStatResult
-
-
 class ExpectedLimitResult(eqx.Module):
     """Result of expected upper limit computation with Brazil bands.
 
@@ -173,16 +142,8 @@ class ExpectedLimitResult(eqx.Module):
 
     Attributes:
         observed: Observed upper limit.
-        expected: Expected (median) upper limit.
-        minus_2sigma: Expected limit at -2σ fluctuation.
-        minus_1sigma: Expected limit at -1σ fluctuation.
-        plus_1sigma: Expected limit at +1σ fluctuation.
-        plus_2sigma: Expected limit at +2σ fluctuation.
+        expected: Expected limits at ±Nσ fluctuation bands.
     """
 
     observed: Array
-    expected: Array
-    minus_2sigma: Array
-    minus_1sigma: Array
-    plus_1sigma: Array
-    plus_2sigma: Array
+    expected: BandValues

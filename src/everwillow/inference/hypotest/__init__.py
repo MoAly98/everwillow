@@ -25,10 +25,10 @@ Example:
 from __future__ import annotations
 
 from everwillow.inference.hypotest._results import (
+    BandValues,
     ExpectedBands,
     ExpectedLimitResult,
     HypoTestResult,
-    HypoTestToysResult,
     TestStatResult,
     ToyResult,
 )
@@ -70,13 +70,13 @@ from everwillow.inference.hypotest.upper_limit import (
 __all__ = [
     "Q0",
     "AsymptoticCalculator",
+    "BandValues",
     "Distribution",
     "EmpiricalDistribution",
     "ExpectedBands",
     "ExpectedLimitResult",
     "HypoTestCalculator",
     "HypoTestResult",
-    "HypoTestToysResult",
     "Q0Asymptotic",
     "QMu",
     "QMuAsymptotic",

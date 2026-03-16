@@ -66,10 +66,9 @@ def significance(p: Array) -> Array:
 
 
 def cl_s(pnull: Array, palt: Array) -> Array:
-    """Compute CLs = pnull / palt (Cowan et al., ATLAS convention).
+    """Compute CLs = pnull / palt.
 
-    CLs = CL_{s+b} / CL_b = p_μ / (1 - p_b), where (1 - p_b) = palt
-    in our convention where palt = P(q ≥ q_obs | background).
+    CLs = P(q ≥ q_obs | signal+background) / P(q ≥ q_obs | background)
 
     The CLs method protects against excluding signal
     hypotheses when there is no sensitivity: if palt is small

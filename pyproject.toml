@@ -53,7 +53,7 @@ docs = [
 ]
 examples = [
     "pyhs3",
-    "evermore",
+    "evermore>=0.4.1",
     "pyhf",
     "rich",
     "iminuit>=2.32.0",

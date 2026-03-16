@@ -170,3 +170,7 @@ pyrightconfig.json
 # pixi environments
 .pixi
 *.egg-info
+
+# examples
+benchmark_comparison.png
+parameter_deviations.png

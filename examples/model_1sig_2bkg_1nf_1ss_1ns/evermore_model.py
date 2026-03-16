@@ -8,8 +8,6 @@ import evermore as evm
 import iminuit
 import jax
 import jax.numpy as jnp
-from flax import nnx
-import numpy as np
 import optimistix as optx
 from flax import nnx
 from jaxtyping import Array, Float, PyTree

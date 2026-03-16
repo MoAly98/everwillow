@@ -1,14 +1,14 @@
 """Standalone evermore counting experiment example."""
 
-from functools import partial
 import typing as tp
+from functools import partial
 
+import evermore as evm
 import jax
 import jax.numpy as jnp
 from flax import nnx
 from jaxtyping import Array, Float, PyTree
 
-import evermore as evm
 import everwillow as ew
 import everwillow.statelib as sl
 
@@ -18,10 +18,10 @@ jax.config.update("jax_enable_x64", True)
 # type defs
 Hist1D: tp.TypeAlias = Float[Array, " nbins"]
 Args: tp.TypeAlias = tuple[
-    nnx.GraphDef,    # graphdef
-    nnx.State,       # state
+    nnx.GraphDef,  # graphdef
+    nnx.State,  # state
     PyTree[Hist1D],  # hists
-    Hist1D,          # observation
+    Hist1D,  # observation
 ]
 
 

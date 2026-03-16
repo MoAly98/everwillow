@@ -1,4 +1,4 @@
-# Interopability with existing statistical tools in HEP 
+# Interopability with existing statistical tools in HEP
 
 This tutorial walks through a simple counting experiment implemented with three
 JAX-supporting modelling libraries: [`pyhs3`](https://github.com/scipp-atlas/pyhs3),

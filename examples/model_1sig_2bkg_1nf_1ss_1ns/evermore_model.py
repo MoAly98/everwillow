@@ -1,5 +1,7 @@
 """Minimal wrapper around the evermore reference example."""
 
+from __future__ import annotations
+
 import typing as tp
 from collections.abc import Mapping
 from functools import partial
@@ -218,7 +220,7 @@ def fit_with_scipy(
 
     # Wrapper for scipy (operates on flat array), similar to iminuit wrapper
     def scipy_loss(
-        pars: Float[Array, "n_params"],  # noqa: F821
+        pars: Float[Array, n_params],  # noqa: F821
         *,
         dynamic: nnx.State = dynamic,
         args: Args = args,

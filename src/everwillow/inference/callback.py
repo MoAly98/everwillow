@@ -6,8 +6,9 @@ import jax
 
 import everwillow.statelib as sl
 
-if tp.TYPE_CHECKING:
-    from everwillow.inference.fitting import SolverState
+# Solver state type varies by solver (e.g., _QuasiNewtonState for BFGS).
+# Access NLL via state.f_info.f
+SolverState = tp.TypeVar("SolverState")
 
 
 # Callback signature for interactive fitting: (iteration_idx, y, state) -> None
@@ -47,7 +48,7 @@ class HistoryCallback(Callback):
         """
         del y  # unused, but part of Callback signature
         self._steps.append(iteration)
-        self._nlls.append(state.f_info.f)
+        self._nlls.append(state.f_info.f)  # type: ignore[attr-defined]
 
     @property
     def steps(self) -> list[int]:

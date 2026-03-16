@@ -22,10 +22,6 @@ Args: tp.TypeAlias = tuple[
     sl.State[ewp.TransformBase],  # bounds
 ]
 
-# Solver state type varies by solver (e.g., _QuasiNewtonState for BFGS).
-# Access NLL via state.f_info.f
-SolverState = tp.TypeVar("SolverState")
-
 if tp.TYPE_CHECKING:
     from everwillow.inference import Callback
 

@@ -878,8 +878,8 @@ class TestIminimize:
         result = ew.ifit(
             simple_quadratic_nll,
             simple_params,
-            callbacks=[counting_callback],
             simple_observation,
+            callbacks=[counting_callback],
             progress=False,
             max_steps=50,
         )

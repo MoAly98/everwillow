@@ -337,8 +337,12 @@ class TestExpectedUpperLimit:
 
         assert float(result.observed) == pytest.approx(expected_limit, rel=1e-3)
         assert float(result.expected.median) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.expected.minus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.expected.plus_2sigma) == pytest.approx(expected_limit, rel=1e-3)
+        assert float(result.expected.minus_2sigma) == pytest.approx(
+            expected_limit, rel=1e-3
+        )
+        assert float(result.expected.plus_2sigma) == pytest.approx(
+            expected_limit, rel=1e-3
+        )
 
     def test_with_varying_bands(self):
         """Test expected_upper_limit with different CLs for each band.
@@ -376,8 +380,12 @@ class TestExpectedUpperLimit:
 
         assert float(result.observed) == pytest.approx(expected_observed, rel=1e-3)
         assert float(result.expected.median) == pytest.approx(expected_median, rel=1e-3)
-        assert float(result.expected.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
-        assert float(result.expected.plus_1sigma) == pytest.approx(expected_plus1, rel=1e-3)
+        assert float(result.expected.minus_1sigma) == pytest.approx(
+            expected_minus1, rel=1e-3
+        )
+        assert float(result.expected.plus_1sigma) == pytest.approx(
+            expected_plus1, rel=1e-3
+        )
 
 
 # =============================================================================

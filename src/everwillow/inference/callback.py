@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import typing as tp
 
+import jax
+
 import everwillow.statelib as sl
 
 if tp.TYPE_CHECKING:
@@ -33,14 +35,14 @@ class HistoryCallback(Callback):
 
     def __init__(self) -> None:
         self._steps: list[int] = []
-        self._nlls: list[float] = []
+        self._nlls: list[jax.Array] = []
 
     def __call__(self, iteration: int, y: sl.State, state: SolverState) -> None:
         """Record a step during optimization.
 
         Args:
-            step: Current iteration index.
-            free_state: Current free parameter values (State).
+            iteration: Current iteration index.
+            y: Current free parameter values (State). Unused.
             state: Solver state with NLL accessible via state.f_info.f.
         """
         del y  # unused, but part of Callback signature
@@ -53,6 +55,6 @@ class HistoryCallback(Callback):
         return self._steps
 
     @property
-    def nlls(self) -> list[float]:
+    def nlls(self) -> list[jax.Array]:
         """List of NLL values at each step."""
         return self._nlls

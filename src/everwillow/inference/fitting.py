@@ -134,13 +134,14 @@ def _iminimize(
     # automatically load and start from the latest checkpointed iteration
     if checkpoint_manager is not None and checkpoint_manager.latest_step() is not None:
         iteration = tp.cast(int, checkpoint_manager.latest_step())
-        abstract_y0 = jax.tree_util.tree_map(
-            ocp.utils.to_shape_dtype_struct, y0
+        abstract_y0 = jax.tree_util.tree_map(ocp.utils.to_shape_dtype_struct, y0)
+        y0 = tp.cast(
+            sl.State[V],
+            checkpoint_manager.restore(
+                iteration,
+                args=ocp.args.StandardRestore(abstract_y0),
+            ),
         )
-        y0 = tp.cast(sl.State[V], checkpoint_manager.restore(
-            iteration,
-            args=ocp.args.StandardRestore(abstract_y0),
-        ))
     else:
         iteration = 0
     # Convert y0 leaves to JAX arrays (required for solver.init which calls tree_full_like)

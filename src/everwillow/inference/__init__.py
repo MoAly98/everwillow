@@ -6,7 +6,7 @@ hypothesis testing, and limit setting.
 
 from __future__ import annotations
 
-from everwillow.inference.callback import HistoryCallback, Callback
+from everwillow.inference.callback import Callback, HistoryCallback
 from everwillow.inference.fitting import FitResult, fit, ifit
 from everwillow.inference.uncertainty import (
     correlation_matrix,

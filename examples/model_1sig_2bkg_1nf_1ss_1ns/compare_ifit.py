@@ -12,10 +12,10 @@ from pyhf_model import build_pyhf
 from pyhf_model import nll_fn as pyhf_nll_fn
 from pyhs3_model import build_pyhs3
 from rich.console import Console
-from everwillow.inference import HistoryCallback
 
 import everwillow as ew
 import everwillow.statelib as sl
+from everwillow.inference import HistoryCallback
 
 jax.config.update("jax_enable_x64", True)
 

@@ -816,7 +816,7 @@ class TestIminimize:
         result = ew.ifit(
             simple_quadratic_nll,
             simple_params,
-            callback=counting_callback,
+            callbacks=[counting_callback],
             progress=False,
             max_steps=50,
         )
@@ -836,7 +836,7 @@ class TestIminimize:
         ew.ifit(
             simple_quadratic_nll,
             simple_params,
-            callback=record_step,
+            callbacks=[record_step],
             progress=False,
             max_steps=50,
         )
@@ -858,7 +858,7 @@ class TestIminimize:
         result: FitResult[float] = ew.ifit(
             nll,
             sl.State.from_pytree({"x": 0.0, "y": 0.0}),
-            callback=record_nll,
+            callbacks=[record_nll],
             progress=False,
             max_steps=50,
         )
@@ -875,7 +875,7 @@ class TestIminimize:
         result = ew.ifit(
             simple_quadratic_nll,
             simple_params,
-            callback=None,
+            callbacks=None,
             progress=False,
         )
 
@@ -1068,7 +1068,7 @@ class TestIfit:
         result: FitResult[float] = ew.ifit(
             nll,
             sl.State.from_pytree({"x": 0.0, "y": 0.0}),
-            callback=record,
+            callbacks=[record],
             progress=False,
         )
 

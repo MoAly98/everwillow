@@ -1,10 +1,11 @@
 """Standalone pyhs3 counting experiment example."""
 
+import jax
 import jax.numpy as jnp
 import pyhs3
 from pyhs3.data import PointData
 from pyhs3.distributions import GaussianDist, PoissonDist, ProductDist
-from pyhs3.functions import GenericFunction
+from pyhs3.functions import GenericFunction, InterpolationFunction
 from pyhs3.metadata import Metadata
 from pyhs3.parameter_points import ParameterPoint, ParameterSet
 from pytensor.compile import mode
@@ -14,6 +15,8 @@ from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
 import everwillow.statelib as sl
+
+jax.config.update("jax_enable_x64", True)
 
 
 def jaxify_distribution(model, distribution_name):
@@ -46,24 +49,44 @@ workspace = pyhs3.Workspace(
     ],
     functions=[
         GenericFunction(name="signal_expected", expression="mu * signal_nominal"),
-        GenericFunction(
+        InterpolationFunction(
             name="bkg1_lnN_factor",
-            expression="exp(norm1 * log(1.1))",
+            nom="lnN_nom",
+            high=["bkg1_lnN_up"],
+            low=["bkg1_lnN_down"],
+            vars=["norm1"],
+            interpolationCodes=[1],
+            positiveDefinite=False,
         ),
-        GenericFunction(
+        InterpolationFunction(
             name="bkg1_shape_interp",
-            expression="bkg1_nominal + shape1 * (bkg1_shape_up - bkg1_nominal)",
+            nom="bkg1_nominal",
+            high=["bkg1_shape_up"],
+            low=["bkg1_shape_down"],
+            vars=["shape1"],
+            interpolationCodes=[0],
+            positiveDefinite=False,
         ),
         GenericFunction(
             name="bkg1_expected", expression="bkg1_lnN_factor * bkg1_shape_interp"
         ),
-        GenericFunction(
+        InterpolationFunction(
             name="bkg2_lnN_factor",
-            expression="exp(norm2 * log(1.05))",
+            nom="lnN_nom",
+            high=["bkg2_lnN_up"],
+            low=["bkg2_lnN_down"],
+            vars=["norm2"],
+            interpolationCodes=[1],
+            positiveDefinite=False,
         ),
-        GenericFunction(
+        InterpolationFunction(
             name="bkg2_shape_interp",
-            expression="bkg2_nominal + shape1 * (bkg2_shape_up - bkg2_nominal)",
+            nom="bkg2_nominal",
+            high=["bkg2_shape_up"],
+            low=["bkg2_shape_down"],
+            vars=["shape1"],
+            interpolationCodes=[0],
+            positiveDefinite=False,
         ),
         GenericFunction(
             name="bkg2_expected", expression="bkg2_lnN_factor * bkg2_shape_interp"
@@ -92,8 +115,15 @@ workspace = pyhs3.Workspace(
         PointData(name="signal_nominal", value=3.0),
         PointData(name="bkg1_nominal", value=10.0),
         PointData(name="bkg1_shape_up", value=12.0),
+        PointData(name="bkg1_shape_down", value=8.0),
         PointData(name="bkg2_nominal", value=20.0),
         PointData(name="bkg2_shape_up", value=23.0),
+        PointData(name="bkg2_shape_down", value=19.0),
+        PointData(name="lnN_nom", value=1.0),
+        PointData(name="bkg1_lnN_up", value=1.1),
+        PointData(name="bkg1_lnN_down", value=0.9),
+        PointData(name="bkg2_lnN_up", value=1.05),
+        PointData(name="bkg2_lnN_down", value=0.95),
     ],
 )
 

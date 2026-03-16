@@ -1,4 +1,4 @@
-# Interopability with existing statistical tools in HEP
+# Interoperability with existing statistical tools in HEP
 
 This tutorial walks through a simple counting experiment implemented with three
 JAX-supporting modelling libraries: [`pyhs3`](https://github.com/scipp-atlas/pyhs3),
@@ -19,8 +19,9 @@ modifier and two log-normal normalisation nuisances.
 - Observed events: 37.
 - Signal template: {math}`s = 3` events, scaled by the strength parameter
   {math}`\mu`.
-- Background templates: {math}`b_1 = 10` and {math}`b_2 = 20` with upward shape
-  variations {math}`b_1^{\mathrm{up}} = 12` and {math}`b_2^{\mathrm{up}} = 23`.
+- Background templates: {math}`b_1 = 10` and {math}`b_2 = 20` with shape
+  variations {math}`b_1^{\mathrm{up}} = 12`, {math}`b_1^{\mathrm{down}} = 8`
+  and {math}`b_2^{\mathrm{up}} = 23`, {math}`b_2^{\mathrm{down}} = 19`.
 - Log-normal rate modifiers with unit-width Gaussian controls:
   {math}`\theta_{\text{norm1}}` and {math}`\theta_{\text{norm2}}`.
 - A single shape nuisance {math}`\theta_{\text{shape}}` shared by both
@@ -30,8 +31,12 @@ The total expectation in the Poisson term is
 
 ```{math}
 \lambda(\mu, \theta) = \mu s
- + e^{\log(1.1)\,\theta_{\text{norm1}}}\Bigl(b_1 + \theta_{\text{shape}}(b_1^{\mathrm{up}}-b_1)\Bigr)
- + e^{\log(1.05)\,\theta_{\text{norm2}}}\Bigl(b_2 + \theta_{\text{shape}}(b_2^{\mathrm{up}}-b_2)\Bigr).
+ + e^{\log(1.1)\,\theta_{\text{norm1}}}\Bigl(b_1
+   + \max(0,\,\theta_{\text{shape}})(b_1^{\mathrm{up}}-b_1)
+   + \min(0,\,\theta_{\text{shape}})(b_1-b_1^{\mathrm{down}})\Bigr)
+ + e^{\log(1.05)\,\theta_{\text{norm2}}}\Bigl(b_2
+   + \max(0,\,\theta_{\text{shape}})(b_2^{\mathrm{up}}-b_2)
+   + \min(0,\,\theta_{\text{shape}})(b_2-b_2^{\mathrm{down}})\Bigr).
 ```
 
 The negative log-likelihood combines the Poisson term with standard Gaussian

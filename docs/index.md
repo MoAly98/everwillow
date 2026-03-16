@@ -10,7 +10,7 @@ hypothesis testing with reusable utilities for managing optimization state.
 
 getting-started
 quickstart
-interopability
+interoperability
 ```
 
 ```{toctree}

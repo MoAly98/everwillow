@@ -1,11 +1,13 @@
 """Standalone pyhf counting experiment example."""
 
+import jax
 import jax.numpy as jnp
 import pyhf
 
 import everwillow as ew
 import everwillow.statelib as sl
 
+jax.config.update("jax_enable_x64", True)
 pyhf.set_backend("jax")
 
 # Build the workspace
@@ -47,7 +49,7 @@ spec = {
                         {
                             "name": "shape1",
                             "type": "histosys",
-                            "data": {"hi_data": [23.0], "lo_data": [17.0]},
+                            "data": {"hi_data": [23.0], "lo_data": [19.0]},
                         },
                     ],
                 },

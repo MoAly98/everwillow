@@ -30,5 +30,5 @@ To run the examples from the documentation, install the optional
 dependencies via the `examples` group:
 
 ```bash
-uv pip install '.[examples]'
+uv pip install --with examples
 ```

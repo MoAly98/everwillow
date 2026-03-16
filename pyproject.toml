@@ -69,15 +69,6 @@ dev = [
     "mypy",
 ]
 
-[project.optional-dependencies]
-examples = [
-    "pyhs3",
-    "evermore",
-    "pyhf",
-    "rich",
-]
-
-
 [project.urls]
 Homepage = "https://github.com/MoAly98/everwillow"
 "Bug Tracker" = "https://github.com/MoAly98/everwillow/issues"

@@ -9,17 +9,14 @@ hypothesis testing with reusable utilities for managing optimization state.
 :caption: User Guide
 
 getting-started
-introduction
 quickstart
-statelib_overview
-parameter_transforms
+interoperability
 ```
 
 ```{toctree}
 :maxdepth: 1
 :caption: Developer Guide
 
-architecture
 contributing
 ```
 

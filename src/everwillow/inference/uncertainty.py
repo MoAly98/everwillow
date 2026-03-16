@@ -139,8 +139,7 @@ def uncertainties(
 
     The uncertainties are the square roots of the diagonal of the
     covariance matrix (inverse Fisher information), following the
-    Cramér-Rao bound:
-        σ_i = √(Cov_ii) = √((H⁻¹)_ii)
+    Cramér-Rao bound: σ_i = √(Cov_ii) = √((H⁻¹)_ii)
 
     Args:
         nll_fn: Negative log-likelihood function taking a parameter pytree.

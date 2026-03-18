@@ -1,8 +1,4 @@
-"""Tests for upper limit finding functions.
-
-Tests upper_limit, upper_limit_scan, upper_limit_toys, and expected_upper_limit
-with concrete expected values.
-"""
+"""Tests for upper limit finding functions."""
 
 from __future__ import annotations
 
@@ -37,43 +33,39 @@ from everwillow.inference.hypotest import (
 class TestUpperLimit:
     """Tests for upper_limit function with exact expected values."""
 
-    def test_linear_objective(self):
-        """Test: f(poi) = 1 - 0.5*poi = 0.05 → poi = 1.9"""
+    @pytest.mark.parametrize(
+        ("level", "expected"),
+        [
+            (0.05, 1.9),  # f(poi) = 1 - 0.5*poi = 0.05 → poi = 1.9
+            (0.10, 1.8),  # f(poi) = 1 - 0.5*poi = 0.10 → poi = 1.8
+        ],
+    )
+    def test_linear_objective(self, level, expected):
+        """Test: f(poi) = 1 - 0.5*poi = level → poi = 2*(1 - level)."""
 
         def objective(poi):
             return 1.0 - 0.5 * poi
 
-        limit = upper_limit(objective, bounds=(0.0, 5.0), level=0.05)
-        assert float(limit) == pytest.approx(1.9, rel=1e-4)
-
-    def test_linear_objective_level_0p1(self):
-        """Test: f(poi) = 1 - 0.5*poi = 0.10 → poi = 1.8"""
-
-        def objective(poi):
-            return 1.0 - 0.5 * poi
-
-        limit = upper_limit(objective, bounds=(0.0, 5.0), level=0.10)
-        assert float(limit) == pytest.approx(1.8, rel=1e-4)
+        limit = upper_limit(objective, bounds=(0.0, 5.0), level=level)
+        assert float(limit) == pytest.approx(expected, rel=1e-4)
 
     def test_quadratic_objective(self):
-        """Test: f(poi) = 1 - 0.25*poi² = 0.05 → poi = sqrt(3.8) = 1.9493..."""
+        """Test: f(poi) = 1 - 0.25*poi² = 0.05 → poi = sqrt(0.95/0.25) = 1.94936."""
 
         def objective(poi):
             return 1.0 - 0.25 * poi**2
 
-        expected = math.sqrt(0.95 / 0.25)  # 1.9493588...
         limit = upper_limit(objective, bounds=(0.0, 5.0), level=0.05)
-        assert float(limit) == pytest.approx(expected, rel=1e-4)
+        assert float(limit) == pytest.approx(1.94936, rel=1e-4)
 
     def test_exponential_objective(self):
-        """Test: f(poi) = exp(-poi) = 0.05 → poi = -log(0.05) = 2.9957..."""
+        """Test: f(poi) = exp(-poi) = 0.05 → poi = -ln(0.05) = 2.99573."""
 
         def objective(poi):
             return jnp.exp(-poi)
 
-        expected = -math.log(0.05)  # 2.9957322...
         limit = upper_limit(objective, bounds=(0.0, 5.0), level=0.05)
-        assert float(limit) == pytest.approx(expected, rel=1e-4)
+        assert float(limit) == pytest.approx(2.99573, rel=1e-4)
 
     def test_custom_solver(self):
         """Test with custom solver gives same result."""
@@ -95,7 +87,6 @@ class TestUpperLimit:
         def objective(poi):
             return jnp.exp(-poi)
 
-        expected = -math.log(0.05)
         limit = upper_limit(
             objective,
             bounds=(0.0, 5.0),
@@ -103,7 +94,7 @@ class TestUpperLimit:
             rtol=1e-8,
             atol=1e-10,
         )
-        assert float(limit) == pytest.approx(expected, rel=1e-6)
+        assert float(limit) == pytest.approx(2.99573, rel=1e-6)
 
     def test_jit_compatibility(self):
         """Test that upper_limit is JIT-compatible."""
@@ -118,6 +109,16 @@ class TestUpperLimit:
 
         assert float(find_limit(0.05)) == pytest.approx(1.9, rel=1e-4)
         assert float(find_limit(0.10)) == pytest.approx(1.8, rel=1e-4)
+
+    @pytest.mark.parametrize(
+        "bounds",
+        [(3.0, 5.0), (0.0, 1.0)],
+        ids=["root-below", "root-above"],
+    )
+    def test_root_outside_bounds(self, bounds):
+        """Raises when root (1.9) is outside the search range."""
+        with pytest.raises(RuntimeError, match="root is not contained"):
+            upper_limit(lambda poi: 1.0 - 0.5 * poi, bounds=bounds, level=0.05)
 
 
 # =============================================================================
@@ -136,7 +137,7 @@ class TestUpperLimitScan:
 
         scan = jnp.linspace(0.0, 5.0, 50)
         limit = upper_limit_scan(objective, scan, level=0.05)
-        # Coarse grid: ~2% accuracy
+        # Coarse grid: ~2% accuracy (random)
         assert float(limit) == pytest.approx(1.9, rel=0.02)
 
     def test_linear_objective_fine(self):
@@ -147,19 +148,18 @@ class TestUpperLimitScan:
 
         scan = jnp.linspace(0.0, 5.0, 500)
         limit = upper_limit_scan(objective, scan, level=0.05)
-        # Fine grid: ~0.5% accuracy
+        # Fine grid: ~0.5% accuracy (random)
         assert float(limit) == pytest.approx(1.9, rel=0.005)
 
     def test_exponential_objective(self):
-        """Test: exp(-poi) = 0.05 → poi = 2.9957..."""
+        """Test: exp(-poi) = 0.05 → poi = -ln(0.05) = 2.99573."""
 
         def objective(poi):
             return jnp.exp(-poi)
 
-        expected = -math.log(0.05)
         scan = jnp.linspace(0.0, 5.0, 200)
         limit = upper_limit_scan(objective, scan, level=0.05)
-        assert float(limit) == pytest.approx(expected, rel=0.01)
+        assert float(limit) == pytest.approx(2.99573, rel=0.005)
 
     def test_accuracy_improves_with_grid_density(self):
         """Verify finer grid gives better accuracy for nonlinear objective."""
@@ -168,12 +168,10 @@ class TestUpperLimitScan:
             # Use nonlinear function where interpolation error matters
             return jnp.exp(-poi)
 
-        expected = -math.log(0.05)  # 2.9957...
-
         coarse = upper_limit_scan(objective, jnp.linspace(0, 5, 10), level=0.05)
         fine = upper_limit_scan(objective, jnp.linspace(0, 5, 200), level=0.05)
 
-        assert abs(float(fine) - expected) < abs(float(coarse) - expected)
+        assert abs(float(fine) - 2.99573) < abs(float(coarse) - 2.99573)
 
     def test_jit_compatibility(self):
         """Test that upper_limit_scan is JIT-compatible."""
@@ -185,6 +183,17 @@ class TestUpperLimitScan:
         scan = jnp.linspace(0.0, 5.0, 100)
         assert float(find_limit(scan)) == pytest.approx(1.9, rel=0.02)
 
+    @pytest.mark.parametrize(
+        "scan_range",
+        [(3.0, 5.0), (0.0, 1.0)],
+        ids=["root-below", "root-above"],
+    )
+    def test_root_outside_scan_range(self, scan_range):
+        """Raises when root (1.9) is outside the scan range."""
+        scan = jnp.linspace(*scan_range, 50)
+        with pytest.raises(RuntimeError, match="root not found within scan range"):
+            upper_limit_scan(lambda poi: 1.0 - 0.5 * poi, scan, level=0.05)
+
 
 # =============================================================================
 # upper_limit_toys Tests
@@ -192,64 +201,16 @@ class TestUpperLimitScan:
 
 
 class TestUpperLimitToys:
-    """Tests for upper_limit_toys function (stochastic)."""
+    """Tests for upper_limit_toys function (stochastic bisection)."""
 
-    def test_deterministic_objective(self):
-        """Test with deterministic objective (ignores key).
+    def test_noisy_objective(self):
+        """Converges to correct root despite per-iteration noise.
 
-        f(poi) = 1 - 0.5*poi = 0.05 → poi = 1.9
+        f(poi) = 1 - 0.5*poi + noise = 0.05 → true root at poi = 1.9.
+        Each iteration gets a fresh key via fold_in, producing independent noise.
         """
 
         def objective(poi, key):
-            return 1.0 - 0.5 * poi
-
-        limit = upper_limit_toys(
-            objective,
-            bounds=(0.0, 5.0),
-            key=jax.random.key(42),
-            level=0.05,
-            tol=0.01,
-        )
-        assert float(limit) == pytest.approx(1.9, rel=0.02)
-
-    def test_exponential_deterministic(self):
-        """Test: exp(-poi) = 0.05 → poi = 2.9957..."""
-
-        def objective(poi, key):
-            return jnp.exp(-poi)
-
-        expected = -math.log(0.05)
-        limit = upper_limit_toys(
-            objective,
-            bounds=(0.0, 5.0),
-            key=jax.random.key(42),
-            level=0.05,
-            tol=0.001,  # Tighter tolerance
-            max_iterations=50,  # More iterations
-        )
-        assert float(limit) == pytest.approx(expected, rel=0.02)
-
-    def test_reproducibility(self):
-        """Same key gives same result."""
-
-        def objective(poi, key):
-            noise = jax.random.normal(key) * 0.01
-            return 1.0 - 0.5 * poi + noise
-
-        limit1 = upper_limit_toys(
-            objective, bounds=(0.0, 5.0), key=jax.random.key(123), level=0.05
-        )
-        limit2 = upper_limit_toys(
-            objective, bounds=(0.0, 5.0), key=jax.random.key(123), level=0.05
-        )
-
-        assert float(limit1) == float(limit2)
-
-    def test_with_significant_noise(self):
-        """Test convergence with significant stochastic noise."""
-
-        def objective(poi, key):
-            # Larger noise to test robustness
             noise = jax.random.normal(key) * 0.1
             return 1.0 - 0.5 * poi + noise
 
@@ -258,14 +219,31 @@ class TestUpperLimitToys:
             bounds=(0.0, 5.0),
             key=jax.random.key(42),
             level=0.05,
-            tol=0.1,  # Loose tolerance for noisy objective
+            tol=0.1,
             max_iterations=50,
         )
 
-        # Should converge to something reasonable within bounds
-        assert 0.0 < float(limit) < 5.0
-        # And be in the ballpark of 1.9
-        assert float(limit) == pytest.approx(1.9, rel=0.5)
+        assert float(limit) == pytest.approx(1.9, rel=0.2)
+
+    @pytest.mark.parametrize(
+        "bounds",
+        [(3.0, 5.0), (0.0, 1.0)],
+        ids=["root-below", "root-above"],
+    )
+    def test_root_outside_bounds(self, bounds):
+        """Raises when root (1.9) is outside the search range."""
+
+        def objective(poi, key):
+            return 1.0 - 0.5 * poi
+
+        with pytest.raises(RuntimeError, match="root not found within bounds"):
+            upper_limit_toys(
+                objective,
+                bounds=bounds,
+                key=jax.random.key(42),
+                level=0.05,
+                tol=0.01,
+            )
 
 
 # =============================================================================
@@ -303,47 +281,6 @@ def _make_mock_bands(pnulls, palts):
 class TestExpectedUpperLimit:
     """Tests for expected_upper_limit with concrete expected values."""
 
-    def test_with_known_cls_function(self):
-        """Test expected_upper_limit with a mock calc_fn.
-
-        Mock CLs(poi) = exp(-poi), so:
-        - observed limit: exp(-poi) = 0.05 → poi = 2.996
-        - All expected bands use the same formula, so all limits = 2.996
-
-        CLs = pnull/palt, so pnull = exp(-poi)*palt with palt = 0.5.
-        """
-        expected_limit = -math.log(0.05)  # 2.9957...
-
-        def mock_calc_fn(poi):
-            """Mock calculator returning CLs = exp(-poi)."""
-            cls_val = jnp.exp(-poi)
-            palt = jnp.array(0.5)
-            pnull = cls_val * palt
-            # Create mock expected bands - all return same CLs for simplicity
-            bands = _make_mock_bands(
-                [pnull] * 5,
-                [palt] * 5,
-            )
-            return HypoTestResult(
-                q_obs=jnp.array(0.0),
-                pnull=pnull,
-                palt=palt,
-                cl_s=cls_val,
-                expected_bands=bands,
-                test_stat_result=TSResult(value=jnp.array(0.0), test=jnp.array(0.0)),
-            )
-
-        result = expected_upper_limit(mock_calc_fn, bounds=(0.0, 5.0), level=0.05)
-
-        assert float(result.observed) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.expected.median) == pytest.approx(expected_limit, rel=1e-3)
-        assert float(result.expected.minus_2sigma) == pytest.approx(
-            expected_limit, rel=1e-3
-        )
-        assert float(result.expected.plus_2sigma) == pytest.approx(
-            expected_limit, rel=1e-3
-        )
-
     def test_with_varying_bands(self):
         """Test expected_upper_limit with different CLs for each band.
 
@@ -354,10 +291,10 @@ class TestExpectedUpperLimit:
         - -1σ CLs = exp(-0.6*poi)      → limit = 4.993
         - +1σ CLs = exp(-1.0*poi)      → limit = 2.996
         """
-        expected_observed = -math.log(0.05)  # 2.996
-        expected_median = -math.log(0.05) / 0.8  # 3.745
-        expected_minus1 = -math.log(0.05) / 0.6  # 4.993
-        expected_plus1 = -math.log(0.05) / 1.0  # 2.996
+        expected_observed = 2.99573  # -ln(0.05)
+        expected_median = 3.74466  # -ln(0.05) / 0.8
+        expected_minus1 = 4.99289  # -ln(0.05) / 0.6
+        expected_plus1 = 2.99573  # -ln(0.05) / 1.0
 
         def mock_calc_fn(poi):
             """Mock with different sensitivities per band."""

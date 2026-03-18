@@ -1,7 +1,4 @@
-"""Tests for ToyGenerator.
-
-Tests toy generation with both sample_fn and predict_fn (Poisson sampler).
-"""
+"""Tests for ToyGenerator."""
 
 from __future__ import annotations
 
@@ -9,7 +6,6 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
     QTilde,
     SimpleEmpiricalDistribution,
@@ -20,43 +16,13 @@ from everwillow.inference.hypotest import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
 )
 
-# =============================================================================
-# Test fixtures
-# =============================================================================
-
-S = 10.0  # signal yield
-B = 5.0  # background yield
-
-
-def poisson_nll(params, observation):
-    """Poisson NLL for a simple counting experiment."""
-    mu = params["mu"]
-    n_expected = mu * S + B
-    n_observed = observation["n"]
-    return n_expected - n_observed * jnp.log(n_expected)
-
-
-def create_params(mu_init: float = 1.0) -> sl.State:
-    """Create initial parameter state."""
-    return sl.State.from_pytree({"mu": mu_init})
-
-
-def create_observation(n: float) -> dict[str, float]:
-    """Create observation dict."""
-    return {"n": n}
-
-
-def predict_fn(params_state: sl.State) -> dict[str, float]:
-    """Prediction function for expected counts."""
-    mu = params_state.to_pytree()["mu"]
-    return {"n": mu * S + B}
-
-
-def sample_fn(params_state: sl.State, key) -> dict[str, float]:
-    """Sample function for toy generation."""
-    expected = predict_fn(params_state)
-    return {"n": jax.random.poisson(key, expected["n"])}
-
+from ._counting_model import (
+    create_observation,
+    create_params,
+    poisson_nll,
+    predict_fn,
+    sample_fn,
+)
 
 # =============================================================================
 # ToyGenerator Tests
@@ -66,8 +32,15 @@ def sample_fn(params_state: sl.State, key) -> dict[str, float]:
 class TestToyGenerator:
     """Tests for ToyGenerator."""
 
-    def test_generate_with_sample_fn(self):
-        """Test toy generation with explicit sample_fn."""
+    @pytest.mark.parametrize(
+        ("gen_method", "gen_fn"),
+        [
+            ("sample_fn", sample_fn),
+            ("predict_fn", predict_fn),
+        ],
+    )
+    def test_generate(self, gen_method, gen_fn):
+        """Test toy generation with sample_fn and predict_fn."""
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
@@ -79,32 +52,13 @@ class TestToyGenerator:
             ("mu",),
             poi_test=1.0,
             key=jax.random.key(42),
-            sample_fn=sample_fn,
+            **{gen_method: gen_fn},
         )
 
         assert isinstance(toys, ToyResult)
         assert toys.q_alt.shape == (100,)
         assert toys.q_null.shape == (100,)
-
-    def test_generate_with_predict_fn(self):
-        """Test toy generation with predict_fn (default Poisson sampler)."""
-        params = create_params(mu_init=1.0)
-        observed = create_observation(15.0)
-
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
-        toys = toy_gen.generate(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=1.0,
-            key=jax.random.key(42),
-            predict_fn=predict_fn,
-        )
-
-        assert isinstance(toys, ToyResult)
-        assert toys.q_alt.shape == (100,)
-        assert toys.q_null.shape == (100,)
+        # can we somehow test values?
 
     def test_requires_sample_or_predict(self):
         """Test that either sample_fn or predict_fn is required."""
@@ -213,8 +167,13 @@ class TestToyGenerator:
 class TestToyGeneratorPoissonSampler:
     """Tests for the default Poisson sampler."""
 
-    def test_poisson_samples_finite(self):
-        """Test that Poisson samples produce finite q values."""
+    def test_poisson_samples_values(self):
+        """Test that Poisson toys produce expected q distributions.
+
+        Under alternative (mu=1, poi_test=1): testing at true mu, so
+        QTilde gives q=0 for most toys (mu_hat ≈ mu_test).
+        Median q_alt should be near 0.0.
+        """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
@@ -231,6 +190,8 @@ class TestToyGeneratorPoissonSampler:
 
         assert jnp.all(jnp.isfinite(toys.q_alt))
         assert jnp.all(jnp.isfinite(toys.q_null))
+        # Under alternative, testing at true mu: median q_alt ≈ 0
+        assert float(jnp.median(toys.q_alt)) == pytest.approx(0.0, abs=0.5)
 
     def test_poisson_mean_matches_expectation(self):
         """Test that Poisson samples have correct mean.
@@ -267,33 +228,12 @@ class TestToyGeneratorPoissonSampler:
 class TestToyGeneratorIntegration:
     """Integration tests for ToyGenerator with calculator."""
 
-    def test_empirical_pvalues_in_range(self):
-        """Test that empirical p-values are in valid range [0, 1]."""
-        params = create_params(mu_init=1.0)
-        observed = create_observation(15.0)
-
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=200)
-        toys = toy_gen.generate(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=1.0,
-            key=jax.random.key(42),
-            predict_fn=predict_fn,
-        )
-        dist = SimpleEmpiricalDistribution.from_toys(toys)
-
-        # Test p-values at q=0
-        result = TSResult(value=jnp.array(0.0), test=jnp.array(1.0))
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
-
-        assert 0.0 <= float(pnull) <= 1.0
-        assert 0.0 <= float(palt) <= 1.0
-
     def test_empirical_pvalues_at_q_zero(self):
-        """At q=0, most toys should have q >= 0, so p-values should be high."""
+        """At q=0, nearly all toys have q >= 0, so p-values ≈ 1.0.
+
+        QTilde produces q >= 0 by construction (boundary + max(0,...)).
+        At q_obs=0, the fraction of toys with q >= 0 is ~1.0.
+        """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
@@ -313,6 +253,6 @@ class TestToyGeneratorIntegration:
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
-        # At q=0, all toys with q >= 0 contribute
-        assert float(palt) > 0.8
-        assert float(pnull) > 0.8
+        # All q values are >= 0, so at q_obs=0 p-values should be ~1.0
+        assert float(pnull) == pytest.approx(1.0, abs=0.1)
+        assert float(palt) == pytest.approx(1.0, abs=0.1)

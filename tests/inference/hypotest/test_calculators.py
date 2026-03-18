@@ -1,70 +1,30 @@
-"""Tests for hypothesis test calculators.
-
-Tests the calculator orchestration with concrete expected values.
-"""
+"""Tests for hypothesis test calculators."""
 
 from __future__ import annotations
 
-import math
+from unittest import mock
 
 import jax.numpy as jnp
 import pytest
 
-import everwillow.statelib as sl
 from everwillow.inference.hypotest import (
     AsymptoticCalculator,
-    BandValues,
-    ExpectedBands,
     HypoTestCalculator,
     QMu,
+    QMuAsymptotic,
     QTilde,
     QTildeAsymptotic,
-    cl_s,
-    significance,
+)
+from everwillow.inference.hypotest import (
+    TestStatResult as TSResult,
 )
 
-# =============================================================================
-# Test fixtures: Simple Poisson counting experiment
-# =============================================================================
-
-S = 10.0  # signal yield
-B = 5.0  # background yield
-
-
-def poisson_nll(params, observation):
-    """Poisson NLL for a simple counting experiment."""
-    mu = params["mu"]
-    n_expected = mu * S + B
-    n_observed = observation["n"]
-    return n_expected - n_observed * jnp.log(n_expected)
-
-
-def create_params(mu_init: float = 1.0) -> sl.State:
-    """Create initial parameter state."""
-    return sl.State.from_pytree({"mu": mu_init})
-
-
-def create_observation(n: float) -> dict[str, float]:
-    """Create observation dict."""
-    return {"n": n}
-
-
-def predict_fn(params_state: sl.State) -> dict[str, float]:
-    """Prediction function for Asimov data."""
-    mu = params_state.to_pytree()["mu"]
-    return {"n": mu * S + B}
-
-
-def expected_q(n_obs: float, mu_test: float) -> float:
-    """Compute analytical q value."""
-    n_exp_test = mu_test * S + B
-    return 2.0 * (n_exp_test - n_obs - n_obs * math.log(n_exp_test / n_obs))
-
-
-def normal_sf(x: float) -> float:
-    """Standard normal survival function: 1 - CDF."""
-    return 0.5 * (1 - math.erf(x / math.sqrt(2)))
-
+from ._counting_model import (
+    create_observation,
+    create_params,
+    poisson_nll,
+    predict_fn,
+)
 
 # =============================================================================
 # AsymptoticCalculator Tests
@@ -75,7 +35,12 @@ class TestAsymptoticCalculator:
     """Tests for AsymptoticCalculator."""
 
     def test_basic_result_structure(self):
-        """Test that calculator returns proper HypoTestResult."""
+        """Test that calculator returns correct values at MLE.
+
+        n_obs=15, poi_test=1.0 (at MLE): q_obs=0.
+        Asimov at mu=0 (n=5), tested at mu=1: q_asimov = 9.0139.
+        pnull = 1-Φ(0) = 0.5, palt = 1-Φ(0-3.002) = 0.99866.
+        """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
@@ -92,12 +57,11 @@ class TestAsymptoticCalculator:
             predict_fn=predict_fn,
         )
 
-        assert hasattr(result, "q_obs")
-        assert hasattr(result, "pnull")
-        assert hasattr(result, "palt")
-        assert hasattr(result, "cl_s")
-        assert hasattr(result, "expected_bands")
-        assert hasattr(result, "test_stat_result")
+        assert result.q_obs == pytest.approx(0.0, abs=1e-5)
+        assert float(result.pnull) == pytest.approx(0.5, rel=1e-3)
+        assert float(result.palt) == pytest.approx(0.99866, rel=1e-3)
+        assert result.expected_bands is not None
+        assert result.test_stat_result.q_asimov == pytest.approx(9.0139, rel=1e-3)
 
     def test_q_obs_at_mle(self):
         """At MLE, q=0.
@@ -150,10 +114,8 @@ class TestAsymptoticCalculator:
 
         mu_asimov=0 by default.
         Asimov at mu=0: n_asimov = 5
-        Testing at mu=1: q_asimov = 2*(15-5-5*ln(3)) ≈ 9.014
+        Testing at mu=1: q_asimov = 2*(15-5-5*ln(3)) = 9.0139
         """
-        expected_q_asimov = expected_q(5.0, 1.0)  # ~9.014
-
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
@@ -170,15 +132,13 @@ class TestAsymptoticCalculator:
             predict_fn=predict_fn,
         )
 
-        assert result.test_stat_result.q_asimov == pytest.approx(
-            expected_q_asimov, rel=1e-3
-        )
+        assert result.test_stat_result.q_asimov == pytest.approx(9.0139, rel=1e-3)
 
     def test_q_asimov_at_different_mu_test(self):
         """Test that Asimov is always at mu_asimov, regardless of mu_test.
 
         At mu_test=0: Asimov at mu=0 (n=5), testing at 0 → q_asimov=0
-        At mu_test=2: Asimov at mu=0 (n=5), testing at 2 → q_asimov≈23.9
+        At mu_test=2: Asimov at mu=0 (n=5), testing at 2 → q_asimov = 23.9056
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
@@ -200,7 +160,6 @@ class TestAsymptoticCalculator:
         assert result_0.test_stat_result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
         # Test at mu=2
-        expected_q_asimov_2 = expected_q(5.0, 2.0)
         result_2 = calc(
             poisson_nll,
             params,
@@ -209,12 +168,16 @@ class TestAsymptoticCalculator:
             poi_test=2.0,
             predict_fn=predict_fn,
         )
-        assert result_2.test_stat_result.q_asimov == pytest.approx(
-            expected_q_asimov_2, rel=1e-3
-        )
+        assert result_2.test_stat_result.q_asimov == pytest.approx(23.9056, rel=1e-3)
 
     def test_pvalues_computed(self):
-        """Test that pnull and palt are finite after distribution call."""
+        """Test that pnull and palt have correct values.
+
+        n_obs=10, mu_test=1: q_obs = 1.8907, q_asimov = 9.0139.
+        Standard region (q < q_asimov):
+        pnull = 1-Φ(√1.8907) = 1-Φ(1.375) = 0.08456
+        palt = 1-Φ(1.375-3.002) = 1-Φ(-1.627) = 0.94816
+        """
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
@@ -231,74 +194,19 @@ class TestAsymptoticCalculator:
             predict_fn=predict_fn,
         )
 
-        assert jnp.isfinite(result.pnull)
-        assert jnp.isfinite(result.palt)
-
-    def test_custom_test_statistic(self):
-        """Test calculator with QMu instead of QTilde."""
-        params = create_params(mu_init=1.0)
-        observed = create_observation(25.0)
-
-        calc = AsymptoticCalculator(
-            test_statistic=QMu(),
-            distribution=QTildeAsymptotic(),
-        )
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=1.0,
-            predict_fn=predict_fn,
-        )
-
-        # QMu doesn't have boundary, so q > 0 for upward fluctuation
-        assert float(result.q_obs) > 0.0
-
-
-# =============================================================================
-# HypoTestCalculator Tests (generic base)
-# =============================================================================
-
-
-class TestHypoTestCalculator:
-    """Tests for the generic HypoTestCalculator base."""
-
-    def test_default_test_statistic(self):
-        """Test that default test statistic is QTilde."""
-        calc = HypoTestCalculator()
-        assert isinstance(calc.test_statistic, QTilde)
-
-    def test_kwargs_passthrough(self):
-        """Test that kwargs are forwarded to test statistic."""
-        params = create_params(mu_init=1.0)
-        observed = create_observation(10.0)
-
-        calc = HypoTestCalculator(
-            test_statistic=QTilde(), distribution=QTildeAsymptotic()
-        )
-        # predict_fn passed as kwarg, forwarded to CowanTestStatistic
-        result = calc(
-            poisson_nll,
-            params,
-            observed,
-            ("mu",),
-            poi_test=1.0,
-            predict_fn=predict_fn,
-        )
-
-        assert result.test_stat_result.q_asimov is not None
+        assert float(result.pnull) == pytest.approx(0.08456, rel=1e-3)
+        assert float(result.palt) == pytest.approx(0.94816, rel=1e-3)
 
     def test_without_predict_fn(self):
-        """Test that calculator works without predict_fn (no Asimov).
+        """Without predict_fn, q_asimov is None and p-values are None.
 
-        Without Asimov, q_asimov is None and piecewise distributions
-        (QTildeAsymptotic) return None for p-values that need it.
+        QTildeAsymptotic requires q_asimov for both null_pval and alt_pval.
+        Without predict_fn, the Asimov dataset is not generated.
         """
         params = create_params(mu_init=1.0)
-        observed = create_observation(10.0)
+        observed = create_observation(15.0)
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             test_statistic=QTilde(), distribution=QTildeAsymptotic()
         )
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
@@ -316,267 +224,70 @@ class TestHypoTestCalculator:
 
 
 # =============================================================================
-# CLs Tests
+# HypoTestCalculator Tests (generic base)
 # =============================================================================
 
 
-class TestClS:
-    """Tests for cl_s utility: CLs = pnull / palt (Cowan et al., ATLAS convention).
+class TestHypoTestCalculator:
+    """Tests for the generic HypoTestCalculator base."""
 
-    Uses QMu asymptotic p-values (Cowan Eq. 57-59) as reference values.
-    For QMu with μ tested, σ=1, Asimov at μ'=0:
-        pnull = 1 - Φ(√q)        (p_μ: upper tail under signal)
-        palt  = 1 - Φ(√q - μ/σ)  (CL_b: upper tail under background)
-    """
+    def test_default_test_statistic(self):
+        """Test that default test statistic is QTilde."""
+        calc = HypoTestCalculator()
+        assert isinstance(calc.test_statistic, QTilde)
 
-    @pytest.mark.parametrize(
-        ("pnull", "palt", "expected_cls"),
-        [
-            # QMu at median upper limit (μ=1.96σ, band N=0):
-            # q = 1.96², pnull = 1-Φ(1.96) = 0.025, palt = 1-Φ(0) = 0.5
-            (0.025, 0.5, 0.05),
-            # QMu at +1σ band (μ=2.727σ, band N=1):
-            # q = 1.727², pnull = 1-Φ(1.727) ≈ 0.0421, palt = Φ(1) ≈ 0.8413
-            (0.0421, 0.8413, 0.05004),
-            # QMu at -1σ band (μ=1.412σ, band N=-1):
-            # q = 2.412², pnull = 1-Φ(2.412) ≈ 0.00793, palt = Φ(-1) ≈ 0.1587
-            (0.00793, 0.1587, 0.04997),
-        ],
-        ids=["median-band", "plus-1sigma-band", "minus-1sigma-band"],
+    @mock.patch.object(
+        QTilde,
+        "__call__",
+        return_value=TSResult(value=jnp.array(0.0), test=jnp.array(1.0)),
     )
-    def test_qmu_cls_at_expected_upper_limit(self, pnull, palt, expected_cls):
-        """CLs ≈ 0.05 at each band's expected upper limit (σ=1, α=0.05)."""
-        result = float(cl_s(jnp.array(pnull), jnp.array(palt)))
-        assert result == pytest.approx(expected_cls, rel=1e-3)
+    def test_kwargs_passthrough(self, mock_ts):
+        """Verify kwargs are forwarded verbatim to the test statistic."""
+        params = create_params(mu_init=1.0)
+        observed = create_observation(15.0)
 
-    def test_cls_inflated_when_no_sensitivity(self):
-        """CLs method protects against false exclusion.
+        calc = HypoTestCalculator()
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            calc(
+                poisson_nll,
+                params,
+                observed,
+                ("mu",),
+                poi_test=1.0,
+                predict_fn=predict_fn,
+                mu_asimov=0.0,
+            )
 
-        When background also finds data unlikely (small palt), CLs
-        is inflated even if pnull is small. This is the key property
-        of the CLs method — it prevents excluding signals when
-        the experiment has no sensitivity.
+        mock_ts.assert_called_once_with(
+            poisson_nll,
+            params,
+            observed,
+            ("mu",),
+            1.0,
+            predict_fn=predict_fn,
+            mu_asimov=0.0,
+        )
+
+    def test_result_without_asimov(self):
+        """QMu + QMuAsymptotic gives correct pnull without Asimov data.
+
+        n_obs=10, mu_test=1: q_mu = 1.8907.
+        QMuAsymptotic.null_pval = 1 - Φ(√1.8907) = 1 - Φ(1.375) = 0.08456.
+        alt_pval needs q_asimov → None (no predict_fn provided).
         """
-        result = float(cl_s(jnp.array(0.001), jnp.array(0.002)))
-        assert result == pytest.approx(0.5)
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
 
+        calc = HypoTestCalculator(test_statistic=QMu(), distribution=QMuAsymptotic())
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            result = calc(
+                poisson_nll,
+                params,
+                observed,
+                ("mu",),
+                poi_test=1.0,
+            )
 
-# =============================================================================
-# ExpectedBands Tests
-# =============================================================================
-
-
-class TestExpectedBandsClsBands:
-    """Tests for ExpectedBands.cl_s with known QMu values.
-
-    Uses QMu p-values at the expected upper limit (σ=1, α=0.05).
-    At the upper limit for each band, CLs = pnull/palt = 0.05.
-    Different bands have different pnull and palt, verifying that
-    cl_s correctly pairs the right elements.
-    """
-
-    def test_cls_bands_qmu_at_expected_upper_limit(self):
-        """CLs = 0.05 at each band's expected upper limit.
-
-        QMu expected p-values at μ_up(N) = Φ⁻¹(1 - α·Φ(N)) + N:
-            Band N | μ_up  | pnull = 1-Φ(μ_up-N) | palt = Φ(N)  | CLs
-            -2     | 1.052 | 1-Φ(3.052)=0.001138 | Φ(-2)=0.02275| 0.05
-            -1     | 1.412 | 1-Φ(2.412)=0.00793  | Φ(-1)=0.15866| 0.05
-             0     | 1.960 | 1-Φ(1.960)=0.02500  | Φ(0) =0.50000| 0.05
-            +1     | 2.727 | 1-Φ(1.727)=0.04213  | Φ(1) =0.84134| 0.05
-            +2     | 3.656 | 1-Φ(1.656)=0.04883  | Φ(2) =0.97725| 0.05
-        """
-        pnulls = [0.001138, 0.00793, 0.02500, 0.04213, 0.04883]
-        palts = [0.02275, 0.15866, 0.50000, 0.84134, 0.97725]
-        band_names = [
-            "minus_2sigma",
-            "minus_1sigma",
-            "median",
-            "plus_1sigma",
-            "plus_2sigma",
-        ]
-
-        bands = ExpectedBands(
-            null_pvalue=BandValues(
-                **{n: jnp.array(p) for n, p in zip(band_names, pnulls, strict=False)}
-            ),
-            alt_pvalue=BandValues(
-                **{n: jnp.array(p) for n, p in zip(band_names, palts, strict=False)}
-            ),
-            cl_s=BandValues(
-                **{
-                    n: cl_s(jnp.array(pn), jnp.array(pa))
-                    for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
-                }
-            ),
-            null_sig=BandValues(
-                **{
-                    n: significance(jnp.array(p))
-                    for n, p in zip(band_names, pnulls, strict=False)
-                }
-            ),
-            alt_sig=BandValues(
-                **{
-                    n: significance(jnp.array(p))
-                    for n, p in zip(band_names, palts, strict=False)
-                }
-            ),
-        )
-
-        # abs=1e-3 accounts for rounding in the hardcoded p-values above
-        assert float(bands.cl_s.minus_2sigma) == pytest.approx(0.05, abs=1e-3)
-        assert float(bands.cl_s.minus_1sigma) == pytest.approx(0.05, abs=1e-3)
-        assert float(bands.cl_s.median) == pytest.approx(0.05, abs=1e-3)
-        assert float(bands.cl_s.plus_1sigma) == pytest.approx(0.05, abs=1e-3)
-        assert float(bands.cl_s.plus_2sigma) == pytest.approx(0.05, abs=1e-3)
-
-
-class TestExpectedBandsSignificanceBands:
-    """Tests for ExpectedBands null_sig / alt_sig BandValues.
-
-    Uses known QMu p-values for μ=2, σ=1, q_A=4:
-        Z = Φ⁻¹(1-p) converts p-value to significance.
-    """
-
-    @pytest.fixture
-    def qmu_bands(self) -> ExpectedBands:
-        """ExpectedBands with known QMu p-values (μ=2, σ=1, q_A=4).
-
-        Band   | pnull      | palt
-        -2σ    | 3.167e-5   | 0.02275
-        -1σ    | 0.00135    | 0.15866
-        median | 0.02275    | 0.5
-        +1σ    | 0.15866    | 0.84134
-        +2σ    | 0.5        | 0.97725
-        """
-        pnulls = [3.167e-5, 0.00135, 0.02275, 0.15866, 0.5]
-        palts = [0.02275, 0.15866, 0.5, 0.84134, 0.97725]
-        band_names = [
-            "minus_2sigma",
-            "minus_1sigma",
-            "median",
-            "plus_1sigma",
-            "plus_2sigma",
-        ]
-
-        return ExpectedBands(
-            null_pvalue=BandValues(
-                **{n: jnp.array(p) for n, p in zip(band_names, pnulls, strict=False)}
-            ),
-            alt_pvalue=BandValues(
-                **{n: jnp.array(p) for n, p in zip(band_names, palts, strict=False)}
-            ),
-            cl_s=BandValues(
-                **{
-                    n: cl_s(jnp.array(pn), jnp.array(pa))
-                    for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
-                }
-            ),
-            null_sig=BandValues(
-                **{
-                    n: significance(jnp.array(p))
-                    for n, p in zip(band_names, pnulls, strict=False)
-                }
-            ),
-            alt_sig=BandValues(
-                **{
-                    n: significance(jnp.array(p))
-                    for n, p in zip(band_names, palts, strict=False)
-                }
-            ),
-        )
-
-    def test_null_significance_bands(self, qmu_bands: ExpectedBands):
-        """Z_null at each band: 4.0, 3.0, 2.0, 1.0, 0.0."""
-        assert float(qmu_bands.null_sig.minus_2sigma) == pytest.approx(4.0, abs=0.01)
-        assert float(qmu_bands.null_sig.minus_1sigma) == pytest.approx(3.0, abs=0.01)
-        assert float(qmu_bands.null_sig.median) == pytest.approx(2.0, abs=0.01)
-        assert float(qmu_bands.null_sig.plus_1sigma) == pytest.approx(1.0, abs=0.01)
-        assert float(qmu_bands.null_sig.plus_2sigma) == pytest.approx(0.0, abs=0.01)
-
-    def test_alt_significance_bands(self, qmu_bands: ExpectedBands):
-        """Z_alt at each band: 2.0, 1.0, 0.0, -1.0, -2.0."""
-        assert float(qmu_bands.alt_sig.minus_2sigma) == pytest.approx(2.0, abs=0.01)
-        assert float(qmu_bands.alt_sig.minus_1sigma) == pytest.approx(1.0, abs=0.01)
-        assert float(qmu_bands.alt_sig.median) == pytest.approx(0.0, abs=0.01)
-        assert float(qmu_bands.alt_sig.plus_1sigma) == pytest.approx(-1.0, abs=0.01)
-        assert float(qmu_bands.alt_sig.plus_2sigma) == pytest.approx(-2.0, abs=0.01)
-
-    def test_significance_utility_known_values(self):
-        """Test standalone significance() with known p-value → Z mappings."""
-        assert float(significance(jnp.array(0.5))) == pytest.approx(0.0, abs=1e-6)
-        assert float(significance(jnp.array(0.02275))) == pytest.approx(2.0, abs=0.01)
-        assert float(significance(jnp.array(0.15866))) == pytest.approx(1.0, abs=0.01)
-        assert float(significance(jnp.array(0.00135))) == pytest.approx(3.0, abs=0.01)
-
-
-# =============================================================================
-# BandValues iteration / indexing tests
-# =============================================================================
-
-
-class TestBandValues:
-    """Tests for BandValues __iter__, __getitem__, and __len__."""
-
-    @pytest.fixture
-    def bv(self) -> BandValues:
-        return BandValues(
-            minus_2sigma=jnp.array(1.0),
-            minus_1sigma=jnp.array(2.0),
-            median=jnp.array(3.0),
-            plus_1sigma=jnp.array(4.0),
-            plus_2sigma=jnp.array(5.0),
-        )
-
-    def test_iter_yields_name_value_pairs_in_order(self, bv: BandValues):
-        """__iter__ yields (name, value) pairs in _NAMES order."""
-        pairs = list(bv)
-        expected_names = [
-            "minus_2sigma",
-            "minus_1sigma",
-            "median",
-            "plus_1sigma",
-            "plus_2sigma",
-        ]
-        expected_values = [1.0, 2.0, 3.0, 4.0, 5.0]
-        for (name, value), exp_name, exp_val in zip(
-            pairs, expected_names, expected_values, strict=True
-        ):
-            assert name == exp_name
-            assert float(value) == exp_val
-
-    def test_getitem_returns_correct_value(self, bv: BandValues):
-        """bv["median"] returns the median value."""
-        assert float(bv["median"]) == 3.0
-        assert float(bv["minus_2sigma"]) == 1.0
-        assert float(bv["plus_2sigma"]) == 5.0
-
-    def test_getitem_invalid_key_raises_keyerror(self, bv: BandValues):
-        """Invalid key raises KeyError."""
-        with pytest.raises(KeyError, match="nonexistent"):
-            bv["nonexistent"]
-
-    def test_len(self, bv: BandValues):
-        """len(bv) == 5."""
-        assert len(bv) == 5
-
-    def test_dict_roundtrip(self, bv: BandValues):
-        """dict(bv) produces {name: value} mapping that roundtrips."""
-        d = dict(bv)
-        assert list(d.keys()) == list(BandValues._NAMES)
-        reconstructed = BandValues(**d)
-        for (_, orig), (_, recon) in zip(bv, reconstructed, strict=True):
-            assert float(orig) == float(recon)
-
-    def test_zip_two_bandvalues(self, bv: BandValues):
-        """zip of two BandValues yields paired (name, value) tuples."""
-        bv2 = BandValues(
-            minus_2sigma=jnp.array(10.0),
-            minus_1sigma=jnp.array(20.0),
-            median=jnp.array(30.0),
-            plus_1sigma=jnp.array(40.0),
-            plus_2sigma=jnp.array(50.0),
-        )
-        for (n1, v1), (n2, v2) in zip(bv, bv2, strict=True):
-            assert n1 == n2
-            assert float(v2) == float(v1) * 10.0
+        assert result.q_obs == pytest.approx(1.8907, rel=1e-3)
+        assert float(result.pnull) == pytest.approx(0.08456, rel=1e-3)
+        assert result.palt is None

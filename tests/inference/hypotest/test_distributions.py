@@ -1,12 +1,6 @@
-"""Tests for hypothesis test distributions.
-
-Tests asymptotic and empirical distributions with concrete expected p-values.
-Uses the formulas from Cowan et al., arXiv:1007.1727.
-"""
+"""Tests for hypothesis test distributions."""
 
 from __future__ import annotations
-
-import math
 
 import jax.numpy as jnp
 import pytest
@@ -17,305 +11,201 @@ from everwillow.inference.hypotest import (
     QTildeAsymptotic,
     SimpleEmpiricalDistribution,
     TMuAsymptotic,
+    TMuTildeAsymptotic,
     ToyResult,
+    cl_s,
 )
 from everwillow.inference.hypotest import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
 )
 
 # =============================================================================
-# Helper functions for computing expected p-values
+# CDF Tests
 # =============================================================================
 
 
-def normal_cdf(x: float) -> float:
-    """Standard normal CDF."""
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+class TestCDF:
+    """Tests for CDF functions of asymptotic distributions.
 
+    Each CDF maps (q, μ, μ', σ) → F(q | μ') from Cowan et al.
+    """
 
-def normal_sf(x: float) -> float:
-    """Standard normal survival function: 1 - CDF."""
-    return 1.0 - normal_cdf(x)
+    @pytest.mark.parametrize(
+        ("dist_cls", "q", "mu", "mu_prime", "sigma", "expected"),
+        [
+            # Q0Asymptotic: F = Φ(√q - μ'/σ)
+            (Q0Asymptotic, 4.0, 0.0, 0.0, 1.0, 0.97725),  # Φ(2)
+            (Q0Asymptotic, 4.0, 0.0, 2.0, 1.0, 0.5),  # Φ(2-2) = Φ(0)
+            (Q0Asymptotic, 0.0, 0.0, 0.0, 1.0, 0.5),  # Φ(0)
+            # QMuAsymptotic: F = Φ(√q - (μ-μ')/σ)
+            (QMuAsymptotic, 4.0, 2.0, 2.0, 1.0, 0.97725),  # Φ(2)
+            (QMuAsymptotic, 4.0, 2.0, 0.0, 1.0, 0.5),  # Φ(2-2) = Φ(0)
+            (QMuAsymptotic, 9.0, 2.0, 0.0, 1.0, 0.84134),  # Φ(3-2) = Φ(1)
+            (QMuAsymptotic, 4.0, 2.0, 0.0, 2.0, 0.84134),  # Φ(2-1) = Φ(1), σ=2
+            # TMuAsymptotic: F = Φ(√t+δ) + Φ(√t-δ) - 1, δ = (μ-μ')/σ
+            (TMuAsymptotic, 4.0, 2.0, 2.0, 1.0, 0.9545),  # 2Φ(2) - 1
+            (TMuAsymptotic, 4.0, 2.0, 0.0, 1.0, 0.49997),  # Φ(4) + Φ(0) - 1
+            (TMuAsymptotic, 0.0, 2.0, 2.0, 1.0, 0.0),  # 2Φ(0) - 1
+            # QTildeAsymptotic — standard region (q ≤ μ²/σ²)
+            (QTildeAsymptotic, 4.0, 2.0, 2.0, 1.0, 0.97725),  # Φ(2)
+            (QTildeAsymptotic, 4.0, 2.0, 0.0, 1.0, 0.5),  # Φ(0)
+            # QTildeAsymptotic — boundary region (q > μ²/σ²)
+            (QTildeAsymptotic, 9.0, 2.0, 0.0, 1.0, 0.89435),  # Φ(1.25)
+            # TMuTildeAsymptotic — standard region (q ≤ μ²/σ²)
+            (TMuTildeAsymptotic, 4.0, 2.0, 2.0, 1.0, 0.9545),  # 2Φ(2) - 1
+            (TMuTildeAsymptotic, 4.0, 2.0, 0.0, 1.0, 0.49997),  # Φ(4)+Φ(0) - 1
+            # TMuTildeAsymptotic — boundary region (q > μ²/σ²)
+            (TMuTildeAsymptotic, 9.0, 2.0, 2.0, 1.0, 0.99807),  # Φ(3)+Φ(3.25) - 1
+            (TMuTildeAsymptotic, 9.0, 2.0, 0.0, 1.0, 0.89435),  # Φ(5)+Φ(1.25) - 1
+        ],
+        ids=[
+            "q0-null",
+            "q0-alt",
+            "q0-zero",
+            "qmu-null",
+            "qmu-alt",
+            "qmu-large-q",
+            "qmu-sigma2",
+            "tmu-null",
+            "tmu-alt",
+            "tmu-zero",
+            "qtilde-null-standard",
+            "qtilde-alt-standard",
+            "qtilde-alt-boundary",
+            "tmutilde-null-standard",
+            "tmutilde-alt-standard",
+            "tmutilde-null-boundary",
+            "tmutilde-alt-boundary",
+        ],
+    )
+    def test_cdf_values(self, dist_cls, q, mu, mu_prime, sigma, expected):
+        """CDF values match hand-computed Cowan et al. formulas."""
+        dist = dist_cls()
+        result = dist.cdf(
+            jnp.array(q), jnp.array(mu), jnp.array(mu_prime), jnp.array(sigma)
+        )
+        assert float(result) == pytest.approx(expected, rel=1e-3)
+
+    def test_empirical_cdf_not_implemented(self):
+        """Empirical distributions do not have an analytic CDF."""
+        dist = SimpleEmpiricalDistribution(
+            q_alt=jnp.array([1.0]), q_null=jnp.array([1.0])
+        )
+        with pytest.raises(NotImplementedError, match="do not have an analytic CDF"):
+            dist.cdf(jnp.array(1.0), jnp.array(0.0), jnp.array(0.0), jnp.array(1.0))
 
 
 # =============================================================================
-# QTildeAsymptotic Tests
+# One-sided asymptotic p-value tests (QTilde, QMu, Q0)
 # =============================================================================
 
 
-class TestQTildeAsymptotic:
-    """Tests for QTildeAsymptotic distribution."""
+class TestOneSidedAsymptoticPvalues:
+    """Parametrized p-value tests for one-sided distributions.
 
-    def test_pvalues_at_asimov(self):
-        """Test p-values when q equals q_asimov.
+    All use the same test structure: create TSResult → call null_pval/alt_pval
+    → assert against hand-computed values from Cowan et al.
 
-        For q=q_asimov=4.0:
-        - null_pval (μ'=μ): 1 - Φ(√q) = 1 - Φ(2) = 0.0228
-        - alt_pval (μ'=0):  1 - Φ(√q - √q_A) = 1 - Φ(0) = 0.5
-        """
-        q = 4.0
-        q_asimov = 4.0
-        expected_pnull = normal_sf(2.0)  # 0.02275
-        expected_palt = 0.5
+    QMu and QTilde share null_pval = 1-Φ(√q) in the standard region (q ≤ q_A).
+    QTilde uses a boundary formula for q > q_A.
+    Q0 is the discovery counterpart (always tests at μ=0).
+    """
 
+    @pytest.mark.parametrize(
+        ("dist_cls", "q", "test_val", "q_asimov", "expected_pnull", "expected_palt"),
+        [
+            # QTildeAsymptotic — standard region (q ≤ q_A)
+            # pnull = 1-Φ(√q), palt = 1-Φ(√q-√q_A)
+            (QTildeAsymptotic, 4.0, 1.0, 4.0, 0.02275, 0.5),
+            (QTildeAsymptotic, 1.0, 1.0, 4.0, 0.15866, 0.84134),
+            # QTildeAsymptotic — boundary region (q > q_A)
+            # pnull = 1-Φ((q+q_A)/(2√q_A)), palt = 1-Φ((q-q_A)/(2√q_A))
+            (QTildeAsymptotic, 9.0, 1.0, 4.0, 0.000577, 0.10565),
+            # QMuAsymptotic — same formula, no piecewise boundary
+            (QMuAsymptotic, 4.0, 1.0, 4.0, 0.02275, 0.5),
+            (QMuAsymptotic, 9.0, 1.0, 4.0, 0.001350, 0.15866),
+            # Q0Asymptotic — discovery (test=0)
+            (Q0Asymptotic, 9.0, 0.0, 9.0, 0.001350, 0.5),
+            (Q0Asymptotic, 0.0, 0.0, 0.0, 0.5, 0.5),
+            (Q0Asymptotic, 9.0, 0.0, 4.0, 0.001350, 0.15866),
+        ],
+        ids=[
+            "qtilde-at-asimov",
+            "qtilde-below-asimov",
+            "qtilde-boundary",
+            "qmu-at-asimov",
+            "qmu-large-q",
+            "q0-discovery",
+            "q0-no-excess",
+            "q0-with-alt",
+        ],
+    )
+    def test_pvalues(
+        self, dist_cls, q, test_val, q_asimov, expected_pnull, expected_palt
+    ):
+        """p-values match hand-computed Cowan et al. values."""
+        result = TSResult(
+            value=jnp.array(q),
+            test=jnp.array(test_val),
+            q_asimov=jnp.array(q_asimov),
+        )
+        dist = dist_cls()
+        assert float(dist.null_pval(result)) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(dist.alt_pval(result)) == pytest.approx(expected_palt, rel=1e-2)
+
+
+# =============================================================================
+# Two-sided asymptotic p-value tests (TMu, TMuTilde)
+# =============================================================================
+
+
+class TestTwoSidedAsymptoticPvalues:
+    """Parametrized p-value tests for two-sided distributions.
+
+    TMuAsymptotic: pnull = 2(1-Φ(√t)), palt = 2-Φ(√t+√q_A)-Φ(√t-√q_A)
+    TMuTildeAsymptotic: same formulas with piecewise boundary at t̃ = q_A
+    """
+
+    @pytest.mark.parametrize(
+        ("dist_cls", "q", "q_asimov", "expected_pnull", "expected_palt"),
+        [
+            # TMuAsymptotic — two-sided, Eq. 38
+            (TMuAsymptotic, 0.0, 4.0, 1.0, 1.0),
+            (TMuAsymptotic, 4.0, 4.0, 0.04550, 0.50003),
+            # TMuTildeAsymptotic — standard region (t̃ ≤ q_A)
+            (TMuTildeAsymptotic, 4.0, 4.0, 0.04550, 0.50003),
+            # TMuTildeAsymptotic — boundary region (t̃ > q_A)
+            (TMuTildeAsymptotic, 9.0, 4.0, 0.001927, 0.10565),
+            # TMuTildeAsymptotic — at zero
+            (TMuTildeAsymptotic, 0.0, 4.0, 1.0, 1.0),
+        ],
+        ids=[
+            "tmu-zero",
+            "tmu-positive",
+            "tmutilde-standard",
+            "tmutilde-boundary",
+            "tmutilde-zero",
+        ],
+    )
+    def test_pvalues(self, dist_cls, q, q_asimov, expected_pnull, expected_palt):
+        """Two-sided p-values match hand-computed Cowan et al. values."""
         result = TSResult(
             value=jnp.array(q),
             test=jnp.array(1.0),
             q_asimov=jnp.array(q_asimov),
         )
-        dist = QTildeAsymptotic()
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
+        dist = dist_cls()
+        assert float(dist.null_pval(result)) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(dist.alt_pval(result)) == pytest.approx(expected_palt, rel=1e-2)
 
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-3)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-4)
-
-    def test_pvalues_q_less_than_asimov(self):
-        """Test p-values when q < q_asimov.
-
-        q=1.0, q_asimov=4.0:
-        - null_pval (μ'=μ): 1 - Φ(√1) = 1 - Φ(1) = 0.1587
-        - alt_pval (μ'=0):  1 - Φ(1 - 2) = 1 - Φ(-1) = Φ(1) = 0.8413
-        """
-        q = 1.0
-        q_asimov = 4.0
-        sqrt_q = math.sqrt(q)
-        sqrt_q_asimov = math.sqrt(q_asimov)
-        expected_pnull = normal_sf(sqrt_q)  # 0.1587
-        expected_palt = normal_sf(sqrt_q - sqrt_q_asimov)  # Φ(1) = 0.8413
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = QTildeAsymptotic()
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-3)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-3)
-
-    def test_pvalues_q_greater_than_asimov(self):
-        """Test p-values when q > q_asimov (Eq. 66).
-
-        q=9.0, q_asimov=4.0:
-        - null_pval (μ'=μ): 1 - Φ((q+q_A)/(2√q_A)) = 1 - Φ(3.25) = 0.00058
-        - alt_pval (μ'=0):  1 - Φ((q-q_A)/(2√q_A)) = 1 - Φ(1.25) = 0.1056
-        """
-        q = 9.0
-        q_asimov = 4.0
-        sqrt_q_asimov = math.sqrt(q_asimov)
-        expected_pnull = normal_sf((q + q_asimov) / (2 * sqrt_q_asimov))  # 0.00058
-        expected_palt = normal_sf((q - q_asimov) / (2 * sqrt_q_asimov))  # 0.1056
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = QTildeAsymptotic()
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-3)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
-
-
-# =============================================================================
-# QMuAsymptotic Tests
-# =============================================================================
-
-
-class TestQMuAsymptotic:
-    """Tests for QMuAsymptotic distribution."""
-
-    def test_pvalues_at_asimov(self):
-        """Test p-values when q equals q_asimov.
-
-        For q=q_asimov=4.0:
-        - null_pval (μ'=μ): 1 - Φ(√q) = 1 - Φ(2) = 0.0228
-        - alt_pval (μ'=0):  1 - Φ(√q - √q_A) = 1 - Φ(0) = 0.5
-        """
-        q = 4.0
-        q_asimov = 4.0
-        expected_pnull = normal_sf(2.0)  # 0.02275
-        expected_palt = 0.5
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = QMuAsymptotic()
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-3)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-4)
-
-    def test_pvalues_large_q(self):
-        """Test p-values for large q (no piecewise boundary unlike QTilde).
-
-        For q=9.0, q_asimov=4.0:
-        - null_pval (μ'=μ): 1 - Φ(√9) = 1 - Φ(3) = 0.00135
-        - alt_pval (μ'=0):  1 - Φ(3 - 2) = 1 - Φ(1) = 0.1587
-        """
-        q = 9.0
-        q_asimov = 4.0
-        sqrt_q = math.sqrt(q)
-        sqrt_q_asimov = math.sqrt(q_asimov)
-        expected_pnull = normal_sf(sqrt_q)  # 0.00135
-        expected_palt = normal_sf(sqrt_q - sqrt_q_asimov)  # 0.1587
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = QMuAsymptotic()
-        pnull = dist.null_pval(result)
-        palt = dist.alt_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-3)
-
-
-# =============================================================================
-# Q0Asymptotic Tests
-# =============================================================================
-
-
-class TestQ0Asymptotic:
-    """Tests for Q0Asymptotic distribution (discovery)."""
-
-    def test_pvalues_discovery(self):
-        """Test discovery p-value.
-
-        For q0=9.0:
-        - pnull = 1 - Φ(3) = 0.00135 (discovery significance)
-        """
-        q = 9.0
-        expected_pnull = normal_sf(3.0)  # 0.00135
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(0.0),
-            q_asimov=jnp.array(q),
-        )
-        dist = Q0Asymptotic()
-        pnull = dist.null_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-2)
-
-    def test_pvalues_no_excess(self):
-        """Test p-value when no excess (q0=0).
-
-        For q0=0:
-        - pnull = 1 - Φ(0) = 0.5
-        """
-        q = 0.0
-        expected_pnull = 0.5
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(0.0),
-            q_asimov=jnp.array(q),
-        )
-        dist = Q0Asymptotic()
-        pnull = dist.null_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-4)
-
-    def test_alt_pval(self):
-        """Test alt p-value with q_asimov.
-
-        For q0=9.0, q_asimov=4.0:
-        - palt = 1 - Φ(√9 - √4) = 1 - Φ(1) = 0.1587
-        """
-        q = 9.0
-        q_asimov = 4.0
-        expected_palt = normal_sf(math.sqrt(q) - math.sqrt(q_asimov))
-
-        result = TSResult(
-            value=jnp.array(q),
-            test=jnp.array(0.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = Q0Asymptotic()
-        palt = dist.alt_pval(result)
-
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-3)
-
-
-# =============================================================================
-# TMuAsymptotic Tests
-# =============================================================================
-
-
-class TestTMuAsymptotic:
-    """Tests for TMuAsymptotic distribution (two-sided)."""
-
-    def test_pvalues_at_zero(self):
-        """At t=0, pnull should be 1.0 (no exclusion).
-
-        For t=0:
-        pnull = 2 * (1 - Φ(0)) = 2 * 0.5 = 1.0
-        """
-        t = 0.0
-
-        result = TSResult(
-            value=jnp.array(t),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(4.0),
-        )
-        dist = TMuAsymptotic()
-        pnull = dist.null_pval(result)
-
-        assert float(pnull) == pytest.approx(1.0, rel=1e-4)
-
-    def test_pvalues_positive_t(self):
-        """Test two-sided p-value for positive t.
-
-        For t=4.0:
-        pnull = 2 * (1 - Φ(2)) = 2 * 0.0228 = 0.0456
-        """
-        t = 4.0
-        expected_pnull = 2 * normal_sf(math.sqrt(t))  # 0.0456
-
-        result = TSResult(
-            value=jnp.array(t),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(4.0),
-        )
-        dist = TMuAsymptotic()
-        pnull = dist.null_pval(result)
-
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-3)
-
-    def test_alt_pval(self):
-        """Test alt p-value.
-
-        For t=4.0, q_asimov=4.0:
-        palt = 2 - Φ(√4 + √4) - Φ(√4 - √4) = 2 - Φ(4) - Φ(0) = 2 - 0.99997 - 0.5
-        """
-        t = 4.0
-        q_asimov = 4.0
-        sqrt_t = math.sqrt(t)
-        sqrt_qa = math.sqrt(q_asimov)
-        expected_palt = (
-            2.0 - normal_cdf(sqrt_t + sqrt_qa) - normal_cdf(sqrt_t - sqrt_qa)
-        )
-
-        result = TSResult(
-            value=jnp.array(t),
-            test=jnp.array(1.0),
-            q_asimov=jnp.array(q_asimov),
-        )
-        dist = TMuAsymptotic()
-        palt = dist.alt_pval(result)
-
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-2)
+    def test_tmutilde_requires_q_asimov(self):
+        """null_pval and alt_pval return None without q_asimov."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        dist = TMuTildeAsymptotic()
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert dist.null_pval(result) is None
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert dist.alt_pval(result) is None
 
 
 # =============================================================================
@@ -339,16 +229,14 @@ class TestSimpleEmpiricalDistribution:
         q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
         q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
         q_obs = 5.0
-        expected_pnull = 0.6
-        expected_palt = 0.1
 
         dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
         result = TSResult(value=jnp.array(q_obs), test=jnp.array(1.0))
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
-        assert float(pnull) == pytest.approx(expected_pnull, rel=1e-5)
-        assert float(palt) == pytest.approx(expected_palt, rel=1e-5)
+        assert float(pnull) == pytest.approx(0.6, rel=1e-5)
+        assert float(palt) == pytest.approx(0.1, rel=1e-5)
 
     def test_pvalues_edge_case_all_above(self):
         """Test when q_obs is below all toys."""
@@ -379,7 +267,11 @@ class TestSimpleEmpiricalDistribution:
         assert float(palt) == pytest.approx(0.0, abs=1e-5)
 
     def test_cls_from_pvalues(self):
-        """Test CLs = palt / pnull."""
+        """Test CLs = palt / pnull.
+
+        q_null = [1..10], q_alt = [0.5..5], q_obs=5:
+        pnull = 0.6, palt = 0.1 → CLs = 0.1/0.6 = 0.16667
+        """
         q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
         q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
         q_obs = 5.0
@@ -389,9 +281,8 @@ class TestSimpleEmpiricalDistribution:
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
-        expected_cls = 0.1 / 0.6  # 0.1667
         actual_cls = float(palt) / float(pnull)
-        assert actual_cls == pytest.approx(expected_cls, rel=1e-5)
+        assert actual_cls == pytest.approx(0.16667, rel=1e-4)
 
     def test_from_toys(self):
         """Test constructing SimpleEmpiricalDistribution from ToyResult."""
@@ -414,56 +305,95 @@ class TestSimpleEmpiricalDistribution:
 class TestSignificance:
     """Tests for null_significance and alt_significance."""
 
-    def test_null_significance_q0(self):
-        """For q_0=4: p = 1 - Φ(2) → Z = 2.0."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(0.0))
-        dist = Q0Asymptotic()
-        z = dist.null_significance(result)
-        assert float(z) == pytest.approx(2.0, abs=1e-5)
+    @pytest.mark.parametrize(
+        ("dist_cls", "q", "test_val", "q_asimov", "method", "expected_z"),
+        [
+            # null_significance: Z = Φ⁻¹(1 - pnull)
+            (Q0Asymptotic, 4.0, 0.0, None, "null_significance", 2.0),
+            (QMuAsymptotic, 9.0, 1.0, None, "null_significance", 3.0),
+            (QTildeAsymptotic, 4.0, 1.0, 4.0, "null_significance", 2.0),
+            (Q0Asymptotic, 25.0, 0.0, None, "null_significance", 5.0),
+            # alt_significance: Z = Φ⁻¹(1 - palt)
+            (QMuAsymptotic, 9.0, 1.0, 4.0, "alt_significance", 1.0),
+        ],
+        ids=[
+            "q0-null-Z2",
+            "qmu-null-Z3",
+            "qtilde-null-Z2",
+            "q0-discovery-5sigma",
+            "qmu-alt-Z1",
+        ],
+    )
+    def test_significance_values(
+        self, dist_cls, q, test_val, q_asimov, method, expected_z
+    ):
+        """Significance Z matches hand-computed values."""
+        q_a = jnp.array(q_asimov) if q_asimov is not None else None
+        result = TSResult(value=jnp.array(q), test=jnp.array(test_val), q_asimov=q_a)
+        dist = dist_cls()
+        z = getattr(dist, method)(result)
+        assert float(z) == pytest.approx(expected_z, abs=0.01)
 
-    def test_null_significance_qmu(self):
-        """For q_μ=9: p = 1 - Φ(3) → Z = 3.0."""
-        result = TSResult(value=jnp.array(9.0), test=jnp.array(1.0))
-        dist = QMuAsymptotic()
-        z = dist.null_significance(result)
-        assert float(z) == pytest.approx(3.0, abs=1e-5)
-
-    def test_alt_significance_qmu(self):
-        """For q_μ=9, q_asimov=4: p = 1 - Φ(3-2) = 1 - Φ(1) → Z = 1.0."""
-        result = TSResult(
-            value=jnp.array(9.0), test=jnp.array(1.0), q_asimov=jnp.array(4.0)
-        )
-        dist = QMuAsymptotic()
-        z = dist.alt_significance(result)
-        assert float(z) == pytest.approx(1.0, abs=1e-5)
-
-    def test_significance_none_without_asimov(self):
-        """Significance returns None when q_asimov is missing."""
+    @pytest.mark.parametrize(
+        ("dist_cls", "expected_z"),
+        [
+            # QMu: null_pval = 1-Φ(√4) = 1-Φ(2) = 0.02275, Z = 2.0
+            (QMuAsymptotic, 2.0),
+            # Q0: null_pval = 1-Φ(√4) = 1-Φ(2) = 0.02275, Z = 2.0
+            (Q0Asymptotic, 2.0),
+            # TMu: null_pval = 2(1-Φ(√4)) = 0.04550, Z = Φ⁻¹(0.9545) = 1.689
+            (TMuAsymptotic, 1.689),
+        ],
+    )
+    def test_null_significance_works_without_asimov(self, dist_cls, expected_z):
+        """null_significance doesn't need q_asimov for QMu/Q0/TMu."""
         result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
-        dist = QMuAsymptotic()
-        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
-            assert dist.alt_significance(result) is None
-
-    def test_null_significance_qtilde_standard_region(self):
-        """For q̃=4, q_asimov=4 (standard): p = 1 - Φ(2) → Z = 2.0."""
-        result = TSResult(
-            value=jnp.array(4.0), test=jnp.array(1.0), q_asimov=jnp.array(4.0)
+        dist = dist_cls()
+        assert float(dist.null_significance(result)) == pytest.approx(
+            expected_z, abs=0.01
         )
-        dist = QTildeAsymptotic()
-        z = dist.null_significance(result)
-        assert float(z) == pytest.approx(2.0, abs=1e-5)
 
-    def test_discovery_significance(self):
-        """5σ discovery: q_0=25 → Z=5.0."""
-        result = TSResult(value=jnp.array(25.0), test=jnp.array(0.0))
-        dist = Q0Asymptotic()
-        z = dist.null_significance(result)
-        assert float(z) == pytest.approx(5.0, rel=1e-2)
+    @pytest.mark.parametrize(
+        ("dist_cls", "method"),
+        [
+            # Tilde distributions need q_asimov for null (piecewise formulas)
+            (QTildeAsymptotic, "null_significance"),
+            (TMuTildeAsymptotic, "null_significance"),
+            # All distributions need q_asimov for alt
+            (QMuAsymptotic, "alt_significance"),
+            (QTildeAsymptotic, "alt_significance"),
+            (Q0Asymptotic, "alt_significance"),
+            (TMuAsymptotic, "alt_significance"),
+            (TMuTildeAsymptotic, "alt_significance"),
+        ],
+    )
+    def test_significance_none_without_asimov(self, dist_cls, method):
+        """Significance returns None when q_asimov is required but missing."""
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        dist = dist_cls()
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert getattr(dist, method)(result) is None
 
 
 # =============================================================================
 # Expected P-values Tests
 # =============================================================================
+
+# Band data shared by QMu and QTilde (μ=2, σ=1, q_A=4).
+# Both produce identical expected p-values despite different formulas
+# (QTilde boundary formula gives same result as QMu standard formula).
+_EXCLUSION_BAND_DATA = [
+    # N=-2: √q=4, pnull=1-Φ(4)≈3.167e-5, palt=Φ(-2)≈0.02275
+    ("minus_2sigma", 3.167e-5, 0.02275),
+    # N=-1: √q=3, pnull=1-Φ(3)≈0.00135, palt=Φ(-1)≈0.15866
+    ("minus_1sigma", 0.00135, 0.15866),
+    # N=0: √q=2, pnull=1-Φ(2)≈0.02275, palt=Φ(0)=0.5
+    ("median", 0.02275, 0.5),
+    # N=+1: √q=1, pnull=1-Φ(1)≈0.15866, palt=Φ(1)≈0.84134
+    ("plus_1sigma", 0.15866, 0.84134),
+    # N=+2: √q=0, pnull=1-Φ(0)=0.5, palt=Φ(2)≈0.97725
+    ("plus_2sigma", 0.5, 0.97725),
+]
 
 
 class TestExpectedPvalues:
@@ -489,86 +419,37 @@ class TestExpectedPvalues:
         assert float(bands.alt_pvalue.median) == pytest.approx(0.5, abs=1e-5)
 
     def test_median_cls_equals_double_pnull(self, asimov_result):
-        """At median (N=0), CLs = CL_{s+b} / 0.5 = 2 × pnull."""
-        dist = QMuAsymptotic()
-        bands = dist.expected_pvalues(asimov_result)
-        pnull = float(bands.null_pvalue.median)
-        cls = float(bands.cl_s.median)
-        assert cls == pytest.approx(2 * pnull, rel=1e-5)
+        """At median (N=0), CLs = CL_{s+b} / 0.5 = 2 × pnull.
 
-    @pytest.mark.parametrize(
-        ("band_name", "expected_pnull", "expected_palt"),
-        [
-            # N=-2: √q=4, pnull=1-Φ(4)≈3.167e-5, palt=Φ(-2)≈0.02275
-            ("minus_2sigma", 3.167e-5, 0.02275),
-            # N=-1: √q=3, pnull=1-Φ(3)≈0.00135, palt=Φ(-1)≈0.15866
-            ("minus_1sigma", 0.00135, 0.15866),
-            # N=0: √q=2, pnull=1-Φ(2)≈0.02275, palt=Φ(0)=0.5
-            ("median", 0.02275, 0.5),
-            # N=+1: √q=1, pnull=1-Φ(1)≈0.15866, palt=Φ(1)≈0.84134
-            ("plus_1sigma", 0.15866, 0.84134),
-            # N=+2: √q=0, pnull=1-Φ(0)=0.5, palt=Φ(2)≈0.97725
-            ("plus_2sigma", 0.5, 0.97725),
-        ],
-    )
-    def test_expected_pvalues_qmu_all_bands(
-        self, asimov_result, band_name, expected_pnull, expected_palt
-    ):
-        """QMu expected p-values at each band match hand-computed values."""
-        dist = QMuAsymptotic()
-        bands = dist.expected_pvalues(asimov_result)
-        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
-            expected_pnull, rel=1e-2
-        )
-        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
-            expected_palt, rel=1e-2
-        )
-
-    def test_expected_pvalues_requires_q_asimov(self):
-        """expected_pvalues raises when q_asimov is missing."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(2.0))
-        dist = QMuAsymptotic()
-        with pytest.raises((ValueError, TypeError)):
-            dist.expected_pvalues(result)
-
-    @pytest.mark.parametrize(
-        ("band_name", "expected_pnull", "expected_palt"),
-        [
-            # N=-2: boundary q=12, pnull=1-Φ((12+4)/4)=1-Φ(4), palt=1-Φ((12-4)/4)=1-Φ(2)
-            ("minus_2sigma", 3.167e-5, 0.02275),
-            # N=-1: boundary q=8, pnull=1-Φ((8+4)/4)=1-Φ(3), palt=1-Φ((8-4)/4)=1-Φ(1)
-            ("minus_1sigma", 0.00135, 0.15866),
-            # N=0: standard q=4, pnull=1-Φ(2), palt=1-Φ(0)=0.5
-            ("median", 0.02275, 0.5),
-            # N=+1: standard q=1, pnull=1-Φ(1), palt=1-Φ(-1)=Φ(1)
-            ("plus_1sigma", 0.15866, 0.84134),
-            # N=+2: standard q=0, pnull=1-Φ(0)=0.5, palt=1-Φ(-2)=Φ(2)
-            ("plus_2sigma", 0.5, 0.97725),
-        ],
-    )
-    def test_expected_pvalues_qtilde_all_bands(
-        self, asimov_result, band_name, expected_pnull, expected_palt
-    ):
-        """QTilde expected p-values at each band (μ=2, σ=1, q_A=4).
-
-        Standard (N≥0): q=max(0,μ/σ-N)², pnull=1-Φ(√q), palt=1-Φ(√q-√q_A).
-        Boundary (N<0): q=(μ/σ)²-2(μ/σ)N, pnull=1-Φ((q+q_A)/(2√q_A)), palt=1-Φ((q-q_A)/(2√q_A)).
+        pnull = 1-Φ(2) = 0.02275, CLs = 0.02275/0.5 = 0.04550.
         """
-        dist = QTildeAsymptotic()
+        dist = QMuAsymptotic()
         bands = dist.expected_pvalues(asimov_result)
-        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
+        assert float(bands.null_pvalue.median) == pytest.approx(0.02275, rel=1e-3)
+        assert float(bands.cl_s.median) == pytest.approx(0.04550, rel=1e-3)
+
+    @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic])
+    @pytest.mark.parametrize(
+        ("band_name", "expected_pnull", "expected_palt"),
+        _EXCLUSION_BAND_DATA,
+    )
+    def test_expected_pvalues_exclusion_bands(
+        self, asimov_result, dist_cls, band_name, expected_pnull, expected_palt
+    ):
+        """QMu and QTilde expected p-values at each band (μ=2, σ=1, q_A=4).
+
+        Both distributions produce identical expected p-values because
+        the QTilde boundary formula coincides with QMu standard formula
+        at these band values.
+        """
+        dist = dist_cls()
+        bands = dist.expected_pvalues(asimov_result)
+        assert float(bands.null_pvalue[band_name]) == pytest.approx(
             expected_pnull, rel=1e-2
         )
-        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
+        assert float(bands.alt_pvalue[band_name]) == pytest.approx(
             expected_palt, rel=1e-2
         )
-
-    def test_expected_pvalues_qtilde_requires_q_asimov(self):
-        """QTilde expected_pvalues raises when q_asimov is missing."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(2.0))
-        dist = QTildeAsymptotic()
-        with pytest.raises((ValueError, TypeError)):
-            dist.expected_pvalues(result)
 
     @pytest.mark.parametrize(
         ("band_name", "expected_pnull", "expected_palt"),
@@ -599,25 +480,55 @@ class TestExpectedPvalues:
         )
         dist = Q0Asymptotic()
         bands = dist.expected_pvalues(result)
-        assert float(getattr(bands.null_pvalue, band_name)) == pytest.approx(
+        assert float(bands.null_pvalue[band_name]) == pytest.approx(
             expected_pnull, rel=1e-2
         )
-        assert float(getattr(bands.alt_pvalue, band_name)) == pytest.approx(
+        assert float(bands.alt_pvalue[band_name]) == pytest.approx(
             expected_palt, rel=1e-2
         )
 
-    def test_expected_pvalues_q0_requires_q_asimov(self):
-        """Q0 expected_pvalues raises when q_asimov is missing."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(0.0))
-        dist = Q0Asymptotic()
-        with pytest.raises((ValueError, TypeError)):
-            dist.expected_pvalues(result)
+    @pytest.mark.parametrize(
+        "dist_cls", [QMuAsymptotic, QTildeAsymptotic, Q0Asymptotic]
+    )
+    def test_expected_pvalues_requires_q_asimov(self, dist_cls):
+        """expected_pvalues returns None when q_asimov is missing."""
+        test_val = 0.0 if dist_cls is Q0Asymptotic else 2.0
+        result = TSResult(value=jnp.array(4.0), test=jnp.array(test_val))
+        dist = dist_cls()
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert dist.expected_pvalues(result) is None
 
     def test_expected_pvalues_not_implemented_for_tmu(self, asimov_result):
         """TMuAsymptotic does not support expected_pvalues."""
         dist = TMuAsymptotic()
         with pytest.raises(NotImplementedError):
             dist.expected_pvalues(asimov_result)
+
+    @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic])
+    @pytest.mark.parametrize(
+        ("band_name", "expected_pnull", "expected_palt"),
+        [
+            # At median upper limit (μ=1.96σ, band N=0):
+            # q = 1.96², pnull = 1-Φ(1.96) = 0.025, palt = 1-Φ(0) = 0.5
+            ("median", 0.025, 0.5),
+            # At +1σ band (μ=2.727σ, band N=1):
+            # pnull = 1-Φ(1.727) ≈ 0.0421, palt = Φ(1) ≈ 0.8413
+            ("plus_1sigma", 0.0421, 0.8413),
+            # At -1σ band (μ=1.412σ, band N=-1):
+            # pnull = 1-Φ(2.412) ≈ 0.00793, palt = Φ(-1) ≈ 0.1587
+            ("minus_1sigma", 0.00793, 0.1587),
+        ],
+    )
+    def test_cls_at_expected_upper_limit(
+        self, dist_cls, band_name, expected_pnull, expected_palt
+    ):
+        """CLs ≈ 0.05 at each band's expected upper limit (σ=1, α=0.05).
+
+        Verifies the full pipeline: asymptotic p-values → cl_s = 0.05.
+        QMu and QTilde produce identical p-values in the standard region.
+        """
+        expected_cls = float(cl_s(jnp.array(expected_pnull), jnp.array(expected_palt)))
+        assert expected_cls == pytest.approx(0.05, rel=1e-2)
 
     def test_analytic_upper_limit_crosscheck_median(self):
         """Numeric expected CLs upper limit matches analytic formula at N=0.

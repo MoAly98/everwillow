@@ -24,14 +24,6 @@ Example:
 
 from __future__ import annotations
 
-from everwillow.inference.hypotest._results import (
-    BandValues,
-    ExpectedBands,
-    ExpectedLimitResult,
-    HypoTestResult,
-    TestStatResult,
-    ToyResult,
-)
 from everwillow.inference.hypotest._utils import (
     cl_s,
     make_asimov,
@@ -51,6 +43,14 @@ from everwillow.inference.hypotest.distributions import (
     SimpleEmpiricalDistribution,
     TMuAsymptotic,
     TMuTildeAsymptotic,
+)
+from everwillow.inference.hypotest.results import (
+    BandValues,
+    ExpectedBands,
+    ExpectedLimitResult,
+    HypoTestResult,
+    TestStatResult,
+    ToyResult,
 )
 from everwillow.inference.hypotest.test_statistics import (
     Q0,

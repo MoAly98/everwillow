@@ -23,8 +23,8 @@ from jaxtyping import Array, PyTree
 
 import everwillow as ew
 import everwillow.statelib as sl
-from everwillow.inference.hypotest._results import TestStatResult
 from everwillow.inference.hypotest._utils import constrained_fit, make_asimov
+from everwillow.inference.hypotest.results import TestStatResult
 
 __all__ = [
     "Q0",

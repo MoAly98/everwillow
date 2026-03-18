@@ -13,8 +13,8 @@ import jax
 from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
 import everwillow.statelib as sl
-from everwillow.inference.hypotest._results import ToyResult
 from everwillow.inference.hypotest._utils import constrained_fit
+from everwillow.inference.hypotest.results import ToyResult
 from everwillow.inference.hypotest.test_statistics import TestStatistic
 
 __all__ = ["ToyGenerator"]

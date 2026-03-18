@@ -27,18 +27,19 @@ from __future__ import annotations
 
 import typing as tp
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
-from everwillow.inference.hypotest._results import (
+from everwillow.inference.hypotest._utils import cl_s
+from everwillow.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     ExpectedLimitResult,
     HypoTestResult,
 )
-from everwillow.inference.hypotest._utils import cl_s
 
 __all__ = [
     "expected_upper_limit",
@@ -185,12 +186,23 @@ def upper_limit_toys(
         return (iteration + 1, new_lo, new_hi, converged)
 
     # Initial state: (iteration, lo, hi, converged)
-    init_state = (0, jnp.asarray(bounds[0]), jnp.asarray(bounds[1]), jnp.array(False))
+    lo0 = jnp.asarray(bounds[0])
+    hi0 = jnp.asarray(bounds[1])
+    init_state = (0, lo0, hi0, jnp.array(False))
 
     final_state = jax.lax.while_loop(cond_fn, body_fn, init_state)
     _, lo, hi, _ = final_state
 
-    return (lo + hi) / 2.0
+    result = (lo + hi) / 2.0
+    at_lower = jnp.isclose(result, lo0, rtol=tol)
+    at_upper = jnp.isclose(result, hi0, rtol=tol)
+    result = eqx.error_if(
+        result,
+        at_lower | at_upper,
+        "upper_limit_toys: root not found within bounds. "
+        "The limit is at the search boundary, suggesting the bounds are too narrow.",
+    )
+    return result  # noqa: RET504
 
 
 def upper_limit_scan(
@@ -246,7 +258,16 @@ def upper_limit_scan(
     # Interpolate to find crossing point
     # For CLs: objective decreases as POI increases, so reverse for interp
     # jnp.interp expects xp to be increasing, so we reverse both arrays
-    return jnp.interp(level, values[::-1], scan[::-1])
+    result = jnp.interp(level, values[::-1], scan[::-1])
+    at_lower = jnp.isclose(result, scan[0])
+    at_upper = jnp.isclose(result, scan[-1])
+    result = eqx.error_if(
+        result,
+        at_lower | at_upper,
+        "upper_limit_scan: root not found within scan range. "
+        "The limit is at the scan boundary, suggesting the scan range is too narrow.",
+    )
+    return result  # noqa: RET504
 
 
 def expected_upper_limit(

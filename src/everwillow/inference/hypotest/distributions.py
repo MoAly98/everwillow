@@ -16,13 +16,13 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from everwillow.inference.hypotest._results import (
+from everwillow.inference.hypotest._utils import cl_s, sigma_from_asimov, significance
+from everwillow.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     TestStatResult,
     ToyResult,
 )
-from everwillow.inference.hypotest._utils import cl_s, sigma_from_asimov, significance
 
 __all__ = [
     "Distribution",
@@ -187,7 +187,7 @@ class Distribution(eqx.Module):
             return None
         return -_PPF(palt)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
         """Compute expected p-values at standard sigma bands.
 
         Args:
@@ -195,6 +195,10 @@ class Distribution(eqx.Module):
 
         Returns:
             ExpectedBands with (pnull, palt) at each sigma level.
+
+        Raises:
+            NotImplementedError: If the distribution does not support
+                expected p-value computation.
         """
         raise NotImplementedError
 
@@ -329,7 +333,7 @@ class Q0Asymptotic(Distribution):
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
         """Expected p-values at ±Nσ fluctuations under signal hypothesis.
 
         q_A = μ_asimov²/σ² (Asimov under signal), so √q_A = μ_asimov/σ.
@@ -340,14 +344,11 @@ class Q0Asymptotic(Distribution):
             result: Must contain q_asimov for √q_A.
 
         Returns:
-            ExpectedBands with (pnull, palt) at each sigma level.
-
-        Raises:
-            ValueError: If q_asimov is None.
+            ExpectedBands with (pnull, palt) at each sigma level,
+            or None if q_asimov is missing.
         """
-        if result.q_asimov is None:
-            msg = "expected_pvalues requires q_asimov to extract sigma"
-            raise ValueError(msg)
+        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+            return None
 
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
 
@@ -385,7 +386,7 @@ class QMuAsymptotic(Distribution):
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
         """Expected p-values at ±Nσ fluctuations under background-only.
 
         q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
@@ -397,14 +398,11 @@ class QMuAsymptotic(Distribution):
             result: Must contain q_asimov for σ extraction.
 
         Returns:
-            ExpectedBands with (pnull, palt) at each sigma level.
-
-        Raises:
-            ValueError: If q_asimov is None.
+            ExpectedBands with (pnull, palt) at each sigma level,
+            or None if q_asimov is missing.
         """
-        if result.q_asimov is None:
-            msg = "expected_pvalues requires q_asimov to extract sigma"
-            raise ValueError(msg)
+        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+            return None
 
         sigma = sigma_from_asimov(result.test, result.q_asimov)
         mu_over_sigma = result.test / sigma
@@ -478,7 +476,7 @@ class QTildeAsymptotic(Distribution):
 
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
         """Expected p-values at ±Nσ fluctuations under background-only.
 
         q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
@@ -489,14 +487,11 @@ class QTildeAsymptotic(Distribution):
             result: Must contain q_asimov for σ extraction.
 
         Returns:
-            ExpectedBands with (pnull, palt) at each sigma level.
-
-        Raises:
-            ValueError: If q_asimov is None.
+            ExpectedBands with (pnull, palt) at each sigma level,
+            or None if q_asimov is missing.
         """
-        if result.q_asimov is None:
-            msg = "expected_pvalues requires q_asimov to extract sigma"
-            raise ValueError(msg)
+        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+            return None
 
         sigma = sigma_from_asimov(result.test, result.q_asimov)
         mu_over_sigma = result.test / sigma

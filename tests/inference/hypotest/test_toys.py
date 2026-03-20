@@ -51,6 +51,7 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(42),
             **{gen_method: gen_fn},
         )
@@ -80,8 +81,8 @@ class TestToyGenerator:
     def test_q_alt_vs_q_null_distribution(self):
         """Test that q_alt and q_null have different distributions.
 
-        Under alternative (mu=1), signal is present -> q_alt tends to be smaller.
-        Under null (mu=0), no signal -> q_null tends to be larger for same poi_test.
+        Under null (poi_test=1.0), data is consistent -> q_null tends to be small.
+        Under alt (poi_alt=0.0), data inconsistent with poi_test -> q_alt large.
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
@@ -93,15 +94,16 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(123),
             predict_fn=predict_fn,
         )
 
-        # Mean of q_null should be larger than mean of q_alt
+        # Mean of q_alt should be larger than mean of q_null
         mean_q_alt = float(jnp.mean(toys.q_alt))
         mean_q_null = float(jnp.mean(toys.q_null))
 
-        assert mean_q_null > mean_q_alt
+        assert mean_q_alt > mean_q_null
 
     def test_reproducibility(self):
         """Test that same key gives same results."""
@@ -116,6 +118,7 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(999),
             predict_fn=predict_fn,
         )
@@ -126,6 +129,7 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(999),
             predict_fn=predict_fn,
         )
@@ -146,6 +150,7 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(111),
             predict_fn=predict_fn,
         )
@@ -156,6 +161,7 @@ class TestToyGenerator:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(222),
             predict_fn=predict_fn,
         )
@@ -170,9 +176,9 @@ class TestToyGeneratorPoissonSampler:
     def test_poisson_samples_values(self):
         """Test that Poisson toys produce expected q distributions.
 
-        Under alternative (mu=1, poi_test=1): testing at true mu, so
+        Under null (poi_test=1.0): testing at true mu, so
         QTilde gives q=0 for most toys (mu_hat ≈ mu_test).
-        Median q_alt should be near 0.0.
+        Median q_null should be near 0.0.
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
@@ -184,14 +190,15 @@ class TestToyGeneratorPoissonSampler:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(42),
             predict_fn=predict_fn,
         )
 
         assert jnp.all(jnp.isfinite(toys.q_alt))
         assert jnp.all(jnp.isfinite(toys.q_null))
-        # Under alternative, testing at true mu: median q_alt ≈ 0
-        assert float(jnp.median(toys.q_alt)) == pytest.approx(0.0, abs=0.5)
+        # Under null (poi_test=1.0), testing at true mu: median q_null ≈ 0
+        assert float(jnp.median(toys.q_null)) == pytest.approx(0.0, abs=0.5)
 
     def test_poisson_mean_matches_expectation(self):
         """Test that Poisson samples have correct mean.
@@ -244,6 +251,7 @@ class TestToyGeneratorIntegration:
             observed,
             ("mu",),
             poi_test=1.0,
+            poi_alt=0.0,
             key=jax.random.key(42),
             predict_fn=predict_fn,
         )

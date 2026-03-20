@@ -9,15 +9,18 @@ This module provides the required pieces for hypothesis testing:
 
 Example:
     >>> from everwillow.inference.hypotest import (
-    ...     HypoTestCalculator, QTilde, QTildeAsymptotic, upper_limit
+    ...     AsymptoticCalculator, QTilde, QTildeAsymptotic, upper_limit
     ... )
-    >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=QTildeAsymptotic())
-    >>> result = calc(nll_fn, params, observed, ("mu",), poi_test=1.0)
-    >>> print(f"CLs = {result.cl_s:.4f}")
+    >>> calc = AsymptoticCalculator(
+    ...     nll_fn=nll_fn, params=params, observation=observed,
+    ...     poi_key=("mu",), predict_fn=my_predict_fn,
+    ... )
+    >>> result = calc.test(poi_test=1.0)
+    >>> print(f"CLs = {calc.cls(result):.4f}")
     >>>
     >>> # Find 95% CL upper limit
     >>> limit = upper_limit(
-    ...     lambda poi: calc(nll_fn, params, observed, ("mu",), poi).cl_s,
+    ...     lambda poi: calc.cls(calc.test(poi)),
     ...     bounds=(0, 5), level=0.05
     ... )
 """

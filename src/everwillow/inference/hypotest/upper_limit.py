@@ -12,14 +12,13 @@ Both implementations are pure JAX and fully JIT-compatible:
 Example usage:
     >>> # CLs-based upper limit (asymptotic)
     >>> def cls_objective(poi):
-    ...     result = calc(nll_fn, params, ("mu",), poi)
-    ...     return result.cl_s
+    ...     return calc.cls(calc.test(poi))
     >>> limit = upper_limit(cls_objective, bounds=(0, 5), level=0.05)
 
     >>> # CLs-based upper limit (toy-based)
     >>> def cls_objective_toys(poi, key):
-    ...     result = toy_calc(nll_fn, params, ("mu",), poi, ..., key=key)
-    ...     return result.cl_s
+    ...     result = toy_calc.test(poi, key=key)
+    ...     return toy_calc.cls(result)
     >>> limit = upper_limit_toys(cls_objective_toys, bounds=(0, 5), key=key)
 """
 
@@ -34,11 +33,11 @@ import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
 from everwillow.inference.hypotest._utils import cl_s
+from everwillow.inference.hypotest.calculators import HypoTestCalculator
 from everwillow.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     ExpectedLimitResult,
-    HypoTestResult,
 )
 
 __all__ = [
@@ -88,8 +87,7 @@ def upper_limit(
     Examples:
         >>> # Find where CLs = 0.05 (95% CL upper limit)
         >>> def cls_objective(poi):
-        ...     result = calc(nll_fn, params, ("mu",), poi)
-        ...     return result.cl_s
+        ...     return calc.cls(calc.test(poi))
         >>> limit = upper_limit(cls_objective, bounds=(0, 5), level=0.05)
 
         >>> # With custom solver
@@ -239,7 +237,7 @@ def upper_limit_scan(
         >>> # Scan CLs on a grid
         >>> scan = jnp.linspace(0, 2, 50)
         >>> limit = upper_limit_scan(
-        ...     lambda poi: calc(nll_fn, params, observed, ("mu",), poi).cl_s,
+        ...     lambda poi: calc.cls(calc.test(poi)),
         ...     scan,
         ...     level=0.05,
         ... )
@@ -271,7 +269,7 @@ def upper_limit_scan(
 
 
 def expected_upper_limit(
-    calc_fn: tp.Callable[[float], HypoTestResult],
+    calc: HypoTestCalculator,
     bounds: tuple[float, float],
     level: float = 0.05,
     objective_fn: tp.Callable[[Array, Array], Array] | None = None,
@@ -279,12 +277,11 @@ def expected_upper_limit(
 ) -> ExpectedLimitResult:
     """Compute observed and expected upper limits with Brazil bands.
 
-    Uses the asymptotic calculator's expected bands to compute limits at
+    Uses the calculator's expected bands to compute limits at
     standard sigma fluctuations (-2σ, -1σ, median, +1σ, +2σ).
 
     Args:
-        calc_fn: Function mapping POI value to HypoTestResult.
-                 Should call AsymptoticCalculator and return its result.
+        calc: Hypothesis test calculator (stores nll_fn, params, etc.).
         bounds: (lower, upper) search range for POI value.
         level: Target level (default 0.05 for 95% CL).
         objective_fn: Function mapping (pnull, palt) to scalar objective.
@@ -296,13 +293,13 @@ def expected_upper_limit(
         ExpectedLimitResult with observed and expected limits at all bands.
 
     Example:
-        >>> calc = AsymptoticCalculator(test_statistic=QTilde())
-        >>> result = expected_upper_limit(
-        ...     lambda poi: calc(nll_fn, params, ("mu",), poi),
-        ...     bounds=(0, 5),
+        >>> calc = AsymptoticCalculator(
+        ...     nll_fn=nll_fn, params=params, observation=observed,
+        ...     poi_key=("mu",), predict_fn=my_predict_fn,
         ... )
+        >>> result = expected_upper_limit(calc, bounds=(0, 5))
         >>> print(f"Observed: {result.observed:.3f}")
-        >>> print(f"Expected: {result.expected.median:.3f} (+1σ: {result.expected.plus_1sigma:.3f})")
+        >>> print(f"Expected: {result.expected.median:.3f}")
     """
 
     if objective_fn is None:
@@ -310,7 +307,7 @@ def expected_upper_limit(
 
     # Observed limit
     def _observed_objective(poi: float) -> Array:
-        r = calc_fn(poi)
+        r = calc.test(poi)
         return objective_fn(r.pnull, r.palt)
 
     observed = upper_limit(
@@ -322,8 +319,11 @@ def expected_upper_limit(
 
     # Expected limits at each sigma band
     def _get_bands(poi: Array) -> ExpectedBands:
-        bands = calc_fn(poi).expected_bands
-        assert bands is not None, "expected_bands required for expected_upper_limit"
+        result = calc.test(poi)
+        bands = calc.expected(result)
+        assert bands is not None, (
+            "expected_upper_limit requires a distribution that supports expected_pvalues"
+        )
         return bands
 
     def _band_objective(band: str) -> tp.Callable[[float], Array]:

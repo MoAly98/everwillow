@@ -520,24 +520,25 @@ class EmpiricalDistribution(Distribution):
     methods (e.g. KDE smoothing, tail extrapolation).
 
     Attributes:
-        q_alt: Test statistics under alternative (signal+background) hypothesis.
-        q_null: Test statistics under null (background-only) hypothesis.
+        q_null: Test statistics under the tested hypothesis (poi_test).
+        q_alt: Test statistics under the alternative hypothesis (poi_alt).
+            None if poi_alt was not provided to the ToyGenerator.
     """
 
-    q_alt: Array
     q_null: Array
+    q_alt: Array | None = None
 
     @classmethod
     def from_toys(cls, toys: ToyResult) -> EmpiricalDistribution:
         """Construct from a ToyResult.
 
         Args:
-            toys: Raw toy generation output containing q_alt and q_null arrays.
+            toys: Raw toy generation output containing q_null and optionally q_alt.
 
         Returns:
             An instance of this distribution class.
         """
-        return cls(q_alt=toys.q_alt, q_null=toys.q_null)
+        return cls(q_null=toys.q_null, q_alt=toys.q_alt)
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
         """Not applicable for empirical distributions."""
@@ -552,9 +553,53 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
     """
 
     def null_pval(self, result: TestStatResult) -> Array:
-        """Empirical p-value under null: fraction of q_null >= q_obs."""
+        """Empirical p-value under tested hypothesis: fraction of q_null >= q_obs."""
         return jnp.mean(self.q_null >= result.value)
 
-    def alt_pval(self, result: TestStatResult) -> Array:
-        """Empirical p-value under alternative: fraction of q_alt >= q_obs."""
+    def alt_pval(self, result: TestStatResult) -> Array | None:
+        """Empirical p-value under alternative: fraction of q_alt >= q_obs.
+
+        Returns None if q_alt was not provided (no alternative toys generated).
+        """
+        if self.q_alt is None:
+            warnings.warn(
+                "Alternative p-value computation in SimpleEmpiricalDistribution "
+                "cannot be performed without q_alt toys. "
+                "Generate toys with poi_alt to compute alternative p-values.",
+                stacklevel=2,
+            )
+            return None
         return jnp.mean(self.q_alt >= result.value)
+
+    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+        """Compute expected p-values at standard sigma bands using toy quantiles.
+
+        Uses quantiles of q_alt at standard sigma percentiles as synthetic
+        test statistic values, then evaluates empirical p-values at each
+        via ``_build_expected_bands``.
+
+        Args:
+            result: Test statistic result (used as template for synthetic results).
+
+        Returns:
+            ExpectedBands with empirical p-values at each sigma level.
+
+        Raises:
+            ValueError: If q_alt is None (no alternative toys generated).
+        """
+        if self.q_alt is None:
+            raise ValueError(
+                "expected_pvalues requires q_alt toys. "
+                "Generate toys with poi_alt to use this method."
+            )
+
+        # Standard sigma percentiles: Φ(N) for N in (-2, -1, 0, 1, 2)
+        percentiles = jnp.array([_PHI(n) for n in _BAND_SIGMAS])
+        q_quantiles = jnp.quantile(self.q_alt, percentiles)
+
+        # Map band index (position in _BAND_SIGMAS) to the quantile value
+        def expected_q_fn(n: float) -> Array:
+            idx = _BAND_SIGMAS.index(n)
+            return q_quantiles[idx]
+
+        return _build_expected_bands(self, result, expected_q_fn)

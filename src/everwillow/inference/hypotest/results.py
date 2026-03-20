@@ -43,12 +43,13 @@ class ToyResult(eqx.Module):
     decoupled from any particular p-value computation method.
 
     Attributes:
-        q_alt: Test statistic values under alternative (signal+background) hypothesis.
-        q_null: Test statistic values under null (background-only) hypothesis.
+        q_null: Test statistic values under the tested hypothesis (poi_test).
+        q_alt: Test statistic values under the alternative hypothesis (poi_alt).
+            None if poi_alt was not provided to the ToyGenerator.
     """
 
-    q_alt: Array
     q_null: Array
+    q_alt: Array | None = None
 
 
 class BandValues(eqx.Module):
@@ -115,23 +116,19 @@ class ExpectedBands(eqx.Module):
 
 
 class HypoTestResult(eqx.Module):
-    """Result of an asymptotic hypothesis test.
+    """Result of a hypothesis test.
 
     Attributes:
         q_obs: Observed test statistic value.
-        pnull: p-value under null hypothesis (background-only).
-        palt: p-value under alternative hypothesis (signal+background).
-        cl_s: CLs value (pnull / palt).
-        expected_bands: Expected p-values at sigma bands (from Asimov).
+        pnull: p-value under the tested hypothesis (poi_test).
+        palt: p-value under the alternative hypothesis (poi_alt / background-only).
         test_stat_result: Full test statistic result with fit information.
     """
 
     q_obs: Array
     pnull: Array | None
     palt: Array | None
-    cl_s: Array | None
     test_stat_result: TestStatResult
-    expected_bands: ExpectedBands | None = None
 
 
 class ExpectedLimitResult(eqx.Module):

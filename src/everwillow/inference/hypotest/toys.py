@@ -23,10 +23,10 @@ __all__ = ["ToyGenerator"]
 class ToyGenerator(eqx.Module):
     """Generates toy experiments for hypothesis testing.
 
-    Creates toys under both alternative and null hypotheses,
-    computes test statistics for each, and returns a ToyResult.
-    The raw arrays can then be fed into any EmpiricalDistribution
-    subclass for p-value computation.
+    Creates toys under the tested hypothesis (poi_test) and optionally
+    under an alternative hypothesis (poi_alt). Returns a ToyResult
+    with raw test statistic arrays that can be fed into any
+    EmpiricalDistribution subclass for p-value computation.
 
     Attributes:
         test_statistic: Test statistic to compute for each toy.
@@ -36,6 +36,7 @@ class ToyGenerator(eqx.Module):
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
         >>> toys = toy_gen.generate(
         ...     nll_fn, params, observed, ("mu",), 1.0,
+        ...     poi_alt=0.0,
         ...     key=jax.random.key(42),
         ...     predict_fn=my_predict_fn,
         ... )
@@ -57,6 +58,7 @@ class ToyGenerator(eqx.Module):
         poi_key: sl.K,
         poi_test: float,
         *,
+        poi_alt: float | None = None,
         key: PRNGKeyArray,
         sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree] | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
@@ -69,7 +71,11 @@ class ToyGenerator(eqx.Module):
             params: Initial parameter state.
             observation: Observed data (used to profile nuisance parameters).
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
-            poi_test: Test value for the POI.
+            poi_test: Test value for the POI (the tested hypothesis).
+            poi_alt: Alternative hypothesis POI value. If provided, toys are
+                generated under both hypotheses. If None, only null (tested)
+                toys are generated and q_alt will be None in the result.
+                For exclusion tests, typically 0.0. For discovery, typically 1.0.
             key: JAX PRNG key for reproducibility.
             sample_fn: Function to generate toy data. Called as
                 sample_fn(params_state, key) -> toy_observation. If None,
@@ -79,7 +85,7 @@ class ToyGenerator(eqx.Module):
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
-            ToyResult with q_alt and q_null arrays.
+            ToyResult with q_null (always) and q_alt (if poi_alt provided).
 
         Raises:
             ValueError: If neither sample_fn nor predict_fn is provided.
@@ -89,41 +95,41 @@ class ToyGenerator(eqx.Module):
             if predict_fn is None:
                 raise ValueError("Either sample_fn or predict_fn must be provided")
             sample_fn = self._make_poisson_sampler(predict_fn)
-        # Split keys for alt and null toys
-        keys = jax.random.split(key, self.ntoys * 2)
-        keys_alt = keys[: self.ntoys]
-        keys_null = keys[self.ntoys :]
 
-        # Profile nuisance parameters by fitting with POI fixed
-        # This ensures toys are generated at the best-fit point for each hypothesis
-
-        # Alternative hypothesis: POI = poi_test (signal)
-        fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        alt_result = constrained_fit(
-            nll_fn, params, observation, fixed_alt, **fit_kwargs
-        )
-        params_alt: sl.State[ArrayLike] = sl.State.from_pytree(alt_result.params)
-
-        # Null hypothesis: POI = 0 (background-only)
-        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
+        # Null hypothesis (tested): POI = poi_test
+        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         null_result = constrained_fit(
             nll_fn, params, observation, fixed_null, **fit_kwargs
         )
         params_null: sl.State[ArrayLike] = sl.State.from_pytree(null_result.params)
 
-        # Generate toys under alternative hypothesis
-        q_alt = self._run_toys(
-            nll_fn,
-            params_alt,
-            params,
-            poi_key,
-            poi_test,
-            sample_fn,
-            keys_alt,
-            fit_kwargs,
-        )
+        # Alternative hypothesis: POI = poi_alt (only if provided)
+        q_alt = None
+        if poi_alt is not None:
+            keys = jax.random.split(key, self.ntoys * 2)
+            keys_null = keys[: self.ntoys]
+            keys_alt = keys[self.ntoys :]
 
-        # Generate toys under null hypothesis
+            fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_alt})
+            alt_result = constrained_fit(
+                nll_fn, params, observation, fixed_alt, **fit_kwargs
+            )
+            params_alt: sl.State[ArrayLike] = sl.State.from_pytree(alt_result.params)
+
+            q_alt = self._run_toys(
+                nll_fn,
+                params_alt,
+                params,
+                poi_key,
+                poi_test,
+                sample_fn,
+                keys_alt,
+                fit_kwargs,
+            )
+        else:
+            keys_null = jax.random.split(key, self.ntoys)
+
+        # Generate toys under null (tested) hypothesis
         q_null = self._run_toys(
             nll_fn,
             params_null,
@@ -135,7 +141,7 @@ class ToyGenerator(eqx.Module):
             fit_kwargs,
         )
 
-        return ToyResult(q_alt=q_alt, q_null=q_null)
+        return ToyResult(q_null=q_null, q_alt=q_alt)
 
     def _run_toys(
         self,

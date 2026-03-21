@@ -27,6 +27,7 @@ extensions = [
 autosummary_generate = True
 autosummary_imported_members = False
 autodoc_typehints = "description"
+autodoc_typehints_description_target = "documented_params"
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 
@@ -48,27 +49,20 @@ myst_fence_as_directive = ["mermaid"]
 
 nb_execution_mode = "off"
 
-html_theme = "furo"
+html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_logo = "../images/logo.svg"
 html_theme_options = {
-    "footer_icons": [
-        {
-            "name": "GitHub",
-            "url": "https://github.com/MoAly98/everwillow",
-            "html": """
-                <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
-                    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
-                </svg>
-            """,
-            "class": "",
-        },
-    ],
-    "source_repository": "https://github.com/MoAly98/everwillow",
-    "source_branch": "main",
-    "source_directory": "docs/",
+    "home_page_in_toc": True,
+    "show_navbar_depth": 2,
+    "show_toc_level": 2,
+    "repository_url": "https://github.com/MoAly98/everwillow",
+    "use_repository_button": True,
+    "use_issues_button": True,
+    "use_edit_page_button": True,
 }
+html_context = {"default_mode": "light"}
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
@@ -81,3 +75,16 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "python/"]
 
 html_title = " "  # everwillow documentation""
 html_baseurl = "https://everwillow.readthedocs.io/"
+
+
+def _skip_data_attributes(_app, what, _name, obj, skip, _options):
+    """Skip raw class data attributes — already documented via Attributes: sections."""
+    if skip:
+        return True
+    if what == "class" and not callable(obj):
+        return True
+    return None
+
+
+def setup(app):
+    app.connect("autodoc-skip-member", _skip_data_attributes)

@@ -5,7 +5,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.test_statistics
    :members:
-
    :show-inheritance:
    :no-index:
 ```
@@ -15,7 +14,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.distributions
    :members:
-
    :show-inheritance:
    :no-index:
 ```
@@ -25,7 +23,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.calculators
    :members:
-
    :show-inheritance:
    :no-index:
 ```
@@ -35,7 +32,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.results
    :members:
-
    :show-inheritance:
    :no-index:
 ```
@@ -45,7 +41,7 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.toys
    :members:
-
+   :exclude-members: map_fn
    :show-inheritance:
    :no-index:
 ```
@@ -55,7 +51,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.upper_limit
    :members:
-
    :show-inheritance:
    :no-index:
 ```
@@ -65,7 +60,6 @@
 ```{eval-rst}
 .. automodule:: everwillow.hypotest.utils
    :members:
-
    :show-inheritance:
    :no-index:
 ```

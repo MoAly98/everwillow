@@ -25,6 +25,22 @@ def unwrap(
     state: State[V],
     transform_mapping: tp.Mapping[K, TransformBase],
 ) -> State[V]:
+    """Transform parameter values from bounded to unconstrained space.
+
+    Applies each transform's ``unwrap`` method to the corresponding
+    parameter in ``state``. Parameters not in ``transform_mapping``
+    are left unchanged.
+
+    Args:
+        state: Parameter state with bounded values.
+        transform_mapping: Maps parameter keys to their transforms.
+
+    Returns:
+        New state with unconstrained (internal) parameter values.
+
+    Raises:
+        KeyError: If ``transform_mapping`` contains keys not in ``state``.
+    """
     if not transform_mapping:
         return state
 
@@ -42,6 +58,22 @@ def wrap(
     state: State[V],
     transform_mapping: tp.Mapping[K, TransformBase],
 ) -> State[V]:
+    """Transform parameter values from unconstrained back to bounded space.
+
+    Applies each transform's ``wrap`` method to the corresponding
+    parameter in ``state``. Parameters not in ``transform_mapping``
+    are left unchanged.
+
+    Args:
+        state: Parameter state with unconstrained (internal) values.
+        transform_mapping: Maps parameter keys to their transforms.
+
+    Returns:
+        New state with bounded (external) parameter values.
+
+    Raises:
+        KeyError: If ``transform_mapping`` contains keys not in ``state``.
+    """
     if not transform_mapping:
         return state
 

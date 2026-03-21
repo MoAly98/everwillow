@@ -50,6 +50,36 @@ print(result.params)
 # }
 ```
 
+### Uncertainties
+
+After fitting, extract parameter uncertainties from the inverse Hessian of the NLL:
+
+```python
+from everwillow.uncertainty import uncertainties, covariance_matrix, correlation_matrix
+
+fitted_params = sl.State.from_pytree(result.params)
+
+# Parameter uncertainties: σ_i = √((H⁻¹)_ii)
+unc = uncertainties(neg_log_likelihood, fitted_params, data)
+print(unc.to_pytree())
+# {
+#   'loc': Array(0.00040001, dtype=float64),
+#   'scale': Array(0.00028285, dtype=float64),
+# }
+
+# Full covariance matrix
+cov = covariance_matrix(neg_log_likelihood, fitted_params, data)
+print(cov)
+# [[ 1.6001e-07,  1.2164e-16],
+#  [ 1.2164e-16,  8.0003e-08]]
+
+# Correlation matrix (normalized covariance, diagonal = 1)
+corr = correlation_matrix(neg_log_likelihood, fitted_params, data)
+print(corr)
+# [[ 1.0000e+00,  1.0751e-09],
+#  [ 1.0751e-09,  1.0000e+00]]
+```
+
 ## Hypothesis Testing
 
 The same `nll(params, observation)` interface extends to hypothesis testing. Here is a Poisson counting experiment that computes a 95% CL upper limit on a signal strength parameter:

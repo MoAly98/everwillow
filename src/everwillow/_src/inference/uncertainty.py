@@ -18,13 +18,14 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PyTree
 
-import everwillow.statelib as sl
-from everwillow.statelib import V
+import everwillow._src.statelib as sl
+from everwillow._src.statelib import V
 
 
 def hessian_matrix(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
 ) -> Float[Array, "n_free n_free"]:
@@ -34,8 +35,9 @@ def hessian_matrix(
     parameters using JAX automatic differentiation.
 
     Args:
-        nll_fn: Negative log-likelihood function taking a parameter pytree.
+        nll_fn: Negative log-likelihood function taking (params, observation).
         params: Full parameter state at which to evaluate the Hessian.
+        observation: Observed data passed to nll_fn.
         fixed: Parameters to treat as constants (excluded from Hessian).
 
     Returns:
@@ -71,14 +73,15 @@ def hessian_matrix(
         free_mapping = {k: flat_free[i] for i, k in enumerate(free_keys)}
         new_free = sl.update(free_state, updates=free_mapping)
         combined = sl.combine_partitions(fixed_state, new_free)
-        return nll_fn(combined.to_pytree())
+        return nll_fn(combined.to_pytree(), observation)
 
     return jax.hessian(_flat_nll)(flat_values)
 
 
 def covariance_matrix(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
 ) -> Float[Array, "nparams nparams"]:
@@ -90,21 +93,23 @@ def covariance_matrix(
     This is the Laplace approximation to the posterior covariance.
 
     Args:
-        nll_fn: Negative log-likelihood function taking a parameter pytree.
+        nll_fn: Negative log-likelihood function taking (params, observation).
         params: Full parameter state (typically fitted values).
+        observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from covariance computation.
 
     Returns:
         2D JAX array of shape (n_free, n_free).
     """
-    hess = hessian_matrix(nll_fn, params, fixed=fixed)
+    hess = hessian_matrix(nll_fn, params, observation, fixed=fixed)
     # Invert Hessian to get Fisher information matrix (covariance)
     return jnp.linalg.inv(hess)
 
 
 def correlation_matrix(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
 ) -> jax.Array:
@@ -114,14 +119,15 @@ def correlation_matrix(
         ρ_ij = Cov_ij / √(Cov_ii · Cov_jj)
 
     Args:
-        nll_fn: Negative log-likelihood function taking a parameter pytree.
+        nll_fn: Negative log-likelihood function taking (params, observation).
         params: Full parameter state at which to evaluate.
+        observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from correlation computation.
 
     Returns:
         2D JAX array with diagonal = 1.0, off-diagonal in [-1, 1].
     """
-    cov = covariance_matrix(nll_fn, params, fixed=fixed)
+    cov = covariance_matrix(nll_fn, params, observation, fixed=fixed)
     # Normalize: ρ_ij = Cov_ij / (σ_i · σ_j)
     d = jnp.sqrt(jnp.diag(cov))
     corr = cov / jnp.outer(d, d)
@@ -130,8 +136,9 @@ def correlation_matrix(
 
 
 def uncertainties(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
 ) -> sl.State[V]:
@@ -142,8 +149,9 @@ def uncertainties(
     Cramér-Rao bound: σ_i = √(Cov_ii) = √((H⁻¹)_ii)
 
     Args:
-        nll_fn: Negative log-likelihood function taking a parameter pytree.
+        nll_fn: Negative log-likelihood function taking (params, observation).
         params: Full parameter state (typically fitted values).
+        observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from uncertainty computation.
 
     Returns:
@@ -153,7 +161,7 @@ def uncertainties(
         fixed = sl.State.from_pytree({})
 
     # Get covariance matrix for free parameters
-    cov = covariance_matrix(nll_fn, params, fixed=fixed)
+    cov = covariance_matrix(nll_fn, params, observation, fixed=fixed)
     # Cramér-Rao: uncertainties are sqrt of diagonal elements
     stderrs = jnp.sqrt(jnp.diag(cov))
 

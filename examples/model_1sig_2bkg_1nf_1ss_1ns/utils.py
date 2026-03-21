@@ -1,5 +1,7 @@
 """Utility helpers shared by the example implementations."""
 
+from __future__ import annotations
+
 import warnings
 from collections.abc import Callable, Sequence
 
@@ -64,7 +66,7 @@ def poisson_logpdf(observed: float, mean: float) -> jnp.ndarray:
     )
 
 
-def plot_history(history: ew.inference.HistoryCallback, ax=None, **kwargs):
+def plot_history(history: ew.HistoryCallback, ax=None, **kwargs):
     """Plot NLL convergence history.
 
     Args:

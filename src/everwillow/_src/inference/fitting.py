@@ -13,9 +13,9 @@ import optimistix as optx
 import orbax.checkpoint as ocp
 from jaxtyping import PyTree
 
-import everwillow.parameters as ewp
-import everwillow.statelib as sl
-from everwillow.statelib import K, V
+import everwillow._src.parameters as ewp
+import everwillow._src.statelib as sl
+from everwillow._src.statelib import K, V
 
 Args: tp.TypeAlias = tuple[
     sl.State[V],  # fixed_state
@@ -23,7 +23,7 @@ Args: tp.TypeAlias = tuple[
 ]
 
 if tp.TYPE_CHECKING:
-    from everwillow.inference import Callback
+    from everwillow._src.inference.callback import Callback
 
 
 def _reconstruct_full_state(
@@ -216,8 +216,9 @@ def _iminimize(
 
 
 def _fit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -272,7 +273,7 @@ def _fit(
     # Wrap nll to only take free parameters
     def wrapped_nll(new_state, fn_args):
         full_state = _reconstruct_full_state(new_state, args=fn_args)
-        return nll_fn(full_state.to_pytree())
+        return nll_fn(full_state.to_pytree(), observation)
 
     # Set up solver
     if solver is None:
@@ -307,15 +308,16 @@ def _fit(
     # Return result
     return FitResult(
         params=fitted_state.to_pytree(),
-        nll=solution.state.f_info.f,
+        nll=wrapped_nll(solution.value, args),
         success=jax.numpy.asarray(solution.result == optx.RESULTS.successful),
         solver_result=solution,
     )
 
 
 def fit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -327,21 +329,22 @@ def fit(
 
     The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
     respect to all parameters except those explicitly marked as fixed. Internally
-    the parameter pytree is converted into a :class:`~everwillow.statelib.state.State`
+    the parameter pytree is converted into a :class:`~everwillow._src.statelib.state.State`
     so that subsets of the state can be frozen using
-    :func:`everwillow.statelib.state.partition`.
+    :func:`everwillow._src.statelib.state.partition`.
 
     Parameter bounds are supported through automatic transformation to unbounded space.
 
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
-            pytree as its first argument, followed by any positional or keyword
-            arguments supplied via ``args``/``kwargs``.
+            pytree as its first argument and observation data as its second.
         params: Initial parameter values organised as a state (e.g. mapping or
             nested containers).
+        observation: Observed data passed to ``nll_fn``. Can be any pytree structure
+            (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
+        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimisation and wrapped back afterwards.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
@@ -355,43 +358,39 @@ def fit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow.statelib as sl
+        >>> import everwillow._src.statelib as sl
 
         >>> # Basic usage
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
-        >>> result = ew.fit(my_nll, initial_params)
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["target"])**2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> observed = {"target": 2.0}
+        >>> result = ew.fit(my_nll, initial_params, observed)
         >>> result.params["mu"]  # Should be close to 2.0
 
         >>> # Fix 'sigma' while fitting mu
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> fixed = sl.State.from_pytree({"sigma": ...})
-        >>> result = ew.fit(
-        ...     my_nll,
-        ...     initial_params,
-        ...     fixed=fixed,
-        ... )
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["mu_target"]) ** 2 + (
+        ...         params["sigma"] - observation["sigma_target"]
+        ...     ) ** 2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        >>> observed = {"mu_target": 2.0, "sigma_target": 1.0}
+        >>> fixed = sl.State.from_pytree({("sigma",): ...})
+        >>> result = ew.fit(my_nll, initial_params, observed, fixed=fixed)
         >>> result.params["sigma"]  # Remains fixed
         0.5
 
         >>> # With parameter bounds
-        >>> from everwillow.parameters.transforms import MinuitTransform
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2) ** 2 + (params["sigma"] - 1) ** 2
-        >>> bounds = sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)})
-        >>> result = ew.fit(
-        ...     my_nll,
-        ...     initial_params,
-        ...     bounds=bounds,
-        ... )
+        >>> from everwillow._src.parameters.transforms import MinuitTransform
+        >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
+        >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True
     """
     return _fit(
         nll_fn,
         params,
+        observation,
         fixed=fixed,
         bounds=bounds,
         solver=solver,
@@ -402,8 +401,9 @@ def fit(
 
 
 def ifit(
-    nll_fn: tp.Callable[[PyTree[V]], float],
+    nll_fn: tp.Callable[[PyTree[V], PyTree], float],
     params: sl.State[V],
+    observation: PyTree,
     *,
     fixed: sl.State[V | EllipsisType] | None = None,
     bounds: sl.State[ewp.TransformBase] | None = None,
@@ -426,11 +426,13 @@ def ifit(
 
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
-            pytree as its first argument.
+            pytree as its first argument and observation data as its second.
         params: Initial parameter values organised as a state.
+        observation: Observed data passed to ``nll_fn``. Can be any pytree structure
+            (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
+        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances for parameter bounds.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
@@ -450,13 +452,14 @@ def ifit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow.statelib as sl
+        >>> import everwillow._src.statelib as sl
 
         >>> # Interactive fit with progress bar
-        >>> def my_nll(params):
-        ...     return (params["mu"] - 2)**2 + (params["sigma"] - 1)**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
-        >>> result = ew.ifit(my_nll, initial_params)
+        >>> def my_nll(params, observation):
+        ...     return (params["mu"] - observation["target"])**2
+        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> observed = {"target": 2.0}
+        >>> result = ew.ifit(my_nll, initial_params, observed)
 
         >>> # With custom callback to record history
         >>> history = ew.inference.HistoryCallback()
@@ -480,6 +483,7 @@ def ifit(
     return _fit(
         nll_fn,
         params,
+        observation,
         fixed=fixed,
         bounds=bounds,
         solver=solver,

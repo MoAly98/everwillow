@@ -43,13 +43,13 @@ dependencies = [
 test = ["pytest >=9", "pytest-cov >=3", "coverage[toml]"]
 docs = [
     "sphinx>=7",
-    "furo",
+    "sphinx-book-theme",
     "myst-parser<6",
     "sphinx-design",
     "sphinx-togglebutton",
     "sphinx-copybutton",
     "sphinx-autodoc-typehints",
-    "myst-nb",
+    "myst-nb>=1.4",
     "sphinxcontrib-mermaid",
 ]
 examples = [
@@ -60,6 +60,7 @@ examples = [
     "iminuit>=2.32.0",
     "scipy>=1.16.3",
     "matplotlib>=3.10.8",
+    "paramore",
 ]
 dev = [
     { include-group = "test" },
@@ -96,6 +97,15 @@ testpaths = ["tests"]
 
 [tool.coverage]
 run.source = ["everwillow"]
+run.omit = [
+    "src/everwillow/callback.py",
+    "src/everwillow/fitting.py",
+    "src/everwillow/uncertainty.py",
+    "src/everwillow/util.py",
+    "src/everwillow/hypotest/*.py",
+    "src/everwillow/statelib/*.py",
+    "src/everwillow/parameters/*.py",
+]
 port.exclude_lines = ['pragma: no cover', '\.\.\.', 'if typing.TYPE_CHECKING:']
 
 
@@ -157,10 +167,14 @@ select = [
 unfixable = [
     "F841", # Would remove unused variables
 ]
+per-file-ignores."src/everwillow/*.py" = ["PLC0414", "RUF022"]
+per-file-ignores."src/everwillow/hypotest/*.py" = ["PLC0414", "RUF022"]
+per-file-ignores."src/everwillow/statelib/*.py" = ["PLC0414", "RUF022"]
+per-file-ignores."src/everwillow/parameters/*.py" = ["PLC0414", "RUF022"]
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]
 
 [tool.uv.sources]
 pyhs3 = { git = "https://github.com/MoAly98/pyhs3", branch = "fix/funcs_ref_funcs" }
-evermore = { git = "https://github.com/pfackeldey/evermore", branch = "main" }
 pyhf = { git = "https://github.com/scikit-hep/pyhf", branch = "main" }
+paramore = { git = "https://github.com/maxgalli/paramore", branch = "master" }

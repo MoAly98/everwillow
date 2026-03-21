@@ -9,8 +9,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-import everwillow.parameters.transforms as transforms
-from everwillow.parameters import transforms as transforms_module
+import everwillow._src.parameters.transforms as transforms  # noqa: PLC2701
 
 jax.config.update("jax_enable_x64", True)
 
@@ -58,6 +57,10 @@ class TestMinuitTransform:
 
     def test_init_requires_finite_bounds(self):
         """constructor enforces finite and ordered bounds."""
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
+        ):
+            transforms.MinuitTransform(lower=jnp.inf, upper=1.0)
         with pytest.raises(
             (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
         ):
@@ -108,6 +111,10 @@ class TestSigmoidTransform:
 
     def test_init_requires_valid_bounds(self):
         """constructor enforces finite and ordered bounds."""
+        with pytest.raises(
+            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
+        ):
+            transforms.SigmoidTransform(lower=jnp.inf, upper=1.0)
         with pytest.raises(
             (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
         ):
@@ -243,11 +250,11 @@ class TestInternalHelpers:
     def test_logit_and_sigmoid_round_trip(self):
         """_logit and _sigmoid are mutual inverses."""
         raw = jnp.asarray(0.3)
-        transformed = transforms_module._logit(raw)
-        restored = transforms_module._sigmoid(transformed)
+        transformed = transforms._logit(raw)
+        restored = transforms._sigmoid(transformed)
         assert jnp.isclose(restored, raw, atol=ATOL)
 
     def test_sigmoid_limits(self):
         """_sigmoid saturates correctly for large magnitudes."""
-        assert jnp.isclose(transforms_module._sigmoid(50.0), 1.0, atol=1e-6)
-        assert jnp.isclose(transforms_module._sigmoid(-50.0), 0.0, atol=1e-6)
+        assert jnp.isclose(transforms._sigmoid(50.0), 1.0, atol=1e-6)
+        assert jnp.isclose(transforms._sigmoid(-50.0), 0.0, atol=1e-6)

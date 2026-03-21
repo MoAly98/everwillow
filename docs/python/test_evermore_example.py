@@ -1,5 +1,7 @@
 """Standalone evermore counting experiment example."""
 
+from __future__ import annotations
+
 import typing as tp
 from functools import partial
 
@@ -21,7 +23,6 @@ Args: tp.TypeAlias = tuple[
     nnx.GraphDef,  # graphdef
     nnx.State,  # state
     PyTree[Hist1D],  # hists
-    Hist1D,  # observation
 ]
 
 
@@ -102,9 +103,9 @@ expectations = model(hists)
 
 
 @nnx.jit
-def loss(dynamic: nnx.State, args: Args) -> Float[Array, ""]:
+def loss(dynamic: nnx.State, observation: Hist1D, args: Args) -> Float[Array, ""]:
     # unpack
-    (graphdef, static, hists, observation) = args
+    (graphdef, static, hists) = args
     # reconstruct model
     model = nnx.merge(graphdef, dynamic, static)
     # calculate expectation
@@ -125,11 +126,12 @@ graphdef, dynamic, static = nnx.split(model, evm.filter.is_dynamic_parameter, ..
 
 # Perform the fit
 result = ew.fit(
-    nll_fn=partial(loss, args=(graphdef, static, hists, observation)),
-    params=sl.State.from_pytree(dynamic),
+    partial(loss, args=(graphdef, static, hists)),
+    sl.State.from_pytree(dynamic),
+    observation,
 )
 
-print(result.params.to_pure_dict())
+print(result.params)
 # {
 #   'mu': Array(2.33333346, dtype=float64),
 #   'norm1': Array(3.0642646e-08, dtype=float64),

@@ -6,10 +6,11 @@ import typing as tp
 
 import jax
 import jax.numpy as jnp
+import pytest
 
+import everwillow._src.statelib as sl  # noqa: PLC2701
 import everwillow.parameters.bounds as bounds
 import everwillow.parameters.transforms as transforms
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -51,3 +52,25 @@ class TestApplyBoundsTransform:
         state: FState = sl.State.from_pytree({"value": 3.14})
         unwrapped = bounds.unwrap(state, {})
         assert unwrapped is state
+
+    def test_wrap_no_transforms_returns_identity(self):
+        """empty bounds mapping for wrap yields identity state."""
+        state: FState = sl.State.from_pytree({"value": 3.14})
+        wrapped = bounds.wrap(state, {})
+        assert wrapped is state
+
+    def test_unwrap_missing_key_raises(self):
+        """unwrap raises KeyError if transform key not in state."""
+        state = sl.State.from_pytree({"mu": 0.5})
+        transform_map = {("missing",): transforms.MinuitTransform(lower=0.0, upper=1.0)}
+
+        with pytest.raises(KeyError, match="not in state"):
+            bounds.unwrap(state, transform_map)
+
+    def test_wrap_missing_key_raises(self):
+        """wrap raises KeyError if transform key not in state."""
+        state = sl.State.from_pytree({"mu": 0.5})
+        transform_map = {("missing",): transforms.MinuitTransform(lower=0.0, upper=1.0)}
+
+        with pytest.raises(KeyError, match="not in state"):
+            bounds.wrap(state, transform_map)

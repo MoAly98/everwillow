@@ -51,10 +51,30 @@ def test_apply_transformations_empty_returns_original() -> None:
     assert result is state
 
 
+def test_apply_transformations_partial_transform() -> None:
+    """Transforming only some keys leaves others unchanged."""
+    state = sl.State.from_pytree({"a": 1, "b": 2, "c": 3})
+    transforms = {("a",): sl.Transform(new_key=("alpha",))}
+
+    result = sl.apply_transformations(state, transforms)
+
+    assert dict(result.mapping) == {("alpha",): 1, ("b",): 2, ("c",): 3}
+
+
 def test_apply_transformations_missing_key_raises() -> None:
     """Referencing a key not in the state raises KeyError."""
     state = sl.State.from_pytree({"a": 1})
     transforms = {("missing",): sl.Transform(new_key=("x",))}
 
     with pytest.raises(KeyError, match="not present in state"):
+        sl.apply_transformations(state, transforms)
+
+
+def test_apply_transformations_rejects_collision_with_untransformed_key() -> None:
+    """Transform producing a key that collides with untransformed key raises ValueError."""
+    state = sl.State.from_pytree({"a": 1, "b": 2})
+    # Transform 'a' to 'b', but 'b' already exists as untransformed
+    transforms = {("a",): sl.Transform(new_key=("b",))}
+
+    with pytest.raises(ValueError, match="duplicate key"):
         sl.apply_transformations(state, transforms)

@@ -1,5 +1,7 @@
 """Standalone pyhs3 counting experiment example."""
 
+from __future__ import annotations
+
 import jax
 import jax.numpy as jnp
 import pyhs3
@@ -131,26 +133,39 @@ workspace = pyhs3.Workspace(
 model = workspace.model()
 inputs, jaxified = jaxify_distribution(model, "model")
 
-# Build initial parameters
+# Build initial parameters and data
 initial = {
     point.name: float(point.value) for point in workspace.parameter_points[0].parameters
 }
-fixed_values = {point.name: float(point.value) for point in workspace.data}
+data_values = {point.name: float(point.value) for point in workspace.data}
+
+# Separate observation from templates
+observation = {
+    "n_obs": data_values["n_obs"],
+    "a_norm1": data_values["a_norm1"],
+    "a_norm2": data_values["a_norm2"],
+    "a_shape1": data_values["a_shape1"],
+}
+templates = {
+    "signal_nominal": data_values["signal_nominal"],
+    "bkg1_nominal": data_values["bkg1_nominal"],
+    "bkg1_shape_up": data_values["bkg1_shape_up"],
+    "bkg2_nominal": data_values["bkg2_nominal"],
+    "bkg2_shape_up": data_values["bkg2_shape_up"],
+}
 
 
 # Define NLL
-def nll(params):
-    merged = {**fixed_values, **params}
+def nll(params, obs):
+    merged = {**templates, **obs, **params}
     ordered = [merged[var.name] for var in inputs]
     probability = jaxified(*ordered)[0]
     return -jnp.log(jnp.asarray(probability))
 
 
 # Perform the fit
-result = ew.fit(
-    nll_fn=nll,
-    params=sl.State.from_pytree(initial),
-)
+result = ew.fit(nll, sl.State.from_pytree(initial), observation)
+
 
 print(result.params)
 # {

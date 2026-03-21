@@ -1,5 +1,7 @@
 """Standalone pyhf counting experiment example."""
 
+from __future__ import annotations
+
 import jax
 import jax.numpy as jnp
 import pyhf
@@ -71,25 +73,22 @@ spec = {
 
 workspace = pyhf.Workspace(spec)
 model = workspace.model()
-data = workspace.data(model, include_auxdata=True)
 
 # Get parameter order and initial values
 parameter_order = model.config.par_order
 initial_dict = dict(zip(parameter_order, model.config.suggested_init(), strict=False))
+observation = workspace.data(model, include_auxdata=True)
 
 
 # Define NLL
-def nll(params):
+def nll(params, obs):
     parameter_vector = jnp.asarray([params[name] for name in parameter_order])
-    logpdf = model.logpdf(parameter_vector, data)
+    logpdf = model.logpdf(parameter_vector, obs)
     return -2 * logpdf[0]
 
 
 # Perform the fit
-result = ew.fit(
-    nll_fn=nll,
-    params=sl.State.from_pytree(initial_dict),
-)
+result = ew.fit(nll, sl.State.from_pytree(initial_dict), observation)
 
 print(result.params)
 #  {

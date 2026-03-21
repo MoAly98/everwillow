@@ -8,7 +8,7 @@ import jax.tree_util as jtu
 from jaxtyping import PyTree, PyTreeDef
 
 if tp.TYPE_CHECKING:
-    from everwillow.statelib.state import K, V
+    from everwillow._src.statelib.state import K, V
 
 
 __all__ = ["TreeDefMeta"]

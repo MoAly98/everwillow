@@ -255,13 +255,17 @@ class TMuTildeAsymptotic(Distribution):
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
     def null_pval(self, result: TestStatResult) -> Array | None:
-        r"""Null p-value (:math:`\mu' = \mu`).
+        r"""Null p-value (:math:`\mu' = \mu`), where :math:`q_A = \mu^2/\sigma^2`.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        .. math::
 
-        - Standard: :math:`p = 2(1 - \Phi(\sqrt{\tilde{t}}))`
-        - Boundary: :math:`p = 2 - \Phi(\sqrt{\tilde{t}}) - \Phi((\tilde{t} + q_A)/(2\sqrt{q_A}))`
+            p_{\mu'=\mu} = \begin{cases}
+                2\bigl(1 - \Phi(\sqrt{\tilde{t}})\bigr)
+                    & \text{if } \tilde{t} \leq q_A \\
+                2 - \Phi(\sqrt{\tilde{t}})
+                  - \Phi\!\left(\frac{\tilde{t} + q_A}{2\sqrt{q_A}}\right)
+                    & \text{if } \tilde{t} > q_A
+            \end{cases}
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Null"):
             return None
@@ -276,13 +280,18 @@ class TMuTildeAsymptotic(Distribution):
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        r"""Alt p-value (:math:`\mu' = 0`, so :math:`(\mu-\mu')/\sigma = \sqrt{q_A}`).
+        r"""Alt p-value (:math:`\mu' = 0`), where :math:`q_A = \mu^2/\sigma^2`.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        .. math::
 
-        - Standard: :math:`p = 2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A}) - \Phi(\sqrt{\tilde{t}} - \sqrt{q_A})`
-        - Boundary: :math:`p = 2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A}) - \Phi((\tilde{t} - q_A)/(2\sqrt{q_A}))`
+            p_{\mu'=0} = \begin{cases}
+                2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A})
+                  - \Phi(\sqrt{\tilde{t}} - \sqrt{q_A})
+                    & \text{if } \tilde{t} \leq q_A \\
+                2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A})
+                  - \Phi\!\left(\frac{\tilde{t} - q_A}{2\sqrt{q_A}}\right)
+                    & \text{if } \tilde{t} > q_A
+            \end{cases}
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -356,7 +365,7 @@ class Q0Asymptotic(Distribution):
 class QMuAsymptotic(Distribution):
     r"""Asymptotic distribution for :math:`q_\mu` (upper limit, Eq. 57).
 
-    Used with the :math:`q_\mu` test statistic (no boundary handling).
+    Used with the :math:`q_\mu` test statistic for upper limit calculations.
 
     """
 
@@ -438,14 +447,16 @@ class QTildeAsymptotic(Distribution):
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
     def null_pval(self, result: TestStatResult) -> Array | None:
-        r"""Null p-value (:math:`\mu' = \mu`).
+        r"""Null p-value (:math:`\mu' = \mu`), where :math:`q_A = \mu^2/\sigma^2`.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        .. math::
 
-        - :math:`\tilde{q} = 0`: :math:`p = 1`
-        - Standard (:math:`0 < \tilde{q} \leq q_A`): :math:`p = 1 - \Phi(\sqrt{\tilde{q}})`
-        - Boundary (:math:`\tilde{q} > q_A`): :math:`p = 1 - \Phi((\tilde{q} + q_A)/(2\sqrt{q_A}))`
+            p_{\mu'=\mu} = \begin{cases}
+                1 - \Phi(\sqrt{\tilde{q}})
+                    & \text{if } \tilde{q} \leq q_A \\
+                1 - \Phi\!\left(\frac{\tilde{q} + q_A}{2\sqrt{q_A}}\right)
+                    & \text{if } \tilde{q} > q_A
+            \end{cases}
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Null"):
             return None
@@ -460,14 +471,16 @@ class QTildeAsymptotic(Distribution):
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        r"""Alt p-value (:math:`\mu' = 0`, so :math:`(\mu-\mu')/\sigma = \sqrt{q_A}`).
+        r"""Alt p-value (:math:`\mu' = 0`), where :math:`q_A = \mu^2/\sigma^2`.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        .. math::
 
-        - :math:`\tilde{q} = 0`: :math:`p = 1`
-        - Standard (:math:`0 < \tilde{q} \leq q_A`): :math:`p = 1 - \Phi(\sqrt{\tilde{q}} - \sqrt{q_A})`
-        - Boundary (:math:`\tilde{q} > q_A`): :math:`p = 1 - \Phi((\tilde{q} - q_A)/(2\sqrt{q_A}))`
+            p_{\mu'=0} = \begin{cases}
+                1 - \Phi(\sqrt{\tilde{q}} - \sqrt{q_A})
+                    & \text{if } \tilde{q} \leq q_A \\
+                1 - \Phi\!\left(\frac{\tilde{q} - q_A}{2\sqrt{q_A}}\right)
+                    & \text{if } \tilde{q} > q_A
+            \end{cases}
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -484,11 +497,17 @@ class QTildeAsymptotic(Distribution):
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
         r"""Expected p-values at :math:`\pm N\sigma` fluctuations under background-only.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        At band :math:`N`, :math:`\hat{\mu} = N\sigma`, so the expected test
+        statistic is (with :math:`q_A = \mu^2/\sigma^2`):
 
-        - Standard (:math:`N \geq 0`): :math:`q = \max(0, \mu/\sigma - N)^2`.
-        - Boundary (:math:`N < 0`): :math:`q = (\mu/\sigma)^2 - 2(\mu/\sigma)N` (:math:`\hat{\mu} < 0` region).
+        .. math::
+
+            \tilde{q}_\text{exp} = \begin{cases}
+                \max(0,\; \mu/\sigma - N)^2
+                    & \text{if } N \geq 0 \\
+                (\mu/\sigma)^2 - 2(\mu/\sigma)\,N
+                    & \text{if } N < 0
+            \end{cases}
 
         Args:
             result: Must contain ``q_asimov`` for :math:`\sigma` extraction.

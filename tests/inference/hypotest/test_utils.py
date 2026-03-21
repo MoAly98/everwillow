@@ -138,7 +138,7 @@ class TestConstrainedFit:
         ("TestStatClass", "n_obs", "expected_mu_hat", "expected_q"),
         [
             (QTilde, 10.0, 0.5, 1.8907),
-            (QMu, 25.0, 2.0, 5.5413),
+            (QMu, 10.0, 0.5, 1.8907),
         ],
         ids=["qtilde", "qmu"],
     )
@@ -159,9 +159,9 @@ class TestConstrainedFit:
             # With nuisance theta (10% bkg uncertainty), optimizer finds
             # mu_hat ≈ 0.700, q ≈ 0.635
             (QTilde, 12.0, 0.700, 0.635),
-            # QMu, n_obs=20: mu_hat ≈ (20-5)/10 = 1.5
-            # Upward fluctuation; QMu has no boundary so q > 0
-            (QMu, 20.0, 1.500, 1.480),
+            # QMu, n_obs=12: mu_hat ≈ (12-5)/10 = 0.7
+            # Same non-boundary region as QTilde
+            (QMu, 12.0, 0.700, 0.635),
         ],
         ids=["qtilde", "qmu"],
     )

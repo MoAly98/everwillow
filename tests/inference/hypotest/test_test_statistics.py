@@ -50,14 +50,14 @@ class TestQTilde:
     @pytest.mark.parametrize(
         ("n_obs", "mu_test", "expected_mu_hat", "expected_q"),
         [
-            (3.0, 1.0, -0.2, 14.3434),
+            (3.0, 1.0, -0.2, 13.4083),
             (5.0, 1.0, 0.0, 9.0139),
             (10.0, 1.0, 0.5, 1.8907),
             (15.0, 1.0, 1.0, 0.0),
             (25.0, 1.0, 2.0, 0.0),
         ],
         ids=[
-            "deep-downward",
+            "negative-muhat-modified-ratio",
             "at-background",
             "moderate-downward",
             "at-mle",
@@ -65,9 +65,10 @@ class TestQTilde:
         ],
     )
     def test_values(self, n_obs, mu_test, expected_mu_hat, expected_q):
-        """Test QTilde values across multiple scenarios.
+        """Test QTilde values across multiple scenarios (Eq. 16).
 
-        Boundary: q̃=0 when mu_hat > mu_test.
+        Three cases: L(0) denominator when mu_hat < 0,
+        standard ratio when 0 <= mu_hat <= mu_test, q=0 when mu_hat > mu_test.
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
@@ -84,7 +85,7 @@ class TestQTilde:
 
 
 class TestQMu:
-    """Tests for QMu test statistic (no boundary handling)."""
+    """Tests for QMu test statistic (Eq. 14, with boundary at mu_hat > mu)."""
 
     @pytest.mark.parametrize(
         ("n_obs", "mu_test", "expected_mu_hat", "expected_q"),
@@ -93,20 +94,20 @@ class TestQMu:
             (5.0, 1.0, 0.0, 9.0139),
             (10.0, 1.0, 0.5, 1.8907),
             (15.0, 1.0, 1.0, 0.0),
-            (25.0, 1.0, 2.0, 5.5413),
+            (25.0, 1.0, 2.0, 0.0),
         ],
         ids=[
             "deep-downward",
             "at-background",
             "moderate-downward",
             "at-mle",
-            "upward-no-boundary",
+            "upward-boundary",
         ],
     )
     def test_values(self, n_obs, mu_test, expected_mu_hat, expected_q):
         """Test QMu values across multiple scenarios.
 
-        No boundary — always returns the raw profile likelihood ratio.
+        Boundary: q=0 when mu_hat > mu_test.
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
@@ -123,29 +124,29 @@ class TestQMu:
 
 
 class TestTMu:
-    """Tests for TMu signed test statistic."""
+    """Tests for TMu test statistic (Eq. 8, -2 ln λ(μ))."""
 
     @pytest.mark.parametrize(
         ("n_obs", "mu_test", "expected_mu_hat", "expected_t"),
         [
-            (3.0, 1.0, -0.2, -14.3434),
-            (5.0, 1.0, 0.0, -9.0139),
-            (10.0, 1.0, 0.5, -1.8907),
+            (3.0, 1.0, -0.2, 14.3434),
+            (5.0, 1.0, 0.0, 9.0139),
+            (10.0, 1.0, 0.5, 1.8907),
             (15.0, 1.0, 1.0, 0.0),
             (25.0, 1.0, 2.0, 5.5413),
         ],
         ids=[
-            "deep-downward-negative",
-            "at-background-negative",
-            "moderate-downward-negative",
-            "at-mle-zero",
-            "upward-positive",
+            "deep-downward",
+            "at-background",
+            "moderate-downward",
+            "at-mle",
+            "upward",
         ],
     )
     def test_values(self, n_obs, mu_test, expected_mu_hat, expected_t):
         """Test TMu values across multiple scenarios.
 
-        Signed: t = sign(mu_hat - mu_test) * q_mu.
+        No boundary: t = -2 ln λ(μ).
         """
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
@@ -312,11 +313,11 @@ class TestCowanTestStatisticGeneral:
         [
             # Asimov at mu=0 → n=5. Testing at mu=1:
             # q_raw = 2*(15 - 5 - 5*ln(3)) = 9.0139
-            # QTilde/QMu: q_asimov = 9.0139 (mu_hat=0 < mu_test=1)
-            # TMu: t_asimov = sign(0-1)*9.0139 = -9.0139
+            # QTilde/QMu: q_asimov = 9.0139 (mu_hat=0 ≤ mu_test=1)
+            # TMu: t_asimov = -2 ln λ(1) = 9.0139
             (QTilde, 9.0139),
             (QMu, 9.0139),
-            (TMu, -9.0139),
+            (TMu, 9.0139),
         ],
     )
     def test_predict_fn_default_mu_asimov(self, TestStatClass, expected_q_asimov):

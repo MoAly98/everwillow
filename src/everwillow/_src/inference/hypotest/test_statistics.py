@@ -210,20 +210,26 @@ class CowanTestStatistic(TestStatistic):
 
 
 class QTilde(CowanTestStatistic):
-    r"""Profile likelihood ratio with boundary handling for upper limits.
+    r"""Modified profile likelihood ratio for upper limits (Eq. 16).
 
     The test statistic is:
 
     .. math::
 
         \tilde{q}_\mu = \begin{cases}
-            -2 \ln(L(\mu)/L(\hat{\mu})) & \text{if } \hat{\mu} \leq \mu \\
+            -2 \ln \frac{L(\mu, \hat{\hat{\theta}}(\mu))}{L(0, \hat{\hat{\theta}}(0))}
+                & \text{if } \hat{\mu} < 0 \\
+            -2 \ln \frac{L(\mu, \hat{\hat{\theta}}(\mu))}{L(\hat{\mu}, \hat{\theta})}
+                & \text{if } 0 \leq \hat{\mu} \leq \mu \\
             0 & \text{if } \hat{\mu} > \mu
         \end{cases}
 
-    The boundary at :math:`\hat{\mu} > \mu` protects against excluding signal when there's
-    an upward fluctuation. This is the standard test statistic for CLs
-    upper limit calculations.
+    where :math:`\hat{\hat{\theta}}(\mu)` is the conditional MLE of the
+    nuisance parameters given :math:`\mu`, and :math:`\hat{\mu}, \hat{\theta}`
+    are the unconditional MLEs. The boundary at :math:`\hat{\mu} > \mu`
+    protects against excluding signal when there is an upward fluctuation.
+
+    This is the standard test statistic for CLs upper limit calculations.
     """
 
     def _compute_q(
@@ -241,13 +247,74 @@ class QTilde(CowanTestStatistic):
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
-        # Constrained fit (POI fixed at test value)
+        # Constrained fit at mu_test: L(μ, θ̂̂(μ))
+        fixed_mu: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
+        fit_constrained = constrained_fit(
+            nll_fn, params, observation, fixed_mu, **fit_kwargs
+        )
+
+        # Constrained fit at μ=0: L(0, θ̂̂(0)) — denominator when μ̂ < 0
+        # Both branches are always evaluated (JAX tracing); jnp.where selects.
+        fixed_zero: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
+        fit_zero = constrained_fit(
+            nll_fn, params, observation, fixed_zero, **fit_kwargs
+        )
+
+        # Eq. 16: denominator is L(0, θ̂̂(0)) when μ̂ < 0, else L(μ̂, θ̂)
+        nll_denom = jnp.where(mu_hat < 0.0, fit_zero.nll, fit_free.nll)
+        delta_nll = fit_constrained.nll - nll_denom
+        q_raw = 2.0 * delta_nll
+
+        # Boundary: q = 0 if μ̂ > μ (upward fluctuation)
+        q = jnp.where(mu_hat <= poi_test, q_raw, 0.0)
+        q = jnp.maximum(q, 0.0)
+
+        extras = {
+            "fit_constrained": fit_constrained,
+            "fit_free": fit_free,
+            "fit_zero": fit_zero,
+            "mu_hat": mu_hat,
+        }
+
+        return q, extras
+
+
+class QMu(CowanTestStatistic):
+    r"""Profile likelihood ratio for upper limits (Eq. 14).
+
+    The test statistic is:
+
+    .. math::
+
+        q_\mu = \begin{cases}
+            -2 \ln \lambda(\mu) & \text{if } \hat{\mu} \leq \mu \\
+            0 & \text{if } \hat{\mu} > \mu
+        \end{cases}
+
+    where :math:`\lambda(\mu) = L(\mu, \hat{\hat{\theta}}(\mu)) / L(\hat{\mu}, \hat{\theta})`
+    is the profile likelihood ratio. The boundary at :math:`\hat{\mu} > \mu`
+    protects against excluding signal when there is an upward fluctuation.
+    """
+
+    def _compute_q(
+        self,
+        nll_fn: tp.Callable[[PyTree, PyTree], float],
+        params: sl.State,
+        observation: PyTree,
+        poi_key: sl.K,
+        poi_test: float,
+        **fit_kwargs: tp.Any,
+    ) -> tuple[Array, dict[str, tp.Any]]:
+        """Compute q_μ for a single observation."""
+        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
+        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
+        mu_hat = fitted_state[poi_key]
+
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
         fit_constrained = constrained_fit(
             nll_fn, params, observation, fixed, **fit_kwargs
         )
 
-        # Profile likelihood ratio
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
 
@@ -264,60 +331,20 @@ class QTilde(CowanTestStatistic):
         return q, extras
 
 
-class QMu(CowanTestStatistic):
-    r"""Profile likelihood ratio without boundary handling.
-
-    The test statistic is:
-
-    .. math::
-
-        q_\mu = -2 \ln(L(\mu)/L(\hat{\mu}))
-
-    No boundary is applied. Use for general hypothesis testing.
-    """
-
-    def _compute_q(
-        self,
-        nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
-        observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
-        **fit_kwargs: tp.Any,
-    ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute q_μ for a single observation."""
-        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
-        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
-
-        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(
-            nll_fn, params, observation, fixed, **fit_kwargs
-        )
-
-        delta_nll = fit_constrained.nll - fit_free.nll
-        q = 2.0 * delta_nll
-
-        extras = {
-            "fit_constrained": fit_constrained,
-            "fit_free": fit_free,
-            "mu_hat": fitted_state[poi_key],
-        }
-
-        return q, extras
-
-
 class Q0(CowanTestStatistic):
-    r"""Discovery test statistic for testing :math:`\mu = 0`.
+    r"""Discovery test statistic for testing :math:`\mu = 0` (Eq. 12).
 
     The test statistic is:
 
     .. math::
 
         q_0 = \begin{cases}
-            -2 \ln(L(0)/L(\hat{\mu})) & \text{if } \hat{\mu} \geq 0 \\
+            -2 \ln \lambda(0) & \text{if } \hat{\mu} \geq 0 \\
             0 & \text{if } \hat{\mu} < 0
         \end{cases}
 
+    where :math:`\lambda(0) = L(0, \hat{\hat{\theta}}(0)) / L(\hat{\mu}, \hat{\theta})`
+    is the profile likelihood ratio evaluated at :math:`\mu = 0`.
     The boundary at :math:`\hat{\mu} < 0` prevents "discovery" of negative signal.
 
     Attributes:
@@ -393,15 +420,17 @@ class Q0(CowanTestStatistic):
 
 
 class TMu(CowanTestStatistic):
-    r"""Signed test statistic for two-sided confidence intervals.
+    r"""Profile likelihood ratio for two-sided confidence intervals (Eq. 8).
 
     The test statistic is:
 
     .. math::
 
-        t_\mu = \text{sign}(\hat{\mu} - \mu) \times q_\mu
+        t_\mu = -2 \ln \lambda(\mu)
 
-    where :math:`q_\mu = -2 \ln(L(\mu)/L(\hat{\mu}))`.
+    where :math:`\lambda(\mu) = L(\mu, \hat{\hat{\theta}}(\mu)) / L(\hat{\mu}, \hat{\theta})`
+    is the profile likelihood ratio. No boundary is applied; :math:`t_\mu` can
+    take any non-negative value regardless of :math:`\hat{\mu}`.
     """
 
     def _compute_q(
@@ -424,8 +453,7 @@ class TMu(CowanTestStatistic):
         )
 
         delta_nll = fit_constrained.nll - fit_free.nll
-        q = 2.0 * delta_nll
-        t = jnp.sign(mu_hat - poi_test) * q
+        t = 2.0 * delta_nll
 
         extras = {
             "fit_constrained": fit_constrained,

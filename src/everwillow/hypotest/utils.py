@@ -8,4 +8,10 @@ from everwillow._src.inference.hypotest.utils import (
 )
 from everwillow._src.inference.hypotest.utils import significance as significance
 
-__all__ = ["cl_s", "constrained_fit", "make_asimov", "sigma_from_asimov", "significance"]
+__all__ = [
+    "cl_s",
+    "constrained_fit",
+    "make_asimov",
+    "sigma_from_asimov",
+    "significance",
+]

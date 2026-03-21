@@ -1,6 +1,8 @@
 """Distributions for converting test statistics to p-values."""
 
-from everwillow._src.inference.hypotest.distributions import Distribution as Distribution
+from everwillow._src.inference.hypotest.distributions import (
+    Distribution as Distribution,
+)
 from everwillow._src.inference.hypotest.distributions import (
     EmpiricalDistribution as EmpiricalDistribution,
 )

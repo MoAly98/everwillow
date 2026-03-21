@@ -28,10 +28,10 @@ from flax import nnx
 
 import everwillow as ew
 import everwillow.statelib as sl
-from everwillow.inference.hypotest import HypoTestCalculator, QTilde, QTildeAsymptotic
-from everwillow.inference.hypotest.upper_limit import expected_upper_limit
-from everwillow.inference.uncertainty import correlation_matrix, uncertainties
+from everwillow.hypotest import HypoTestCalculator, QTilde, QTildeAsymptotic
+from everwillow.hypotest.upper_limit import expected_upper_limit
 from everwillow.parameters.transforms import MinuitTransform
+from everwillow.uncertainty import correlation_matrix, uncertainties
 
 jax.config.update("jax_enable_x64", True)
 

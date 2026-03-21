@@ -1,5 +1,7 @@
 """Compare ifit convergence across pyhs3, pyhf, and evermore models."""
 
+from __future__ import annotations
+
 from functools import partial
 
 import evermore as evm
@@ -15,7 +17,7 @@ from rich.console import Console
 
 import everwillow as ew
 import everwillow.statelib as sl
-from everwillow.inference import HistoryCallback
+from everwillow import HistoryCallback
 
 jax.config.update("jax_enable_x64", True)
 

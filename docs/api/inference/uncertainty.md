@@ -1,8 +1,7 @@
 # Uncertainties
 
 ```{eval-rst}
-.. automodule:: everwillow.inference.uncertainty
+.. automodule:: everwillow.uncertainty
    :members:
-   :undoc-members:
    :show-inheritance:
 ```

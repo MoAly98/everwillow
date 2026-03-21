@@ -5,5 +5,6 @@
    :maxdepth: 1
 
    inference/fitting
+   inference/hypotest
    inference/uncertainty
 ```

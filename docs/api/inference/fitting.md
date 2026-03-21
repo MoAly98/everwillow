@@ -1,8 +1,7 @@
 # Fitting
 
 ```{eval-rst}
-.. automodule:: everwillow.inference.fitting
+.. automodule:: everwillow.fitting
    :members:
-   :undoc-members:
    :show-inheritance:
 ```

@@ -18,8 +18,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PyTree
 
-import everwillow.statelib as sl
-from everwillow.statelib import V
+import everwillow._src.statelib as sl
+from everwillow._src.statelib import V
 
 
 def hessian_matrix(

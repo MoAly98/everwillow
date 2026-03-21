@@ -17,11 +17,14 @@ import typing as tp
 import equinox as eqx
 from jaxtyping import Array, PyTree
 
-import everwillow.statelib as sl
-from everwillow.inference.hypotest._utils import cl_s
-from everwillow.inference.hypotest.distributions import Distribution, QTildeAsymptotic
-from everwillow.inference.hypotest.results import ExpectedBands, HypoTestResult
-from everwillow.inference.hypotest.test_statistics import QTilde, TestStatistic
+import everwillow._src.statelib as sl
+from everwillow._src.inference.hypotest.distributions import (
+    Distribution,
+    QTildeAsymptotic,
+)
+from everwillow._src.inference.hypotest.results import ExpectedBands, HypoTestResult
+from everwillow._src.inference.hypotest.test_statistics import QTilde, TestStatistic
+from everwillow._src.inference.hypotest.utils import cl_s
 
 __all__ = ["AsymptoticCalculator", "HypoTestCalculator"]
 

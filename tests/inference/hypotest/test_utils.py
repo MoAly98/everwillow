@@ -6,9 +6,8 @@ import jax.numpy as jnp
 import pytest
 
 import everwillow.statelib as sl
-from everwillow.inference.hypotest import (
-    QMu,
-    QTilde,
+from everwillow.hypotest.test_statistics import QMu, QTilde
+from everwillow.hypotest.utils import (
     cl_s,
     make_asimov,
     sigma_from_asimov,

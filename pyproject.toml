@@ -49,7 +49,7 @@ docs = [
     "sphinx-togglebutton",
     "sphinx-copybutton",
     "sphinx-autodoc-typehints",
-    "myst-nb",
+    "myst-nb>=1.4",
     "sphinxcontrib-mermaid",
 ]
 examples = [

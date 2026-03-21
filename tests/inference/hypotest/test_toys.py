@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import pytest
 
-from everwillow.inference.hypotest import (
-    QTilde,
-    SimpleEmpiricalDistribution,
-    ToyGenerator,
-    ToyResult,
-)
-from everwillow.inference.hypotest import (
+from everwillow.hypotest.distributions import SimpleEmpiricalDistribution
+from everwillow.hypotest.results import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
 )
+from everwillow.hypotest.results import ToyResult
+from everwillow.hypotest.test_statistics import QTilde
+from everwillow.hypotest.toys import ToyGenerator
 
 from ._counting_model import (
     create_observation,
@@ -168,6 +168,49 @@ class TestToyGenerator:
 
         assert not jnp.allclose(toys1.q_alt, toys2.q_alt)
         assert not jnp.allclose(toys1.q_null, toys2.q_null)
+
+    @pytest.mark.parametrize(
+        ("map_fn_id", "map_fn"),
+        [
+            ("lax.map", lambda fn: partial(jax.lax.map, fn)),
+            (
+                "python-loop",
+                lambda fn: lambda keys: jnp.stack([fn(k) for k in keys]),
+            ),
+        ],
+    )
+    def test_custom_map_fn(self, map_fn_id, map_fn):
+        """Custom map_fn produces same results as default jax.vmap."""
+        params = create_params(mu_init=1.0)
+        observed = create_observation(15.0)
+        key = jax.random.key(42)
+
+        gen_default = ToyGenerator(test_statistic=QTilde(), ntoys=20)
+        gen_custom = ToyGenerator(test_statistic=QTilde(), ntoys=20, map_fn=map_fn)
+
+        toys_default = gen_default.generate(
+            poisson_nll,
+            params,
+            observed,
+            ("mu",),
+            poi_test=1.0,
+            poi_alt=0.0,
+            key=key,
+            predict_fn=predict_fn,
+        )
+        toys_custom = gen_custom.generate(
+            poisson_nll,
+            params,
+            observed,
+            ("mu",),
+            poi_test=1.0,
+            poi_alt=0.0,
+            key=key,
+            predict_fn=predict_fn,
+        )
+
+        assert jnp.allclose(toys_default.q_null, toys_custom.q_null, atol=1e-4)
+        assert jnp.allclose(toys_default.q_alt, toys_custom.q_alt, atol=1e-4)
 
 
 class TestToyGeneratorPoissonSampler:

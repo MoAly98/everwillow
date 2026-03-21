@@ -21,13 +21,14 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, PyTree
 
-import everwillow as ew
-import everwillow.statelib as sl
-from everwillow.inference.hypotest._utils import constrained_fit, make_asimov
-from everwillow.inference.hypotest.results import TestStatResult
+import everwillow._src.statelib as sl
+from everwillow._src.inference.fitting import fit
+from everwillow._src.inference.hypotest.results import TestStatResult
+from everwillow._src.inference.hypotest.utils import constrained_fit, make_asimov
 
 __all__ = [
     "Q0",
+    "CowanTestStatistic",
     "QMu",
     "QTilde",
     "TMu",
@@ -106,17 +107,18 @@ class TestStatistic(eqx.Module):
 
 
 class CowanTestStatistic(TestStatistic):
-    """
-    This is a subclass of TestStatistic that implements the Cowan test statistics.
-    There is five of these:
-        1. TMu: used for two-sided confidence intervals
-        2. TMuTilde: used for confidence intervals with a positive signal (feldman-cousins)
-        3. Q0: used for discovery tests (rejecting the mu = 0 hypothesis)
-        4. QMu: used for exclusion of a non-zero signal hypothesis
-        5. QMuTilde: used for exclusion of a non-zero signal hypothesis with a positive signal
+    r"""Cowan test statistics with Asimov-based variance estimation.
 
-    The subclass is specifically designed to extend the abstract class with methods to efficiently
-    compute the variance of :math:`\\hat{\\mu}` using the asimov dataset, as described in the Cowan paper.
+    There are five Cowan test statistics:
+
+    1. TMu: used for two-sided confidence intervals
+    2. TMuTilde: used for confidence intervals with a positive signal (Feldman-Cousins)
+    3. Q0: used for discovery tests (rejecting the :math:`\mu = 0` hypothesis)
+    4. QMu: used for exclusion of a non-zero signal hypothesis
+    5. QMuTilde: used for exclusion of a non-zero signal hypothesis with a positive signal
+
+    This subclass extends ``TestStatistic`` with methods to efficiently
+    compute the variance of :math:`\hat{\mu}` using the Asimov dataset, as described in the Cowan paper.
 
     Asimov data can be provided in two ways:
 
@@ -208,13 +210,18 @@ class CowanTestStatistic(TestStatistic):
 
 
 class QTilde(CowanTestStatistic):
-    """Profile likelihood ratio with boundary handling for upper limits.
+    r"""Profile likelihood ratio with boundary handling for upper limits.
 
     The test statistic is:
-        q̃_μ = -2 ln(L(μ)/L(μ̂)) if μ̂ ≤ μ
-             = 0                 if μ̂ > μ
 
-    The boundary at μ̂ > μ protects against excluding signal when there's
+    .. math::
+
+        \tilde{q}_\mu = \begin{cases}
+            -2 \ln(L(\mu)/L(\hat{\mu})) & \text{if } \hat{\mu} \leq \mu \\
+            0 & \text{if } \hat{\mu} > \mu
+        \end{cases}
+
+    The boundary at :math:`\hat{\mu} > \mu` protects against excluding signal when there's
     an upward fluctuation. This is the standard test statistic for CLs
     upper limit calculations.
     """
@@ -230,7 +237,7 @@ class QTilde(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q̃ for a single observation."""
         # Free fit (unconditional MLE)
-        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
@@ -258,10 +265,13 @@ class QTilde(CowanTestStatistic):
 
 
 class QMu(CowanTestStatistic):
-    """Profile likelihood ratio without boundary handling.
+    r"""Profile likelihood ratio without boundary handling.
 
     The test statistic is:
-        q_μ = -2 ln(L(μ)/L(μ̂))
+
+    .. math::
+
+        q_\mu = -2 \ln(L(\mu)/L(\hat{\mu}))
 
     No boundary is applied. Use for general hypothesis testing.
     """
@@ -276,7 +286,7 @@ class QMu(CowanTestStatistic):
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_μ for a single observation."""
-        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
@@ -297,13 +307,18 @@ class QMu(CowanTestStatistic):
 
 
 class Q0(CowanTestStatistic):
-    """Discovery test statistic for testing μ = 0.
+    r"""Discovery test statistic for testing :math:`\mu = 0`.
 
     The test statistic is:
-        q_0 = -2 ln(L(0)/L(μ̂)) if μ̂ ≥ 0
-            = 0                  if μ̂ < 0
 
-    The boundary at μ̂ < 0 prevents "discovery" of negative signal.
+    .. math::
+
+        q_0 = \begin{cases}
+            -2 \ln(L(0)/L(\hat{\mu})) & \text{if } \hat{\mu} \geq 0 \\
+            0 & \text{if } \hat{\mu} < 0
+        \end{cases}
+
+    The boundary at :math:`\hat{\mu} < 0` prevents "discovery" of negative signal.
 
     Attributes:
         mu_asimov: Default POI value for Asimov generation. Defaults to 1.0
@@ -353,7 +368,7 @@ class Q0(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_0 for a single observation."""
         # poi_test will always be 0.0 due to __call__ override
-        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
@@ -378,12 +393,15 @@ class Q0(CowanTestStatistic):
 
 
 class TMu(CowanTestStatistic):
-    """Signed test statistic for two-sided confidence intervals.
+    r"""Signed test statistic for two-sided confidence intervals.
 
     The test statistic is:
-        t_μ = sign(μ̂ - μ) × q_μ
 
-    where q_μ = -2 ln(L(μ)/L(μ̂)).
+    .. math::
+
+        t_\mu = \text{sign}(\hat{\mu} - \mu) \times q_\mu
+
+    where :math:`q_\mu = -2 \ln(L(\mu)/L(\hat{\mu}))`.
     """
 
     def _compute_q(
@@ -396,7 +414,7 @@ class TMu(CowanTestStatistic):
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute t_μ for a single observation."""
-        fit_free = ew.fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 

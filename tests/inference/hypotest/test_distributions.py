@@ -5,19 +5,19 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 
-from everwillow.inference.hypotest import (
+from everwillow.hypotest.distributions import (
     Q0Asymptotic,
     QMuAsymptotic,
     QTildeAsymptotic,
     SimpleEmpiricalDistribution,
     TMuAsymptotic,
     TMuTildeAsymptotic,
-    ToyResult,
-    cl_s,
 )
-from everwillow.inference.hypotest import (
+from everwillow.hypotest.results import (
     TestStatResult as TSResult,  # Alias avoids pytest collection
 )
+from everwillow.hypotest.results import ToyResult
+from everwillow.hypotest.utils import cl_s
 
 # =============================================================================
 # CDF Tests
@@ -85,14 +85,6 @@ class TestCDF:
             jnp.array(q), jnp.array(mu), jnp.array(mu_prime), jnp.array(sigma)
         )
         assert float(result) == pytest.approx(expected, rel=1e-3)
-
-    def test_empirical_cdf_not_implemented(self):
-        """Empirical distributions do not have an analytic CDF."""
-        dist = SimpleEmpiricalDistribution(
-            q_alt=jnp.array([1.0]), q_null=jnp.array([1.0])
-        )
-        with pytest.raises(NotImplementedError, match="do not have an analytic CDF"):
-            dist.cdf(jnp.array(1.0), jnp.array(0.0), jnp.array(0.0), jnp.array(1.0))
 
 
 # =============================================================================
@@ -539,6 +531,25 @@ class TestExpectedPvalues:
         dist = dist_cls()
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             assert dist.expected_pvalues(result) is None
+
+    @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic])
+    def test_expected_pvalues_at_zero_poi(self, dist_cls):
+        """expected_pvalues at poi=0 must not produce NaN.
+
+        At poi=0, q_asimov=0 → sigma=0 → mu/sigma = 0/0.
+        All expected q values should be 0, giving CLs=1.0 (no exclusion power).
+        """
+        result = TSResult(
+            value=jnp.array(0.0),
+            test=jnp.array(0.0),
+            q_asimov=jnp.array(0.0),
+        )
+        dist = dist_cls()
+        bands = dist.expected_pvalues(result)
+
+        for name, val in bands.cl_s:
+            assert jnp.isfinite(val), f"CLs NaN at {name}"
+            assert float(val) == pytest.approx(1.0, abs=1e-5)
 
     def test_expected_pvalues_not_implemented_for_tmu(self, asimov_result):
         """TMuAsymptotic does not support expected_pvalues."""

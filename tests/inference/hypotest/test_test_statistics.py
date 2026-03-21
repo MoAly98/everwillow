@@ -5,8 +5,7 @@ from __future__ import annotations
 import jax
 import pytest
 
-from everwillow.inference.hypotest import Q0, QMu, QTilde, TMu
-from everwillow.inference.hypotest.test_statistics import TestStatistic
+from everwillow.hypotest.test_statistics import Q0, QMu, QTilde, TestStatistic, TMu
 
 from ._counting_model import (
     create_observation,

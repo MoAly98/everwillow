@@ -21,11 +21,11 @@ __all__ = [
 
 
 class TestStatResult(eqx.Module):
-    """Result of computing a test statistic.
+    r"""Result of computing a test statistic.
 
     Attributes:
         value: Test statistic value.
-        test: POI value being tested (μ).
+        test: POI value being tested (:math:`\mu`).
         q_asimov: Test statistic evaluated on Asimov data. None if not computed.
         extras: Arbitrary additional data (e.g., fits, mu_hat).
     """
@@ -53,18 +53,18 @@ class ToyResult(eqx.Module):
 
 
 class BandValues(eqx.Module):
-    """Scalar values at standard ±Nσ fluctuation bands.
+    r"""Scalar values at standard :math:`\pm N\sigma` fluctuation bands.
 
     Supports iteration via ``for name, value in bv``, indexing via
     ``bv["median"]``, and ``len(bv) == 5``.  ``dict(bv)`` produces a
     ``{name: value}`` mapping, and ``BandValues(**dict(bv))`` roundtrips.
 
     Attributes:
-        minus_2sigma: Value at -2σ fluctuation.
-        minus_1sigma: Value at -1σ fluctuation.
-        median: Value at median (0σ).
-        plus_1sigma: Value at +1σ fluctuation.
-        plus_2sigma: Value at +2σ fluctuation.
+        minus_2sigma: Value at :math:`-2\sigma` fluctuation.
+        minus_1sigma: Value at :math:`-1\sigma` fluctuation.
+        median: Value at median (:math:`0\sigma`).
+        plus_1sigma: Value at :math:`+1\sigma` fluctuation.
+        plus_2sigma: Value at :math:`+2\sigma` fluctuation.
     """
 
     _NAMES: tp.ClassVar[tuple[str, ...]] = (
@@ -95,17 +95,17 @@ class BandValues(eqx.Module):
 
 
 class ExpectedBands(eqx.Module):
-    """Expected quantities at standard sigma bands.
+    r"""Expected quantities at standard sigma bands.
 
     All derived quantities (CLs, significance) are eagerly computed
     at construction time so access is a simple attribute lookup.
 
     Attributes:
-        null_pvalue: p-value under null hypothesis (p_μ) at each band.
-        alt_pvalue: p-value under alternative hypothesis (CL_b) at each band.
-        cl_s: CLs = pnull/palt at each band.
-        null_sig: Null significance Φ⁻¹(1 - pnull) at each band.
-        alt_sig: Alternative significance Φ⁻¹(1 - palt) at each band.
+        null_pvalue: p-value under null hypothesis (:math:`p_\mu`) at each band.
+        alt_pvalue: p-value under alternative hypothesis (:math:`\text{CL}_b`) at each band.
+        cl_s: :math:`\text{CL}_s = p_\text{null}/p_\text{alt}` at each band.
+        null_sig: Null significance :math:`\Phi^{-1}(1 - p_\text{null})` at each band.
+        alt_sig: Alternative significance :math:`\Phi^{-1}(1 - p_\text{alt})` at each band.
     """
 
     null_pvalue: BandValues

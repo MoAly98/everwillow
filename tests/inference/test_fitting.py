@@ -13,7 +13,11 @@ from jaxtyping import PyTree
 
 import everwillow as ew
 import everwillow.statelib as sl
-from everwillow.inference import FitResult
+from everwillow._src.inference.fitting import (
+    FitResult,  # noqa: PLC2701
+    _make_progress_context,  # noqa: PLC2701
+    _ProgressUpdater,  # noqa: PLC2701
+)
 from everwillow.parameters.transforms import (
     MinuitTransform,
     OneSidedLogTransform,
@@ -779,8 +783,6 @@ class TestProgressUpdater:
 
     def test_update_sets_progress_and_postfix(self, mock_pbar):
         """update() should set pbar.n and postfix with NLL."""
-        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
-
         updater = _ProgressUpdater(mock_pbar)
         updater.update(step=5, nll_value=1.234)
 
@@ -790,8 +792,6 @@ class TestProgressUpdater:
 
     def test_finalize_sets_total_to_actual_steps(self, mock_pbar):
         """finalize() should adjust total to final_step, not max_steps."""
-        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
-
         mock_pbar.total = 100  # max_steps was 100
         updater = _ProgressUpdater(mock_pbar)
         updater.finalize(final_step=25, nll_value=0.5)
@@ -801,8 +801,6 @@ class TestProgressUpdater:
 
     def test_finalize_sets_final_nll_in_postfix(self, mock_pbar):
         """finalize() should show final NLL value."""
-        from everwillow.inference.fitting import _ProgressUpdater  # noqa: PLC2701
-
         updater = _ProgressUpdater(mock_pbar)
         updater.finalize(final_step=10, nll_value=0.001)
 
@@ -820,25 +818,16 @@ class TestMakeProgressContext:
 
     def test_yields_updater_when_enabled(self):
         """Should yield _ProgressUpdater when enabled=True."""
-        from everwillow.inference.fitting import (
-            _make_progress_context,  # noqa: PLC2701
-            _ProgressUpdater,  # noqa: PLC2701
-        )
-
         with _make_progress_context(enabled=True, max_steps=100) as updater:
             assert isinstance(updater, _ProgressUpdater)
 
     def test_yields_none_when_disabled(self):
         """Should yield None when enabled=False."""
-        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
-
         with _make_progress_context(enabled=False, max_steps=100) as updater:
             assert updater is None
 
     def test_closes_progress_bar_on_exit(self):
         """Context manager should close pbar on exit."""
-        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
-
         # We can't easily check if pbar is closed without mocking tqdm,
         # but we can verify the context manager exits cleanly
         with _make_progress_context(enabled=True, max_steps=10) as updater:
@@ -847,7 +836,6 @@ class TestMakeProgressContext:
 
     def test_closes_progress_bar_on_exception(self):
         """Context manager should close pbar even if exception raised."""
-        from everwillow.inference.fitting import _make_progress_context  # noqa: PLC2701
 
         def raise_in_context():
             with _make_progress_context(enabled=True, max_steps=10):
@@ -1014,7 +1002,7 @@ class TestIminimize:
         mock_updater = MagicMock()
 
         with patch(
-            "everwillow.inference.fitting._make_progress_context"
+            "everwillow._src.inference.fitting._make_progress_context"
         ) as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
@@ -1035,7 +1023,7 @@ class TestIminimize:
         mock_updater = MagicMock()
 
         with patch(
-            "everwillow.inference.fitting._make_progress_context"
+            "everwillow._src.inference.fitting._make_progress_context"
         ) as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
@@ -1056,7 +1044,7 @@ class TestIminimize:
         mock_updater = MagicMock()
 
         with patch(
-            "everwillow.inference.fitting._make_progress_context"
+            "everwillow._src.inference.fitting._make_progress_context"
         ) as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
@@ -1230,7 +1218,7 @@ class TestArgumentForwarding:
         def nll(params, observation):
             return (params["x"] - observation["target"]) ** 2
 
-        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+        with patch("everwillow._src.inference.fitting.optx.minimise") as mock_minimise:
             mock_solution = MagicMock()
             mock_solution.value = sl.State.from_pytree({"x": 1.0})
             mock_solution.state.f_info.f = jnp.array(0.0)
@@ -1254,7 +1242,7 @@ class TestArgumentForwarding:
         def nll(params, observation):
             return (params["x"] - observation["target"]) ** 2
 
-        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+        with patch("everwillow._src.inference.fitting.optx.minimise") as mock_minimise:
             mock_solution = MagicMock()
             mock_solution.value = sl.State.from_pytree({"x": 1.0})
             mock_solution.state.f_info.f = jnp.array(0.0)
@@ -1279,7 +1267,7 @@ class TestArgumentForwarding:
 
         custom_solver = optx.GradientDescent(learning_rate=0.1, rtol=1e-3, atol=1e-3)
 
-        with patch("everwillow.inference.fitting.optx.minimise") as mock_minimise:
+        with patch("everwillow._src.inference.fitting.optx.minimise") as mock_minimise:
             mock_solution = MagicMock()
             mock_solution.value = sl.State.from_pytree({"x": 1.0})
             mock_solution.state.f_info.f = jnp.array(0.0)
@@ -1303,7 +1291,7 @@ class TestArgumentForwarding:
             return (params["x"] - observation["target"]) ** 2
 
         with patch(
-            "everwillow.inference.fitting._make_progress_context"
+            "everwillow._src.inference.fitting._make_progress_context"
         ) as mock_context:
             mock_context.return_value.__enter__ = lambda self: None
             mock_context.return_value.__exit__ = lambda self, *args: False
@@ -1326,7 +1314,7 @@ class TestArgumentForwarding:
             return (params["x"] - observation["target"]) ** 2
 
         with patch(
-            "everwillow.inference.fitting._make_progress_context"
+            "everwillow._src.inference.fitting._make_progress_context"
         ) as mock_context:
             mock_context.return_value.__enter__ = lambda self: None
             mock_context.return_value.__exit__ = lambda self, *args: False

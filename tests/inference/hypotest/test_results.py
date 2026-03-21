@@ -5,16 +5,17 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 
-from everwillow.inference.hypotest import (
+from everwillow.hypotest.results import (
     BandValues,
     ExpectedBands,
     ExpectedLimitResult,
     HypoTestResult,
     ToyResult,
-    cl_s,
-    significance,
 )
-from everwillow.inference.hypotest.results import TestStatResult as TSResult
+from everwillow.hypotest.results import (
+    TestStatResult as TSResult,
+)
+from everwillow.hypotest.utils import cl_s, significance
 
 # =============================================================================
 # ExpectedBands Tests

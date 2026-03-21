@@ -12,10 +12,10 @@ import equinox as eqx
 import jax
 from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
-import everwillow.statelib as sl
-from everwillow.inference.hypotest._utils import constrained_fit
-from everwillow.inference.hypotest.results import ToyResult
-from everwillow.inference.hypotest.test_statistics import TestStatistic
+import everwillow._src.statelib as sl
+from everwillow._src.inference.hypotest.results import ToyResult
+from everwillow._src.inference.hypotest.test_statistics import TestStatistic
+from everwillow._src.inference.hypotest.utils import constrained_fit
 
 __all__ = ["ToyGenerator"]
 
@@ -31,6 +31,10 @@ class ToyGenerator(eqx.Module):
     Attributes:
         test_statistic: Test statistic to compute for each toy.
         ntoys: Number of toys per hypothesis. Defaults to 1000.
+        map_fn: Function that maps a scalar function over an array of keys.
+            Defaults to ``jax.vmap``. Replace with e.g.
+            ``partial(jax.lax.map, batch_size=8)`` for batched sequential
+            execution, or a Python loop for debugging.
 
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
@@ -49,6 +53,7 @@ class ToyGenerator(eqx.Module):
 
     test_statistic: TestStatistic
     ntoys: int = 1000
+    map_fn: tp.Callable = eqx.field(default=jax.vmap, static=True)
 
     def generate(
         self,
@@ -156,7 +161,7 @@ class ToyGenerator(eqx.Module):
     ) -> Array:
         """Run toys and return test statistic values.
 
-        Uses jax.vmap for parallel computation across toys.
+        Uses ``self.map_fn`` to map across toys.
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
@@ -181,8 +186,7 @@ class ToyGenerator(eqx.Module):
             )
             return result.value
 
-        # Run toys in parallel using vmap
-        return jax.vmap(single_toy)(keys)
+        return self.map_fn(single_toy)(keys)
 
     @staticmethod
     def _make_poisson_sampler(

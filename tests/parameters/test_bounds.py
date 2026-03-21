@@ -8,9 +8,9 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+import everwillow._src.statelib as sl  # noqa: PLC2701
 import everwillow.parameters.bounds as bounds
 import everwillow.parameters.transforms as transforms
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 

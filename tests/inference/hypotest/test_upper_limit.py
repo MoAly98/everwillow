@@ -10,23 +10,20 @@ import optimistix as optx
 import pytest
 
 import everwillow.statelib as sl
-from everwillow.inference.hypotest import (
-    BandValues,
-    Distribution,
-    ExpectedBands,
-    HypoTestCalculator,
-    QMuAsymptotic,
-    cl_s,
+from everwillow.hypotest.calculators import HypoTestCalculator
+from everwillow.hypotest.distributions import Distribution, QMuAsymptotic
+from everwillow.hypotest.results import BandValues, ExpectedBands
+from everwillow.hypotest.results import (
+    TestStatResult as TSResult,  # Alias avoids pytest collection
+)
+from everwillow.hypotest.test_statistics import TestStatistic
+from everwillow.hypotest.upper_limit import (
     expected_upper_limit,
-    significance,
     upper_limit,
     upper_limit_scan,
     upper_limit_toys,
 )
-from everwillow.inference.hypotest import (
-    TestStatResult as TSResult,  # Alias avoids pytest collection
-)
-from everwillow.inference.hypotest.test_statistics import TestStatistic
+from everwillow.hypotest.utils import cl_s, significance
 
 # =============================================================================
 # upper_limit Tests
@@ -403,3 +400,17 @@ class TestExpectedUpperLimitAsymptotic:
         actual = float(result.expected[band_name])
 
         assert actual == pytest.approx(expected, rel=1e-2)
+
+    def test_zero_lower_bound_handled(self, calc: HypoTestCalculator):
+        """bounds=(0.0, ...) must not produce NaN from poi=0 singularity.
+
+        Asymptotic formulas have σ = μ/√q_A, which is 0/0 at poi=0.
+        expected_pvalues must handle this gracefully.
+        Expected median limit = 1.960 (same as with bounds=(0.01, 8.0)).
+        """
+        result = expected_upper_limit(calc, bounds=(0.0, 8.0), level=self.ALPHA)
+
+        assert jnp.isfinite(result.observed)
+        for _, val in result.expected:
+            assert jnp.isfinite(val)
+        assert float(result.expected.median) == pytest.approx(1.960, rel=1e-2)

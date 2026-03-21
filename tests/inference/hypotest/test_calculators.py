@@ -7,20 +7,16 @@ from unittest import mock
 import jax.numpy as jnp
 import pytest
 
-from everwillow.inference.hypotest import (
-    AsymptoticCalculator,
-    HypoTestCalculator,
-    HypoTestResult,
-    QMu,
+from everwillow.hypotest.calculators import AsymptoticCalculator, HypoTestCalculator
+from everwillow.hypotest.distributions import (
     QMuAsymptotic,
-    QTilde,
     QTildeAsymptotic,
     SimpleEmpiricalDistribution,
     TMuAsymptotic,
 )
-from everwillow.inference.hypotest import (
-    TestStatResult as TSResult,
-)
+from everwillow.hypotest.results import HypoTestResult
+from everwillow.hypotest.results import TestStatResult as TSResult
+from everwillow.hypotest.test_statistics import QMu, QTilde
 
 from ._counting_model import (
     create_observation,

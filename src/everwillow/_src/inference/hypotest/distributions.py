@@ -16,12 +16,16 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from everwillow.inference.hypotest._utils import cl_s, sigma_from_asimov, significance
-from everwillow.inference.hypotest.results import (
+from everwillow._src.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     TestStatResult,
     ToyResult,
+)
+from everwillow._src.inference.hypotest.utils import (
+    cl_s,
+    sigma_from_asimov,
+    significance,
 )
 
 __all__ = [
@@ -114,30 +118,14 @@ class Distribution(eqx.Module):
     """Abstract base for test statistic distributions.
 
     Subclasses must implement:
-        - ``cdf``: CDF F(q | μ') with explicit σ.
         - ``null_pval``: p-value under null hypothesis (:math:`\\mu'= \\mu` where :math:`\\mu` is the hypothesis being tested).
         - ``alt_pval``: p-value under an alternative hypothesis (:math:`\\mu'=0` for exclusion, :math:`\\mu'=1` for discovery).
 
     """
 
     @abc.abstractmethod
-    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """CDF F(q | μ') with known σ.
-
-        Args:
-            q: Test statistic value.
-            mu: POI value being tested.
-            mu_prime: Assumed true POI value.
-            sigma: Standard deviation of μ̂.
-
-        Returns:
-            Cumulative distribution function value.
-        """
-        ...
-
-    @abc.abstractmethod
     def null_pval(self, result: TestStatResult) -> Array | None:
-        """p-value under the null hypothesis (μ' = μ).
+        r"""p-value under the null hypothesis (:math:`\mu' = \mu`).
 
         Args:
             result: Test statistic result.
@@ -160,7 +148,7 @@ class Distribution(eqx.Module):
         ...
 
     def null_significance(self, result: TestStatResult) -> Array | None:
-        """Significance under the null hypothesis: Z = Φ⁻¹(1 - pnull).
+        r"""Significance under the null hypothesis: :math:`Z = \Phi^{-1}(1 - p_\text{null})`.
 
         Args:
             result: Test statistic result.
@@ -174,7 +162,7 @@ class Distribution(eqx.Module):
         return -_PPF(pnull)
 
     def alt_significance(self, result: TestStatResult) -> Array | None:
-        """Significance under the alternative hypothesis: Z = Φ⁻¹(1 - palt).
+        r"""Significance under the alternative hypothesis: :math:`Z = \Phi^{-1}(1 - p_\text{alt})`.
 
         Args:
             result: Test statistic result.
@@ -209,27 +197,28 @@ class Distribution(eqx.Module):
 
 
 class TMuAsymptotic(Distribution):
-    """Asymptotic distribution for t_μ (two-sided, Eq. 38).
+    r"""Asymptotic distribution for :math:`t_\mu` (two-sided, Eq. 38).
 
-    Used with the t_μ test statistic for two-sided confidence intervals.
+    Used with the :math:`t_\mu` test statistic for two-sided confidence intervals.
 
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """F(t_μ | μ') = Φ(√t + (μ-μ')/σ) + Φ(√t - (μ-μ')/σ) - 1."""
+        r"""CDF: :math:`F(t_\mu \mid \mu') = \Phi(\sqrt{t} + \frac{\mu-\mu'}{\sigma}) + \Phi(\sqrt{t} - \frac{\mu-\mu'}{\sigma}) - 1`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         delta = (mu - mu_prime) / sigma
         return _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
 
     def null_pval(self, result: TestStatResult) -> Array:
-        """p = 2(1 - Φ(√t_μ)). No σ needed."""
+        r"""Null p-value: :math:`p = 2(1 - \Phi(\sqrt{t_\mu}))`. No :math:`\sigma` needed."""
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
         return 2.0 * (1.0 - _PHI(sqrt_q))
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 2 - Φ(√t + √q_A) - Φ(√t - √q_A).
+        r"""Alt p-value: :math:`p = 2 - \Phi(\sqrt{t} + \sqrt{q_A}) - \Phi(\sqrt{t} - \sqrt{q_A})`.
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ = (μ-μ')/σ.
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma = (\mu-\mu')/\sigma`.
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -239,16 +228,16 @@ class TMuAsymptotic(Distribution):
 
 
 class TMuTildeAsymptotic(Distribution):
-    """Asymptotic distribution for t̃_μ (two-sided with physical bound, Eq. 40/44).
+    r"""Asymptotic distribution for :math:`\tilde{t}_\mu` (two-sided with physical bound, Eq. 40/44).
 
-    Used with the t̃_μ test statistic for two-sided tests with the physical
-    constraint μ ≥ 0. The CDF has a piecewise structure with the Φ+Φ-1
-    form in both regions (Eq. 44).
+    Used with the :math:`\tilde{t}_\mu` test statistic for two-sided tests with the
+    physical constraint :math:`\mu \geq 0`. The CDF has a piecewise structure with the
+    :math:`\Phi + \Phi - 1` form in both regions (Eq. 44).
 
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """F(t̃_μ | μ') — piecewise at threshold μ²/σ²."""
+        r"""CDF: :math:`F(\tilde{t}_\mu \mid \mu')` — piecewise at threshold :math:`\mu^2/\sigma^2`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         delta = (mu - mu_prime) / sigma
         threshold = (mu / sigma) ** 2
@@ -266,11 +255,13 @@ class TMuTildeAsymptotic(Distribution):
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
     def null_pval(self, result: TestStatResult) -> Array | None:
-        """Null p-value (μ' = μ).
+        r"""Null p-value (:math:`\mu' = \mu`).
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        Standard: p = 2(1 - Φ(√t̃))
-        Boundary: p = 2 - Φ(√t̃) - Φ((t̃ + q_A)/(2√q_A))
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+
+        - Standard: :math:`p = 2(1 - \Phi(\sqrt{\tilde{t}}))`
+        - Boundary: :math:`p = 2 - \Phi(\sqrt{\tilde{t}}) - \Phi((\tilde{t} + q_A)/(2\sqrt{q_A}))`
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Null"):
             return None
@@ -285,11 +276,13 @@ class TMuTildeAsymptotic(Distribution):
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
+        r"""Alt p-value (:math:`\mu' = 0`, so :math:`(\mu-\mu')/\sigma = \sqrt{q_A}`).
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        Standard: p = 2 - Φ(√t̃ + √q_A) - Φ(√t̃ - √q_A)
-        Boundary: p = 2 - Φ(√t̃ + √q_A) - Φ((t̃ - q_A)/(2√q_A))
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+
+        - Standard: :math:`p = 2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A}) - \Phi(\sqrt{\tilde{t}} - \sqrt{q_A})`
+        - Boundary: :math:`p = 2 - \Phi(\sqrt{\tilde{t}} + \sqrt{q_A}) - \Phi((\tilde{t} - q_A)/(2\sqrt{q_A}))`
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -307,25 +300,26 @@ class TMuTildeAsymptotic(Distribution):
 
 
 class Q0Asymptotic(Distribution):
-    """Asymptotic distribution for q_0 (discovery, Eq. 49).
+    r"""Asymptotic distribution for :math:`q_0` (discovery, Eq. 49).
 
-    Used with the q_0 test statistic for discovery significance.
+    Used with the :math:`q_0` test statistic for discovery significance.
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """F(q_0 | μ') = Φ(√q_0 - μ'/σ)."""
+        r"""CDF: :math:`F(q_0 \mid \mu') = \Phi(\sqrt{q_0} - \mu'/\sigma)`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         return _PHI(sqrt_q - mu_prime / sigma)
 
     def null_pval(self, result: TestStatResult) -> Array:
-        """p = 1 - Φ(√q_0). No σ needed."""
+        r"""Null p-value: :math:`p = 1 - \Phi(\sqrt{q_0})`. No :math:`\sigma` needed."""
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
         return 1.0 - _PHI(sqrt_q)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 1 - Φ(√q_0 - √q_A).
+        r"""Alt p-value: :math:`p = 1 - \Phi(\sqrt{q_0} - \sqrt{q_A})`.
 
-        q_A = μ_asimov²/σ² (Asimov under signal), so √q_A = μ_asimov/σ.
+        :math:`q_A = \mu_\text{asimov}^2/\sigma^2` (Asimov under signal),
+        so :math:`\sqrt{q_A} = \mu_\text{asimov}/\sigma`.
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -334,14 +328,15 @@ class Q0Asymptotic(Distribution):
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
-        """Expected p-values at ±Nσ fluctuations under signal hypothesis.
+        r"""Expected p-values at :math:`\pm N\sigma` fluctuations under signal hypothesis.
 
-        q_A = μ_asimov²/σ² (Asimov under signal), so √q_A = μ_asimov/σ.
-        q = max(0, √q_A + N)². Upward fluctuations (+N) increase
+        :math:`q_A = \mu_\text{asimov}^2/\sigma^2` (Asimov under signal),
+        so :math:`\sqrt{q_A} = \mu_\text{asimov}/\sigma`.
+        :math:`q = \max(0, \sqrt{q_A} + N)^2`. Upward fluctuations (:math:`+N`) increase
         discovery significance, opposite to exclusion tests.
 
         Args:
-            result: Must contain q_asimov for √q_A.
+            result: Must contain ``q_asimov`` for :math:`\sqrt{q_A}`.
 
         Returns:
             ExpectedBands with (pnull, palt) at each sigma level,
@@ -359,26 +354,27 @@ class Q0Asymptotic(Distribution):
 
 
 class QMuAsymptotic(Distribution):
-    """Asymptotic distribution for q_μ (upper limit, Eq. 57).
+    r"""Asymptotic distribution for :math:`q_\mu` (upper limit, Eq. 57).
 
-    Used with the q_μ test statistic (no boundary handling).
+    Used with the :math:`q_\mu` test statistic (no boundary handling).
 
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """F(q_μ | μ') = Φ(√q_μ - (μ - μ')/σ)."""
+        r"""CDF: :math:`F(q_\mu \mid \mu') = \Phi(\sqrt{q_\mu} - (\mu - \mu')/\sigma)`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         return _PHI(sqrt_q - (mu - mu_prime) / sigma)
 
     def null_pval(self, result: TestStatResult) -> Array:
-        """p = 1 - Φ(√q_μ). No σ needed."""
+        r"""Null p-value: :math:`p = 1 - \Phi(\sqrt{q_\mu})`. No :math:`\sigma` needed."""
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
         return 1.0 - _PHI(sqrt_q)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """p = 1 - Φ(√q_μ - √q_A).
+        r"""Alt p-value: :math:`p = 1 - \Phi(\sqrt{q_\mu} - \sqrt{q_A})`.
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -387,15 +383,17 @@ class QMuAsymptotic(Distribution):
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
-        """Expected p-values at ±Nσ fluctuations under background-only.
+        r"""Expected p-values at :math:`\pm N\sigma` fluctuations under background-only.
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        At band N, the expected μ̂ = Nσ, giving √q = max(0, μ/σ - N).
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+        At band :math:`N`, the expected :math:`\hat{\mu} = N\sigma`, giving
+        :math:`\sqrt{q} = \max(0, \mu/\sigma - N)`.
         Synthetic TestStatResult objects are passed through the existing
         null_pval/alt_pval methods to reuse the CDF logic.
 
         Args:
-            result: Must contain q_asimov for σ extraction.
+            result: Must contain ``q_asimov`` for :math:`\sigma` extraction.
 
         Returns:
             ExpectedBands with (pnull, palt) at each sigma level,
@@ -405,7 +403,9 @@ class QMuAsymptotic(Distribution):
             return None
 
         sigma = sigma_from_asimov(result.test, result.q_asimov)
-        mu_over_sigma = result.test / sigma
+        # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
+        # Use 0 instead: all expected q become 0, giving CLs=1.0.
+        mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)
 
         def expected_q_fn(n: float) -> Array:
             return jnp.maximum(mu_over_sigma - n, 0.0) ** 2
@@ -414,15 +414,16 @@ class QMuAsymptotic(Distribution):
 
 
 class QTildeAsymptotic(Distribution):
-    """Asymptotic distribution for q̃_μ (upper limit with physical bound, Eq. 64).
+    r"""Asymptotic distribution for :math:`\tilde{q}_\mu` (upper limit with physical bound, Eq. 64).
 
-    Used with the q̃_μ test statistic for hypothesis testing with the
-    physical constraint μ ≥ 0. The CDF is piecewise at q̃ = μ²/σ² = q_asimov.
+    Used with the :math:`\tilde{q}_\mu` test statistic for hypothesis testing with the
+    physical constraint :math:`\mu \geq 0`. The CDF is piecewise at
+    :math:`\tilde{q} = \mu^2/\sigma^2 = q_\text{asimov}`.
 
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """F(q̃_μ | μ') — piecewise at threshold μ²/σ²."""
+        r"""CDF: :math:`F(\tilde{q}_\mu \mid \mu')` — piecewise at threshold :math:`\mu^2/\sigma^2`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         threshold = (mu / sigma) ** 2
 
@@ -437,12 +438,14 @@ class QTildeAsymptotic(Distribution):
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
     def null_pval(self, result: TestStatResult) -> Array | None:
-        """Null p-value (μ' = μ).
+        r"""Null p-value (:math:`\mu' = \mu`).
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        q̃ = 0: p = 1
-        Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃)
-        Boundary (q̃ > q_A): p = 1 - Φ((q̃ + q_A)/(2√q_A))
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+
+        - :math:`\tilde{q} = 0`: :math:`p = 1`
+        - Standard (:math:`0 < \tilde{q} \leq q_A`): :math:`p = 1 - \Phi(\sqrt{\tilde{q}})`
+        - Boundary (:math:`\tilde{q} > q_A`): :math:`p = 1 - \Phi((\tilde{q} + q_A)/(2\sqrt{q_A}))`
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Null"):
             return None
@@ -457,12 +460,14 @@ class QTildeAsymptotic(Distribution):
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """Alt p-value (μ' = 0, so (μ-μ')/σ = √q_A).
+        r"""Alt p-value (:math:`\mu' = 0`, so :math:`(\mu-\mu')/\sigma = \sqrt{q_A}`).
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        q̃ = 0: p = 1
-        Standard (0 < q̃ ≤ q_A): p = 1 - Φ(√q̃ - √q_A)
-        Boundary (q̃ > q_A): p = 1 - Φ((q̃ - q_A)/(2√q_A))
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+
+        - :math:`\tilde{q} = 0`: :math:`p = 1`
+        - Standard (:math:`0 < \tilde{q} \leq q_A`): :math:`p = 1 - \Phi(\sqrt{\tilde{q}} - \sqrt{q_A})`
+        - Boundary (:math:`\tilde{q} > q_A`): :math:`p = 1 - \Phi((\tilde{q} - q_A)/(2\sqrt{q_A}))`
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
@@ -477,14 +482,16 @@ class QTildeAsymptotic(Distribution):
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
-        """Expected p-values at ±Nσ fluctuations under background-only.
+        r"""Expected p-values at :math:`\pm N\sigma` fluctuations under background-only.
 
-        q_A = μ²/σ² (Asimov under μ'=0), so √q_A = μ/σ.
-        Standard (N≥0): q = max(0, μ/σ - N)².
-        Boundary (N<0): q = (μ/σ)² - 2(μ/σ)N (μ̂ < 0 region).
+        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
+        so :math:`\sqrt{q_A} = \mu/\sigma`.
+
+        - Standard (:math:`N \geq 0`): :math:`q = \max(0, \mu/\sigma - N)^2`.
+        - Boundary (:math:`N < 0`): :math:`q = (\mu/\sigma)^2 - 2(\mu/\sigma)N` (:math:`\hat{\mu} < 0` region).
 
         Args:
-            result: Must contain q_asimov for σ extraction.
+            result: Must contain ``q_asimov`` for :math:`\sigma` extraction.
 
         Returns:
             ExpectedBands with (pnull, palt) at each sigma level,
@@ -494,7 +501,9 @@ class QTildeAsymptotic(Distribution):
             return None
 
         sigma = sigma_from_asimov(result.test, result.q_asimov)
-        mu_over_sigma = result.test / sigma
+        # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
+        # Use 0 instead: all expected q become 0, giving CLs=1.0.
+        mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)
 
         def expected_q_fn(n: float) -> Array:
             standard = jnp.maximum(mu_over_sigma - n, 0.0) ** 2
@@ -540,24 +549,20 @@ class EmpiricalDistribution(Distribution):
         """
         return cls(q_null=toys.q_null, q_alt=toys.q_alt)
 
-    def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        """Not applicable for empirical distributions."""
-        raise NotImplementedError("Empirical distributions do not have an analytic CDF")
-
 
 class SimpleEmpiricalDistribution(EmpiricalDistribution):
-    """Empirical p-values via simple tail counting.
+    r"""Empirical p-values via simple tail counting.
 
-    ``pnull = fraction of q_null >= q_obs``
-    ``palt  = fraction of q_alt  >= q_obs``
+    :math:`p_\text{null} = \text{fraction of } q_\text{null} \geq q_\text{obs}`,
+    :math:`p_\text{alt} = \text{fraction of } q_\text{alt} \geq q_\text{obs}`.
     """
 
     def null_pval(self, result: TestStatResult) -> Array:
-        """Empirical p-value under tested hypothesis: fraction of q_null >= q_obs."""
+        r"""Empirical p-value under tested hypothesis: fraction of :math:`q_\text{null} \geq q_\text{obs}`."""
         return jnp.mean(self.q_null >= result.value)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        """Empirical p-value under alternative: fraction of q_alt >= q_obs.
+        r"""Empirical p-value under alternative: fraction of :math:`q_\text{alt} \geq q_\text{obs}`.
 
         Returns None if q_alt was not provided (no alternative toys generated).
         """

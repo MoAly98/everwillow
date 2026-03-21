@@ -1,4 +1,4 @@
-"""Internal utilities for hypothesis testing."""
+"""Utilities for hypothesis testing."""
 
 from __future__ import annotations
 
@@ -8,8 +8,16 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, PyTree
 
-import everwillow as ew
-import everwillow.statelib as sl
+import everwillow._src.statelib as sl
+from everwillow._src.inference.fitting import FitResult, fit
+
+__all__ = [
+    "cl_s",
+    "constrained_fit",
+    "make_asimov",
+    "sigma_from_asimov",
+    "significance",
+]
 
 
 def make_asimov(
@@ -37,9 +45,9 @@ def make_asimov(
 
 
 def sigma_from_asimov(mu: Array, q_asimov: Array, mu_asimov: float = 0.0) -> Array:
-    """Extract σ (uncertainty on μ̂) from an Asimov test statistic.
+    r"""Extract :math:`\sigma` (uncertainty on :math:`\hat{\mu}`) from an Asimov test statistic.
 
-    Uses the relation t_{μ,A} ≈ (μ - μ')²/σ² to solve for σ.
+    Uses the relation :math:`t_{\mu,A} \approx (\mu - \mu')^2/\sigma^2` to solve for :math:`\sigma`.
 
     Args:
         mu: POI value being tested.
@@ -48,13 +56,13 @@ def sigma_from_asimov(mu: Array, q_asimov: Array, mu_asimov: float = 0.0) -> Arr
             Defaults to 0.0 (background-only, for exclusion tests).
 
     Returns:
-        Estimated σ = |μ - μ_asimov| / √q_asimov.
+        Estimated :math:`\sigma = |\mu - \mu_\text{asimov}| / \sqrt{q_\text{asimov}}`.
     """
     return jnp.abs(mu - mu_asimov) / jnp.sqrt(jnp.maximum(q_asimov, 1e-10))
 
 
 def significance(p: Array) -> Array:
-    """Convert p-value to significance: Z = Φ⁻¹(1 - p).
+    r"""Convert p-value to significance: :math:`Z = \Phi^{-1}(1 - p)`.
 
     Args:
         p: p-value (scalar or array).
@@ -66,17 +74,17 @@ def significance(p: Array) -> Array:
 
 
 def cl_s(pnull: Array, palt: Array) -> Array:
-    """Compute CLs = pnull / palt.
+    r"""Compute :math:`\text{CL}_s = p_\text{null} / p_\text{alt}`.
 
-    CLs = P(q ≥ q_obs | signal+background) / P(q ≥ q_obs | background)
+    :math:`\text{CL}_s = P(q \geq q_\text{obs} \mid \text{signal+background}) / P(q \geq q_\text{obs} \mid \text{background})`
 
     The CLs method protects against excluding signal
     hypotheses when there is no sensitivity: if palt is small
     (background also finds data unlikely), CLs stays large.
 
     Args:
-        pnull: p-value under null hypothesis (μ' = μ, signal+background).
-        palt: p-value under alternative hypothesis (μ' = 0, background-only).
+        pnull: p-value under null hypothesis (:math:`\mu' = \mu`, signal+background).
+        palt: p-value under alternative hypothesis (:math:`\mu' = 0`, background-only).
 
     Returns:
         CLs value. Protected against division by zero.
@@ -90,7 +98,7 @@ def constrained_fit(
     observation: PyTree,
     fixed: sl.State,
     **fit_kwargs: tp.Any,
-) -> ew.FitResult:
+) -> FitResult:
     """Perform constrained fit, handling the case where all params are fixed.
 
     When the POI is the only parameter and it's being fixed, there are no
@@ -114,11 +122,11 @@ def constrained_fit(
         # All parameters are fixed - just evaluate NLL
         updated_params = sl.update(params, updates=fixed)
         nll_value = jnp.asarray(nll_fn(updated_params.to_pytree(), observation))
-        return ew.FitResult(
+        return FitResult(
             params=updated_params.to_pytree(),
             nll=nll_value,
             success=jnp.asarray(True),
             solver_result=None,
         )
 
-    return ew.fit(nll_fn, params, observation, fixed=fixed, **fit_kwargs)
+    return fit(nll_fn, params, observation, fixed=fixed, **fit_kwargs)

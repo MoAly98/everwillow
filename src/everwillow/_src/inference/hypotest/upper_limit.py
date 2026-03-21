@@ -32,13 +32,13 @@ import jax.numpy as jnp
 import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
-from everwillow.inference.hypotest._utils import cl_s
-from everwillow.inference.hypotest.calculators import HypoTestCalculator
-from everwillow.inference.hypotest.results import (
+from everwillow._src.inference.hypotest.calculators import HypoTestCalculator
+from everwillow._src.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     ExpectedLimitResult,
 )
+from everwillow._src.inference.hypotest.utils import cl_s
 
 __all__ = [
     "expected_upper_limit",
@@ -321,9 +321,9 @@ def expected_upper_limit(
     def _get_bands(poi: Array) -> ExpectedBands:
         result = calc.test(poi)
         bands = calc.expected(result)
-        assert bands is not None, (
-            "expected_upper_limit requires a distribution that supports expected_pvalues"
-        )
+        if bands is None:
+            msg = "Distribution does not support expected p-values"
+            raise ValueError(msg)
         return bands
 
     def _band_objective(band: str) -> tp.Callable[[float], Array]:
@@ -341,7 +341,6 @@ def expected_upper_limit(
             level,
             **solver_kwargs,
         )
-
     return ExpectedLimitResult(
         observed=observed,
         expected=BandValues(**band_limits),

@@ -13,9 +13,9 @@ import optimistix as optx
 import orbax.checkpoint as ocp
 from jaxtyping import PyTree
 
-import everwillow.parameters as ewp
-import everwillow.statelib as sl
-from everwillow.statelib import K, V
+import everwillow._src.parameters as ewp
+import everwillow._src.statelib as sl
+from everwillow._src.statelib import K, V
 
 Args: tp.TypeAlias = tuple[
     sl.State[V],  # fixed_state
@@ -23,7 +23,7 @@ Args: tp.TypeAlias = tuple[
 ]
 
 if tp.TYPE_CHECKING:
-    from everwillow.inference import Callback
+    from everwillow._src.inference.callback import Callback
 
 
 def _reconstruct_full_state(
@@ -329,9 +329,9 @@ def fit(
 
     The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
     respect to all parameters except those explicitly marked as fixed. Internally
-    the parameter pytree is converted into a :class:`~everwillow.statelib.state.State`
+    the parameter pytree is converted into a :class:`~everwillow._src.statelib.state.State`
     so that subsets of the state can be frozen using
-    :func:`everwillow.statelib.state.partition`.
+    :func:`everwillow._src.statelib.state.partition`.
 
     Parameter bounds are supported through automatic transformation to unbounded space.
 
@@ -344,7 +344,7 @@ def fit(
             (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
+        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimisation and wrapped back afterwards.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
@@ -358,7 +358,7 @@ def fit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow.statelib as sl
+        >>> import everwillow._src.statelib as sl
 
         >>> # Basic usage
         >>> def my_nll(params, observation):
@@ -381,7 +381,7 @@ def fit(
         0.5
 
         >>> # With parameter bounds
-        >>> from everwillow.parameters.transforms import MinuitTransform
+        >>> from everwillow._src.parameters.transforms import MinuitTransform
         >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
         >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
@@ -432,7 +432,7 @@ def ifit(
             (dict, array, nested containers, etc.).
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow.parameters.transforms.TransformBase`
+        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances for parameter bounds.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
@@ -452,7 +452,7 @@ def ifit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow.statelib as sl
+        >>> import everwillow._src.statelib as sl
 
         >>> # Interactive fit with progress bar
         >>> def my_nll(params, observation):

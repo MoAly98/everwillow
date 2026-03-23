@@ -24,10 +24,10 @@ from everwillow._src.statelib import V
 
 def hessian_matrix(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
 ) -> Float[Array, "n_free n_free"]:
     """Compute the Hessian matrix of the NLL at given parameters.
 
@@ -43,13 +43,8 @@ def hessian_matrix(
     Returns:
         2D JAX array of shape (n_free, n_free).
     """
-    if not isinstance(params, sl.State):
-        raise TypeError("params must be a State")
-
-    if fixed is None:
-        fixed = sl.State.from_pytree({})
-    if not isinstance(fixed, sl.State):
-        raise TypeError("fixed must be a State or None")
+    params = sl.State.from_pytree(params)
+    fixed = sl.State.from_pytree({}) if fixed is None else sl.State.from_pytree(fixed)
 
     # Split into fixed and free
     fixed_state, free_state = sl.partition(
@@ -80,10 +75,10 @@ def hessian_matrix(
 
 def covariance_matrix(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
 ) -> Float[Array, "nparams nparams"]:
     """Compute the covariance matrix (inverse Hessian) at given parameters.
 
@@ -108,10 +103,10 @@ def covariance_matrix(
 
 def correlation_matrix(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
 ) -> jax.Array:
     """Compute the correlation matrix (normalized covariance).
 
@@ -137,11 +132,11 @@ def correlation_matrix(
 
 def uncertainties(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
-) -> sl.State[V]:
+    fixed: PyTree[V | EllipsisType] | None = None,
+) -> PyTree[V]:
     """Extract parameter uncertainties as sqrt(diag(covariance)).
 
     The uncertainties are the square roots of the diagonal of the
@@ -157,8 +152,8 @@ def uncertainties(
     Returns:
         State containing uncertainty values for free parameters only.
     """
-    if fixed is None:
-        fixed = sl.State.from_pytree({})
+    params = sl.State.from_pytree(params)
+    fixed = sl.State.from_pytree({}) if fixed is None else sl.State.from_pytree(fixed)
 
     # Get covariance matrix for free parameters
     cov = covariance_matrix(nll_fn, params, observation, fixed=fixed)
@@ -176,4 +171,4 @@ def uncertainties(
 
     fixed_uncertainty = jax.tree.map(lambda _: None, fixed_state)
 
-    return sl.combine_partitions(fixed_uncertainty, free_uncertainty)
+    return sl.combine_partitions(fixed_uncertainty, free_uncertainty).to_pytree()

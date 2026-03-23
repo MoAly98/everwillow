@@ -141,20 +141,33 @@ class TestHessianMatrix:
 
         assert jnp.allclose(hess, hess.T, atol=1e-10)
 
-    def test_validates_params_type(self):
-        """Should raise TypeError if params is not a State."""
+    @pytest.mark.parametrize(
+        "params",
+        [{"x": 2.0, "y": 3.0}, sl.State.from_pytree({"x": 2.0, "y": 3.0})],
+        ids=["dict", "State"],
+    )
+    def test_accepts_params_as_dict_or_state(self, params):
+        """hessian_matrix() should accept both plain dicts and State objects."""
         nll = simple_quadratic_nll()
 
-        with pytest.raises(TypeError, match="params must be a State"):
-            hessian_matrix(nll, {"x": 2.0, "y": 3.0}, OBSERVED)  # type: ignore[arg-type]
+        hess = hessian_matrix(nll, params, OBSERVED)
 
-    def test_validates_fixed_type(self):
-        """Should raise TypeError if fixed is not State or None."""
+        assert hess.shape == (2, 2)
+
+    @pytest.mark.parametrize(
+        "fixed",
+        [{("y",): ...}, sl.State.from_pytree({("y",): ...})],
+        ids=["dict", "State"],
+    )
+    def test_accepts_fixed_as_dict_or_state(self, fixed):
+        """hessian_matrix() should accept both plain dicts and State objects for fixed."""
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
-        with pytest.raises(TypeError, match="fixed must be a State or None"):
-            hessian_matrix(nll, params, OBSERVED, fixed={"y": ...})  # type: ignore[arg-type]
+        hess = hessian_matrix(nll, params, OBSERVED, fixed=fixed)
+
+        # Only x is free, so Hessian is 1x1
+        assert hess.shape == (1, 1)
 
 
 # ============================================================================
@@ -280,17 +293,17 @@ class TestUncertainties:
         errs = uncertainties(nll, params, OBSERVED)
 
         # sigma_i = sqrt(Cov_ii) = sigma_i (see module docstring)
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
-        assert jnp.isclose(errs["y",], sigma_y, atol=1e-10)
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-10)
+        assert jnp.isclose(errs["y"], sigma_y, atol=1e-10)
 
-    def test_returns_state(self):
-        """Result should be a State object."""
+    def test_returns_pytree(self):
+        """Result should be a pytree (dict), not a State."""
         nll = simple_quadratic_nll()
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
 
         errs = uncertainties(nll, params, OBSERVED)
 
-        assert isinstance(errs, sl.State)
+        assert isinstance(errs, dict)
 
     def test_fixed_params_none_uncertainty(self):
         """Fixed parameters should appear with None uncertainty."""
@@ -301,11 +314,11 @@ class TestUncertainties:
 
         errs = uncertainties(nll, params, OBSERVED, fixed=fixed)
 
-        assert ("x",) in errs
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
+        assert "x" in errs
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-10)
         # 'y' should be in errs with value None
-        assert ("y",) in errs
-        assert errs["y",] is None
+        assert "y" in errs
+        assert errs["y"] is None
 
     def test_single_parameter(self):
         """Should work with single parameter."""
@@ -316,7 +329,7 @@ class TestUncertainties:
         params: FState = sl.State.from_pytree({"x": 5.0})
         errs = uncertainties(nll, params, {"x": 5.0})
 
-        assert jnp.isclose(errs["x",], 0.3, atol=1e-10)
+        assert jnp.isclose(errs["x"], 0.3, atol=1e-10)
 
     def test_nested_params(self):
         """Should work with nested parameter structure."""
@@ -328,7 +341,7 @@ class TestUncertainties:
         params: FState = sl.State.from_pytree({"level1": {"mu": 2.0}})
         errs = uncertainties(nll, params, {"mu": 2.0})
 
-        assert jnp.isclose(errs["level1", "mu"], sigma, atol=1e-10)
+        assert jnp.isclose(errs["level1"]["mu"], sigma, atol=1e-10)
 
 
 # ============================================================================
@@ -350,17 +363,16 @@ class TestUncertaintyIntegration:
         # Fit
         result = ew.fit(nll, initial_params, OBSERVED)
 
-        # Extract uncertainties at fitted params
-        fitted_params: FState = sl.State.from_pytree(result.params)
-        errs = uncertainties(nll, fitted_params, OBSERVED)
+        # Extract uncertainties at fitted params (pass pytree directly)
+        errs = uncertainties(nll, result.params, OBSERVED)
 
         # Check fitted values
         assert jnp.isclose(result.params["x"], 2.0, atol=1e-4)
         assert jnp.isclose(result.params["y"], 3.0, atol=1e-4)
 
         # Check uncertainties
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-4)
-        assert jnp.isclose(errs["y",], sigma_y, atol=1e-4)
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-4)
+        assert jnp.isclose(errs["y"], sigma_y, atol=1e-4)
 
     def test_covariance_and_uncertainties_consistent(self):
         """uncertainties should equal sqrt(diag(covariance))."""
@@ -372,8 +384,8 @@ class TestUncertaintyIntegration:
 
         # Manual extraction from covariance diagonal
         expected_errs = jnp.sqrt(jnp.diag(cov))
-        assert jnp.isclose(errs["x",], expected_errs[0], atol=1e-10)
-        assert jnp.isclose(errs["y",], expected_errs[1], atol=1e-10)
+        assert jnp.isclose(errs["x"], expected_errs[0], atol=1e-10)
+        assert jnp.isclose(errs["y"], expected_errs[1], atol=1e-10)
 
     def test_hessian_times_covariance_is_identity(self):
         """H @ Cov = I (by definition of covariance as inverse Hessian)."""

@@ -22,6 +22,16 @@ print(state.to_pytree())
 # {'a': 1.0, 'b': {'c': 2.0, 'd': 3.0}}
 ```
 
+The default separator is `"."`. Override it with `sep=` or use `sep=None` for tuple keys:
+
+```python
+state_tuple = sl.State.from_pytree({"a": {"b": 1.0}}, sep=None)
+print(list(state_tuple.keys()))  # [('a', 'b')]
+
+state_slash = sl.State.from_pytree({"a": {"b": 1.0}}, sep="/")
+print(list(state_slash.keys()))  # ['a/b']
+```
+
 ## Updating parameters
 
 `update()` returns a new `State` with specific values replaced  - the original is unchanged:

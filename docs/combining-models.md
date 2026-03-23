@@ -1,6 +1,6 @@
 # Combining Models
 
-A common pattern in HEP is combining independent statistical models that share a parameter of interest but use different naming conventions. Everwillow handles this with `prepare()`, which builds on statelib's `merge()` and `apply_transformations()`.
+A common pattern in HEP is combining independent statistical models that share a parameter of interest but use different naming conventions. This page walks through the full workflow: aligning parameter names, merging states, and running a joint fit.
 
 ## Setup: two independent measurements
 

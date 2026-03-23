@@ -22,7 +22,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, PyTree
 
 import everwillow._src.statelib as sl
-from everwillow._src.inference.fitting import fit
+from everwillow._src.inference.fitting import FitResult, fit
 from everwillow._src.inference.hypotest.results import TestStatResult
 from everwillow._src.inference.hypotest.utils import constrained_fit, make_asimov
 
@@ -51,7 +51,7 @@ class TestStatistic(eqx.Module):
     def __call__(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
+        params: PyTree,
         observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
@@ -70,6 +70,7 @@ class TestStatistic(eqx.Module):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
+        params = sl.State.from_pytree(params)
         q_obs, extras = self._compute_q(
             nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
         )
@@ -138,13 +139,13 @@ class CowanTestStatistic(TestStatistic):
     def __call__(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
+        params: PyTree,
         observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
         asimov_observation: PyTree | None = None,
-        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
+        predict_fn: tp.Callable[[PyTree], PyTree] | None = None,
         mu_asimov: float | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
@@ -165,6 +166,7 @@ class CowanTestStatistic(TestStatistic):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
+        params = sl.State.from_pytree(params)
         q_obs, extras = self._compute_q(
             nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
         )
@@ -192,7 +194,7 @@ class CowanTestStatistic(TestStatistic):
     @staticmethod
     def _resolve_asimov(
         asimov_observation: PyTree | None,
-        predict_fn: tp.Callable[[sl.State], PyTree] | None,
+        predict_fn: tp.Callable[[PyTree], PyTree] | None,
         params: sl.State,
         poi_key: sl.K,
         mu_asimov: float,
@@ -243,7 +245,7 @@ class QTilde(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q̃ for a single observation."""
         # Free fit (unconditional MLE)
-        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free: FitResult = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
@@ -306,7 +308,7 @@ class QMu(CowanTestStatistic):
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_μ for a single observation."""
-        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free: FitResult = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
@@ -357,13 +359,13 @@ class Q0(CowanTestStatistic):
     def __call__(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
+        params: PyTree,
         observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
         asimov_observation: PyTree | None = None,
-        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
+        predict_fn: tp.Callable[[PyTree], PyTree] | None = None,
         mu_asimov: float | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
@@ -395,7 +397,7 @@ class Q0(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_0 for a single observation."""
         # poi_test will always be 0.0 due to __call__ override
-        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free: FitResult = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 
@@ -443,7 +445,7 @@ class TMu(CowanTestStatistic):
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute t_μ for a single observation."""
-        fit_free = fit(nll_fn, params, observation, **fit_kwargs)
+        fit_free: FitResult = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
         mu_hat = fitted_state[poi_key]
 

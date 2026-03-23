@@ -249,7 +249,7 @@ class TestToyGeneratorPoissonSampler:
         Under alternative with mu=1, expected count is 15.
         Mean of many Poisson samples should be close to 15.
         """
-        params = create_params(mu_init=1.0)
+        params = create_params(mu_init=1.0).to_pytree()
         key = jax.random.key(42)
         keys = jax.random.split(key, 1000)
 
@@ -264,7 +264,7 @@ class TestToyGeneratorPoissonSampler:
 
         For Poisson distribution, variance = mean = 15.
         """
-        params = create_params(mu_init=1.0)
+        params = create_params(mu_init=1.0).to_pytree()
         key = jax.random.key(42)
         keys = jax.random.split(key, 2000)
 

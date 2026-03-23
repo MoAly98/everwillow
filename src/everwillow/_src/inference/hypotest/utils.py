@@ -21,8 +21,8 @@ __all__ = [
 
 
 def make_asimov(
-    predict_fn: tp.Callable[[sl.State], PyTree],
-    params: sl.State,
+    predict_fn: tp.Callable[[PyTree], PyTree],
+    params: PyTree,
     poi_key: sl.K,
     mu_asimov: float,
 ) -> PyTree:
@@ -32,16 +32,17 @@ def make_asimov(
     ``predict_fn`` to produce the expected observation.
 
     Args:
-        predict_fn: Function mapping parameter state to expected observation.
-        params: Parameter state (used as template).
+        predict_fn: Function mapping parameters to expected observation.
+        params: Parameter pytree (used as template).
         poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
         mu_asimov: POI value at which to generate the Asimov dataset.
 
     Returns:
         Expected observation (Asimov dataset).
     """
+    params = sl.State.from_pytree(params)
     asimov_params = sl.update(params, updates={poi_key: mu_asimov})
-    return predict_fn(asimov_params)
+    return predict_fn(asimov_params.to_pytree())
 
 
 def sigma_from_asimov(mu: Array, q_asimov: Array, mu_asimov: float = 0.0) -> Array:
@@ -94,9 +95,9 @@ def cl_s(pnull: Array, palt: Array) -> Array:
 
 def constrained_fit(
     nll_fn: tp.Callable[[PyTree, PyTree], float],
-    params: sl.State,
+    params: PyTree,
     observation: PyTree,
-    fixed: sl.State,
+    fixed: PyTree,
     **fit_kwargs: tp.Any,
 ) -> FitResult:
     """Perform constrained fit, handling the case where all params are fixed.
@@ -115,6 +116,9 @@ def constrained_fit(
     Returns:
         FitResult with fitted parameters and NLL value.
     """
+    params = sl.State.from_pytree(params)
+    fixed = sl.State.from_pytree(fixed)
+
     # Check if fixing these params leaves any free parameters
     free_keys = set(params.mapping.keys()) - set(fixed.mapping.keys())
 

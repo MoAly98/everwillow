@@ -58,15 +58,15 @@ class ToyGenerator(eqx.Module):
     def generate(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
-        params: sl.State,
+        params: PyTree,
         observation: PyTree,
         poi_key: sl.K,
         poi_test: float,
         *,
         poi_alt: float | None = None,
         key: PRNGKeyArray,
-        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree] | None = None,
-        predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
+        sample_fn: tp.Callable[[PyTree, PRNGKeyArray], PyTree] | None = None,
+        predict_fn: tp.Callable[[PyTree], PyTree] | None = None,
         **fit_kwargs: tp.Any,
     ) -> ToyResult:
         """Generate toys and return raw test statistic arrays.
@@ -95,6 +95,8 @@ class ToyGenerator(eqx.Module):
         Raises:
             ValueError: If neither sample_fn nor predict_fn is provided.
         """
+        params = sl.State.from_pytree(params)
+
         # Create default Poisson sampler if sample_fn not provided
         if sample_fn is None:
             if predict_fn is None:
@@ -155,7 +157,7 @@ class ToyGenerator(eqx.Module):
         fit_params: sl.State,
         poi_key: sl.K,
         poi_test: float,
-        sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
+        sample_fn: tp.Callable[[PyTree, PRNGKeyArray], PyTree],
         keys: PRNGKeyArray,
         fit_kwargs: dict[str, tp.Any],
     ) -> Array:
@@ -179,7 +181,7 @@ class ToyGenerator(eqx.Module):
 
         def single_toy(key: PRNGKeyArray) -> Array:
             # Generate toy observation
-            toy_observation = sample_fn(sample_params, key)
+            toy_observation = sample_fn(sample_params.to_pytree(), key)
             # Compute test statistic using toy as observation
             result = self.test_statistic(
                 nll_fn, fit_params, toy_observation, poi_key, poi_test, **fit_kwargs
@@ -190,8 +192,8 @@ class ToyGenerator(eqx.Module):
 
     @staticmethod
     def _make_poisson_sampler(
-        predict_fn: tp.Callable[[sl.State], PyTree],
-    ) -> tp.Callable[[sl.State, PRNGKeyArray], PyTree]:
+        predict_fn: tp.Callable[[PyTree], PyTree],
+    ) -> tp.Callable[[PyTree, PRNGKeyArray], PyTree]:
         """Create a Poisson sampler from a prediction function.
 
         Args:
@@ -201,8 +203,8 @@ class ToyGenerator(eqx.Module):
             Sampling function that generates Poisson-distributed observations.
         """
 
-        def sample_fn(params_state: sl.State, key: PRNGKeyArray) -> PyTree:
-            expected = predict_fn(params_state)
+        def sample_fn(params: PyTree, key: PRNGKeyArray) -> PyTree:
+            expected = predict_fn(params)
             leaves, treedef = jax.tree_util.tree_flatten(expected)
             subkeys = jax.random.split(key, len(leaves))
             keys_tree = jax.tree_util.tree_unflatten(treedef, subkeys)

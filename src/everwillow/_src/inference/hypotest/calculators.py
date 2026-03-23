@@ -51,7 +51,7 @@ class HypoTestCalculator(eqx.Module):
     """
 
     nll_fn: tp.Callable[[PyTree, PyTree], float]
-    params: sl.State
+    params: PyTree
     observation: PyTree
     poi_key: sl.K
     test_statistic: TestStatistic = eqx.field(default_factory=QTilde)
@@ -145,7 +145,7 @@ class AsymptoticCalculator(HypoTestCalculator):
             Use 1.0 for discovery tests.
     """
 
-    predict_fn: tp.Callable[[sl.State], PyTree] | None = None
+    predict_fn: tp.Callable[[PyTree], PyTree] | None = None
     mu_asimov: float = 0.0
 
     def test(

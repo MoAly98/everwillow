@@ -52,13 +52,13 @@ def create_observation(n: float) -> dict[str, float]:
     return {"n": n}
 
 
-def predict_fn(params_state: sl.State) -> dict[str, float]:
+def predict_fn(params: dict) -> dict[str, float]:
     """Prediction function for Asimov data."""
-    mu = params_state.to_pytree()["mu"]
+    mu = params["mu"]
     return {"n": mu * S + B}
 
 
-def sample_fn(params_state: sl.State, key) -> dict[str, float]:
+def sample_fn(params: dict, key) -> dict[str, float]:
     """Sample function for toy generation (Poisson sampling)."""
-    expected = predict_fn(params_state)
+    expected = predict_fn(params)
     return {"n": jax.random.poisson(key, expected["n"])}

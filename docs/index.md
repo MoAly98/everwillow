@@ -10,6 +10,8 @@ hypothesis testing with reusable utilities for managing optimization state.
 
 getting-started
 quickstart
+statelib
+combining-models
 extending-hypotest
 interoperability
 ```

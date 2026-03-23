@@ -50,6 +50,27 @@ print(result.params.to_pytree())
 # }
 ```
 
+### Fixing parameters
+
+To hold parameters constant during a fit, pass a `State` with `...` (Ellipsis) values via the `fixed` argument. For example, fix `scale` at its initial value and only fit `loc`:
+
+```python
+result_fixed = ew.fit(
+    nll_fn=neg_log_likelihood,
+    params=sl.State.from_pytree(init_params),
+    observation=data,
+    fixed=sl.State.from_pytree({"scale": ...}),
+    solver=optx.BFGS(rtol=1e-6, atol=1e-6),
+    max_steps=1_000,
+)
+
+print(result_fixed.params.to_pytree())
+# {
+#   'loc': Array(0.39995897, dtype=float64),
+#   'scale': 1.0,  # frozen at initial value
+# }
+```
+
 ### Uncertainties
 
 After fitting, extract parameter uncertainties from the inverse Hessian of the NLL:
@@ -173,9 +194,9 @@ for name, val in brazil.expected:
 
 Hypothesis testing in everwillow is built from three composable pieces:
 
-- **Test statistic** — computes a scalar from the NLL and data. `QTilde` (default) and `QMu` are one-sided for upper limits, `Q0` is for discovery, `TMu` is two-sided for intervals.
-- **Distribution** — converts the test statistic into p-values. Asymptotic distributions (`QTildeAsymptotic`, `QMuAsymptotic`, etc.) use the Cowan et al. formulas. `SimpleEmpiricalDistribution` uses toys.
-- **Calculator** — binds the model (NLL, parameters, data) and orchestrates the test. `AsymptoticCalculator` extends `HypoTestCalculator` with Asimov dataset generation via `predict_fn`.
+- **Test statistic**  - computes a scalar from the NLL and data. `QTilde` (default) and `QMu` are one-sided for upper limits, `Q0` is for discovery, `TMu` is two-sided for intervals.
+- **Distribution**  - converts the test statistic into p-values. Asymptotic distributions (`QTildeAsymptotic`, `QMuAsymptotic`, etc.) use the Cowan et al. formulas. `SimpleEmpiricalDistribution` uses toys.
+- **Calculator**  - binds the model (NLL, parameters, data) and orchestrates the test. `AsymptoticCalculator` extends `HypoTestCalculator` with Asimov dataset generation via `predict_fn`.
 
 ### Toy-based p-values
 

@@ -27,12 +27,11 @@ def test_state_behaves_like_mapping() -> None:
     assert list(state.keys()) == [("x", "y")]
 
 
-def test_from_pytree_rejects_state_input() -> None:
-    """Passing an existing State to ``from_pytree`` raises TypeError."""
+def test_from_pytree_returns_state_unchanged() -> None:
+    """Passing an existing State to ``from_pytree`` returns it as-is."""
     state = sl.State.from_pytree({"a": 1.0})
 
-    with pytest.raises(TypeError, match="already a State"):
-        sl.State.from_pytree(state)
+    assert sl.State.from_pytree(state) is state
 
 
 def test_from_pytree_with_sep_returns_string_keys() -> None:

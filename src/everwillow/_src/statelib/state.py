@@ -206,8 +206,7 @@ class State(BaseMapping[V]):
         """
 
         if isinstance(pytree, State):
-            msg = f"{pytree=} is already a State instance"
-            raise TypeError(msg)
+            return pytree
 
         # flatten the pytree with paths to build canonical keys
         path_leaves, treedef = jtu.tree_flatten_with_path(pytree, is_leaf=is_leaf)

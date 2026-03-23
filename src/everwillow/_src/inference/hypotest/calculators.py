@@ -42,7 +42,7 @@ class HypoTestCalculator(eqx.Module):
 
     Attributes:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Initial parameter state.
+        params: Initial parameter pytree.
         observation: Observed data passed to nll_fn.
         poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
         test_statistic: Test statistic to use. Defaults to QTilde.

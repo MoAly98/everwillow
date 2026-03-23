@@ -12,7 +12,6 @@ from flax import nnx
 from jaxtyping import Array, Float, PyTree
 
 import everwillow as ew
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -127,7 +126,7 @@ graphdef, dynamic, static = nnx.split(model, evm.filter.is_dynamic_parameter, ..
 # Perform the fit
 result = ew.fit(
     partial(loss, args=(graphdef, static, hists)),
-    sl.State.from_pytree(dynamic),
+    dynamic,
     observation,
 )
 

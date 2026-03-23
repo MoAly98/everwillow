@@ -27,7 +27,6 @@ import paramore as pm
 from flax import nnx
 
 import everwillow as ew
-import everwillow.statelib as sl
 from everwillow.hypotest import HypoTestCalculator, QTilde, QTildeAsymptotic
 from everwillow.hypotest.upper_limit import expected_upper_limit
 from everwillow.parameters.transforms import MinuitTransform
@@ -314,25 +313,21 @@ def main():
     print("Fitting H->gammagamma model")
     print("=" * 60)
 
-    init_state = sl.State.from_pytree(dynamic)
-
     # Add bounds to constrain parameters
-    bounds = sl.State.from_pytree(
-        {
-            ("mu", "value"): MinuitTransform(lower=0.0, upper=10.0),
-            ("lamb", "value"): MinuitTransform(lower=0.0, upper=1.0),
-            ("bkg_norm", "value"): MinuitTransform(lower=1000.0, upper=50000.0),
-            ("phoid_syst", "value"): MinuitTransform(lower=-5.0, upper=5.0),
-            ("jec_syst", "value"): MinuitTransform(lower=-5.0, upper=5.0),
-            ("nuisance_scale", "value"): MinuitTransform(lower=-5.0, upper=5.0),
-            ("nuisance_smear", "value"): MinuitTransform(lower=-5.0, upper=5.0),
-        }
-    )
+    bounds = {
+        ("mu", "value"): MinuitTransform(lower=0.0, upper=10.0),
+        ("lamb", "value"): MinuitTransform(lower=0.0, upper=1.0),
+        ("bkg_norm", "value"): MinuitTransform(lower=1000.0, upper=50000.0),
+        ("phoid_syst", "value"): MinuitTransform(lower=-5.0, upper=5.0),
+        ("jec_syst", "value"): MinuitTransform(lower=-5.0, upper=5.0),
+        ("nuisance_scale", "value"): MinuitTransform(lower=-5.0, upper=5.0),
+        ("nuisance_smear", "value"): MinuitTransform(lower=-5.0, upper=5.0),
+    }
 
     @jax.jit
     def fun():
         return ew.fit(
-            nll_fn, init_state, observation, bounds=bounds, max_steps=2000, throw=False
+            nll_fn, dynamic, observation, bounds=bounds, max_steps=2000, throw=False
         )
 
     result = fun()
@@ -343,9 +338,7 @@ def main():
     print("\nFit Results:")
     print("-" * 40)
     # Compute parameter uncertainties
-    fitted_state = sl.State.from_pytree(result.params)
-    param_uncertainties = uncertainties(nll_fn, fitted_state, observation)
-    unc_pytree = param_uncertainties.to_pytree()
+    param_uncertainties = uncertainties(nll_fn, result.params, observation)
 
     print("\nFitted Parameters:")
     print("-" * 40)
@@ -359,12 +352,12 @@ def main():
         "nuisance_smear",
     ]:
         val = float(result.params[name])
-        err = float(unc_pytree[name])
+        err = float(param_uncertainties[name])
         print(f"  {name} = {val:.4f} ± {err:.4f}")
 
     # Plot correlation matrix
-    corr = correlation_matrix(nll_fn, fitted_state, observation)
-    param_names = list(fitted_state.to_pytree().keys())
+    corr = correlation_matrix(nll_fn, result.params, observation)
+    param_names = list(result.params.keys())
 
     _fig, ax = plt.subplots(figsize=(8, 6))
     im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
@@ -434,9 +427,6 @@ def main():
     print("Computing 95% CL upper limit on mu")
     print("=" * 60)
 
-    # Use fitted nuisance parameters as starting point
-    fitted_state = sl.State.from_pytree(result.params)
-
     # Create calculator
     calc = HypoTestCalculator(test_statistic=QTilde(), distribution=QTildeAsymptotic())
 
@@ -444,7 +434,7 @@ def main():
     def calc_fn(mu_test: float):
         return calc(
             nll_fn,
-            fitted_state,
+            result.params,
             observation,
             poi_key=("mu", "value"),
             poi_test=mu_test,

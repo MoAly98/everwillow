@@ -16,7 +16,6 @@ from pyhs3_model import build_pyhs3
 from rich.console import Console
 
 import everwillow as ew
-import everwillow.statelib as sl
 from everwillow import HistoryCallback
 
 jax.config.update("jax_enable_x64", True)
@@ -33,8 +32,7 @@ def fit_pyhs3_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
         return -jnp.log(jnp.asarray(probability))
 
     history = HistoryCallback()
-    init_state = sl.State.from_pytree(initial)
-    result = ew.ifit(nll, init_state, max_steps=max_steps, callbacks=[history])
+    result = ew.ifit(nll, initial, max_steps=max_steps, callbacks=[history])
     return history, float(result.nll)
 
 
@@ -44,8 +42,7 @@ def fit_pyhf_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
     nll = pyhf_nll_fn(model, data_vector)
 
     history = HistoryCallback()
-    init_state = sl.State.from_pytree(init)
-    result = ew.ifit(nll, init_state, max_steps=max_steps, callbacks=[history])
+    result = ew.ifit(nll, init, max_steps=max_steps, callbacks=[history])
     return history, float(result.nll)
 
 
@@ -58,9 +55,8 @@ def fit_evermore_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
     args = (graphdef, static, hists, observation)
 
     history = HistoryCallback()
-    init_state = sl.State.from_pytree(dynamic)
     result = ew.ifit(
-        partial(loss, args=args), init_state, max_steps=max_steps, callbacks=[history]
+        partial(loss, args=args), dynamic, max_steps=max_steps, callbacks=[history]
     )
     return history, float(result.nll)
 

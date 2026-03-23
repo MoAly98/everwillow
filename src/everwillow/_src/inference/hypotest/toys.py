@@ -73,7 +73,7 @@ class ToyGenerator(eqx.Module):
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
-            params: Initial parameter state.
+            params: Initial parameter pytree.
             observation: Observed data (used to profile nuisance parameters).
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI (the tested hypothesis).
@@ -83,7 +83,7 @@ class ToyGenerator(eqx.Module):
                 For exclusion tests, typically 0.0. For discovery, typically 1.0.
             key: JAX PRNG key for reproducibility.
             sample_fn: Function to generate toy data. Called as
-                sample_fn(params_state, key) -> toy_observation. If None,
+                sample_fn(params, key) -> toy_observation. If None,
                 a default Poisson sampler is created using predict_fn.
             predict_fn: Function returning expected observation given parameters.
                 Used to create default Poisson sampler if sample_fn is None.

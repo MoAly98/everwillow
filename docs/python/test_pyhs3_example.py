@@ -16,7 +16,6 @@ from pytensor.graph.fg import FunctionGraph
 from pytensor.link.jax.dispatch import jax_funcify
 
 import everwillow as ew
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -164,7 +163,7 @@ def nll(params, obs):
 
 
 # Perform the fit
-result = ew.fit(nll, sl.State.from_pytree(initial), observation)
+result = ew.fit(nll, initial, observation)
 
 
 print(result.params)

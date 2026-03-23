@@ -36,7 +36,7 @@ def hessian_matrix(
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Full parameter state at which to evaluate the Hessian.
+        params: Full parameter pytree at which to evaluate the Hessian.
         observation: Observed data passed to nll_fn.
         fixed: Parameters to treat as constants (excluded from Hessian).
 
@@ -89,7 +89,7 @@ def covariance_matrix(
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Full parameter state (typically fitted values).
+        params: Full parameter pytree (typically fitted values).
         observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from covariance computation.
 
@@ -115,7 +115,7 @@ def correlation_matrix(
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Full parameter state at which to evaluate.
+        params: Full parameter pytree at which to evaluate.
         observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from correlation computation.
 
@@ -145,12 +145,12 @@ def uncertainties(
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Full parameter state (typically fitted values).
+        params: Full parameter pytree (typically fitted values).
         observation: Observed data passed to nll_fn.
         fixed: Parameters to exclude from uncertainty computation.
 
     Returns:
-        State containing uncertainty values for free parameters only.
+        Pytree containing uncertainty values for free parameters only.
     """
     params = sl.State.from_pytree(params)
     fixed = sl.State.from_pytree({}) if fixed is None else sl.State.from_pytree(fixed)

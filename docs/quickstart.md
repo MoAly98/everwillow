@@ -14,7 +14,6 @@ import jax.numpy as jnp
 import optimistix as optx
 
 import everwillow as ew
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -34,7 +33,7 @@ def neg_log_likelihood(params, observation):
 
 result = ew.fit(
     nll_fn=neg_log_likelihood,
-    params=sl.State.from_pytree(params),
+    params=init_params,
     observation=data,
     solver=optx.BFGS(rtol=1e-6, atol=1e-6),
     max_steps=1_000,
@@ -57,24 +56,22 @@ After fitting, extract parameter uncertainties from the inverse Hessian of the N
 ```python
 from everwillow.uncertainty import uncertainties, covariance_matrix, correlation_matrix
 
-fitted_params = sl.State.from_pytree(result.params)
-
 # Parameter uncertainties: σ_i = √((H⁻¹)_ii)
-unc = uncertainties(neg_log_likelihood, fitted_params, data)
-print(unc.to_pytree())
+unc = uncertainties(neg_log_likelihood, result.params, data)
+print(unc)
 # {
 #   'loc': Array(0.00040001, dtype=float64),
 #   'scale': Array(0.00028285, dtype=float64),
 # }
 
 # Full covariance matrix
-cov = covariance_matrix(neg_log_likelihood, fitted_params, data)
+cov = covariance_matrix(neg_log_likelihood, result.params, data)
 print(cov)
 # [[ 1.6001e-07,  1.2164e-16],
 #  [ 1.2164e-16,  8.0003e-08]]
 
 # Correlation matrix (normalized covariance, diagonal = 1)
-corr = correlation_matrix(neg_log_likelihood, fitted_params, data)
+corr = correlation_matrix(neg_log_likelihood, result.params, data)
 print(corr)
 # [[ 1.0000e+00,  1.0751e-09],
 #  [ 1.0751e-09,  1.0000e+00]]
@@ -88,7 +85,6 @@ The same `nll(params, observation)` interface extends to hypothesis testing. Her
 import jax
 import jax.numpy as jnp
 
-import everwillow.statelib as sl
 from everwillow.hypotest.calculators import AsymptoticCalculator
 from everwillow.hypotest.distributions import QTildeAsymptotic
 from everwillow.hypotest.test_statistics import QTilde
@@ -107,13 +103,13 @@ def nll(params, observation):
     return expected - observation["n"] * jnp.log(expected)
 
 
-def predict(params_state):
-    """Expected observation for a given parameter state (used for Asimov dataset)."""
-    mu = params_state.to_pytree()["mu"]
+def predict(params):
+    """Expected observation for given parameters (used for Asimov dataset)."""
+    mu = params["mu"]
     return {"n": mu * signal + background}
 
 
-params = sl.State.from_pytree({"mu": 1.0})
+params = {"mu": 1.0}
 observed = {"n": 12.0}
 
 # Run hypothesis test at mu=1

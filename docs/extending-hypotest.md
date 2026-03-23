@@ -34,8 +34,9 @@ class SignedQMu(TestStatistic):
         fit_free = ew.fit(nll_fn, params, observation, **kw)
         mu_hat = sl.State.from_pytree(fit_free.params)[poi_key]
 
-        fixed = sl.State.from_pytree({poi_key: poi_test})
-        fit_cond = constrained_fit(nll_fn, params, observation, fixed, **kw)
+        fit_cond = constrained_fit(
+            nll_fn, params, observation, {poi_key: poi_test}, **kw
+        )
 
         q = 2.0 * (fit_cond.nll - fit_free.nll)
         q_signed = jnp.sign(poi_test - mu_hat) * q
@@ -139,7 +140,7 @@ to the test statistic.
 
 ### Custom sampling
 
-`ToyGenerator` accepts a `sample_fn(params_state: State, key: PRNGKeyArray) -> PyTree`
+`ToyGenerator` accepts a `sample_fn(params: PyTree, key: PRNGKeyArray) -> PyTree`
 for full control over pseudo-experiment generation. The returned pytree must
 match the `observation` structure expected by `nll_fn`, since it replaces
 `observation` for each toy. The default Poisson sampler is created from
@@ -152,9 +153,9 @@ from everwillow.hypotest.test_statistics import QTilde
 from everwillow.hypotest.toys import ToyGenerator
 
 
-def sample_fn(params_state, key):
+def sample_fn(params, key):
     """Gaussian pseudo-experiments instead of Poisson."""
-    mu = params_state.to_pytree()["mu"]
+    mu = params["mu"]
     expected = mu * signal + background
     return {"n": expected + jax.random.normal(key) * jnp.sqrt(expected)}
 

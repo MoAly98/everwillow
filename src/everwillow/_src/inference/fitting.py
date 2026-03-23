@@ -44,7 +44,7 @@ def _reconstruct_full_state(
 class FitResult(eqx.Module, tp.Generic[V]):
     """Result of a fit operation."""
 
-    params: PyTree[V]  #: Fitted parameter state.
+    params: PyTree[V]  #: Fitted parameter pytree.
     nll: jax.Array  #: Negative log-likelihood at the optimum.
     success: jax.Array  #: Whether the optimisation converged.
     solver_result: PyTree  #: Raw solver result.
@@ -322,23 +322,20 @@ def fit(
     """Perform an unconditional maximum-likelihood fit.
 
     The negative log-likelihood (NLL) provided via ``nll_fn`` is minimised with
-    respect to all parameters except those explicitly marked as fixed. Internally
-    the parameter pytree is converted into a :class:`~everwillow._src.statelib.state.State`
-    so that subsets of the state can be frozen using
-    :func:`everwillow._src.statelib.state.partition`.
+    respect to all parameters except those explicitly marked as fixed.
 
     Parameter bounds are supported through automatic transformation to unbounded space.
 
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument and observation data as its second.
-        params: Initial parameter values organised as a state (e.g. mapping or
-            nested containers).
+        params: Initial parameter values as any pytree (dict, nested containers,
+            or :class:`~everwillow._src.statelib.state.State`).
         observation: Observed data passed to ``nll_fn``. Can be any pytree structure
             (dict, array, nested containers, etc.).
-        fixed: Optional state of canonicalized keys to fixed values for
+        fixed: Optional pytree of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
+        bounds: Optional pytree of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimisation and wrapped back afterwards.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
@@ -352,12 +349,11 @@ def fit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow._src.statelib as sl
 
         >>> # Basic usage
         >>> def my_nll(params, observation):
         ...     return (params["mu"] - observation["target"])**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> initial_params = {"mu": 0.0}
         >>> observed = {"target": 2.0}
         >>> result = ew.fit(my_nll, initial_params, observed)
         >>> result.params["mu"]  # Should be close to 2.0
@@ -367,16 +363,16 @@ def fit(
         ...     return (params["mu"] - observation["mu_target"]) ** 2 + (
         ...         params["sigma"] - observation["sigma_target"]
         ...     ) ** 2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
+        >>> initial_params = {"mu": 0.0, "sigma": 0.5}
         >>> observed = {"mu_target": 2.0, "sigma_target": 1.0}
-        >>> fixed = sl.State.from_pytree({("sigma",): ...})
+        >>> fixed = {("sigma",): ...}
         >>> result = ew.fit(my_nll, initial_params, observed, fixed=fixed)
         >>> result.params["sigma"]  # Remains fixed
         0.5
 
         >>> # With parameter bounds
         >>> from everwillow._src.parameters.transforms import MinuitTransform
-        >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
+        >>> bounds = {("mu",): MinuitTransform(lower=0.0, upper=5.0)}
         >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True
@@ -421,12 +417,13 @@ def ifit(
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument and observation data as its second.
-        params: Initial parameter values organised as a state.
+        params: Initial parameter values as any pytree (dict, nested containers,
+            or :class:`~everwillow._src.statelib.state.State`).
         observation: Observed data passed to ``nll_fn``. Can be any pytree structure
             (dict, array, nested containers, etc.).
-        fixed: Optional state of canonicalized keys to fixed values for
+        fixed: Optional pytree of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
-        bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
+        bounds: Optional pytree of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances for parameter bounds.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to
             :class:`optimistix.BFGS`.
@@ -446,32 +443,31 @@ def ifit(
 
     Examples:
         >>> import everwillow as ew
-        >>> import everwillow._src.statelib as sl
 
         >>> # Interactive fit with progress bar
         >>> def my_nll(params, observation):
         ...     return (params["mu"] - observation["target"])**2
-        >>> initial_params = sl.State.from_pytree({"mu": 0.0})
+        >>> initial_params = {"mu": 0.0}
         >>> observed = {"target": 2.0}
         >>> result = ew.ifit(my_nll, initial_params, observed)
 
         >>> # With custom callback to record history
         >>> history = ew.inference.HistoryCallback()
-        >>> result = ew.ifit(my_nll, initial_params, callbacks=[history])
+        >>> result = ew.ifit(my_nll, initial_params, observed, callbacks=[history])
 
         >>> # Disable progress bar
-        >>> result = ew.ifit(my_nll, initial_params, progress=False)
+        >>> result = ew.ifit(my_nll, initial_params, observed, progress=False)
 
 
     Example with Checkpointing:
         >>> import orbax.checkpoint as ocp
         >>> mngr = ocp.CheckpointManager('/tmp/my_fit')
 
-        >>> result = ew.ifit(my_nll, initial_params, max_steps=10, progress=False, checkpoint_manager=mngr)
+        >>> result = ew.ifit(my_nll, initial_params, observed, max_steps=10, progress=False, checkpoint_manager=mngr)
         >>> mngr.wait_until_finished() # checkpointing is async, so let's make sure everything is checkpointed
 
         >>> # run for another 10 steps (increase max_steps to 20); recover from latest checkpoint by reusing the `mngr`:
-        >>> result = ew.ifit(my_nll, initial_params, max_steps=20, progress=False, checkpoint_manager=mngr)
+        >>> result = ew.ifit(my_nll, initial_params, observed, max_steps=20, progress=False, checkpoint_manager=mngr)
         >>> mngr.wait_until_finished()
     """
     return _fit(

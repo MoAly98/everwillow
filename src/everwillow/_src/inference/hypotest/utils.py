@@ -28,7 +28,7 @@ def make_asimov(
 ) -> PyTree:
     """Generate an Asimov dataset at a given POI value.
 
-    Sets the POI to ``mu_asimov`` in the parameter state and calls
+    Sets the POI to ``mu_asimov`` in the parameter pytree and calls
     ``predict_fn`` to produce the expected observation.
 
     Args:
@@ -108,9 +108,9 @@ def constrained_fit(
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
-        params: Initial parameter state.
+        params: Initial parameter pytree.
         observation: Observed data passed to nll_fn.
-        fixed: State specifying which parameters to fix and their values.
+        fixed: Pytree specifying which parameters to fix and their values.
         **fit_kwargs: Additional arguments passed to fit().
 
     Returns:

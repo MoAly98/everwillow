@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import pyhf
 
 import everwillow as ew
-import everwillow.statelib as sl
 
 jax.config.update("jax_enable_x64", True)
 pyhf.set_backend("jax")
@@ -88,7 +87,7 @@ def nll(params, obs):
 
 
 # Perform the fit
-result = ew.fit(nll, sl.State.from_pytree(initial_dict), observation)
+result = ew.fit(nll, initial_dict, observation)
 
 print(result.params)
 #  {

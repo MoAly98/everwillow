@@ -61,7 +61,7 @@ class TestStatistic(eqx.Module):
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
-            params: Initial parameter state.
+            params: Initial parameter pytree.
             observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.
@@ -95,7 +95,7 @@ class TestStatistic(eqx.Module):
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
-            params: Initial parameter state.
+            params: Initial parameter pytree.
             observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest.
             poi_test: Test value for the POI.
@@ -153,7 +153,7 @@ class CowanTestStatistic(TestStatistic):
 
         Args:
             nll_fn: Negative log-likelihood function taking (params, observation).
-            params: Initial parameter state.
+            params: Initial parameter pytree.
             observation: Observed data passed to nll_fn.
             poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
             poi_test: Test value for the POI.

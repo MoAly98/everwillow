@@ -344,6 +344,14 @@ def test_combine_partitions_rejects_mismatched_origins() -> None:
 # -- Edge cases and error handling --
 
 
+def test_canonicalize_key_rejects_separator_in_segment() -> None:
+    """canonicalize_key raises ValueError when a segment contains the separator."""
+    import jax.tree_util as jtu
+
+    with pytest.raises(ValueError, match="contains the separator"):
+        sl.canonicalize_key((jtu.DictKey("a.b"),), sep=".")
+
+
 def test_canonicalize_key_rejects_unknown_key_type() -> None:
     """canonicalize_key raises TypeError for unsupported key types."""
 

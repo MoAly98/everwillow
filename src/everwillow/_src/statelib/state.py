@@ -41,11 +41,11 @@ def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> K: ...
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> K: ...
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> tuple[str, ...]: ...
 
 
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
@@ -61,6 +61,7 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
 
     Raises:
         TypeError: If ``path`` contains an unsupported key type.
+        ValueError: If a key segment contains the separator string.
 
     Examples:
         Build tuple keys that match the structure of the original pytree:
@@ -88,6 +89,14 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
             msg = f"Unrecognised key path entry: {entry}"
             raise TypeError(msg)
     if sep is not None:
+        for entry in result:
+            s = str(entry)
+            if sep in s:
+                msg = (
+                    f"Key segment {s!r} contains the separator {sep!r}. "
+                    f"Use sep=None for tuple keys, or choose a different separator."
+                )
+                raise ValueError(msg)
         return sep.join(map(str, result))
 
     return tuple(result)
@@ -239,13 +248,13 @@ class State(BaseMapping[V]):
         return self._treedefmeta
 
     @property
-    def notnone(self) -> tp.Mapping[K, V]:
+    def notnone(self) -> dict[K, V]:
         """Return a filtered view excluding keys with None values.
 
         This is useful after :func:`partition` to see only the active entries.
 
         Returns:
-            Read-only mapping containing only non-None entries.
+            Dictionary containing only non-None entries.
 
         Examples:
             >>> state = State.from_pytree({"a": 1, "b": 2})
@@ -253,9 +262,7 @@ class State(BaseMapping[V]):
             >>> left.notnone
             {('a',): 1}
         """
-        return MappingProxyType(
-            {k: v for k, v in self._mapping.items() if v is not None}
-        )
+        return {k: v for k, v in self._mapping.items() if v is not None}
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"

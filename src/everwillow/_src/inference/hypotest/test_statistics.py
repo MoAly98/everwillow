@@ -63,7 +63,7 @@ class TestStatistic(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI.
             **fit_kwargs: Additional arguments passed to fit().
 
@@ -154,7 +154,7 @@ class CowanTestStatistic(TestStatistic):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI.
             asimov_observation: Pre-computed Asimov dataset.
             predict_fn: Function to generate expected observation from parameters.

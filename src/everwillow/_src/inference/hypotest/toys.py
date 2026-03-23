@@ -39,7 +39,7 @@ class ToyGenerator(eqx.Module):
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
         >>> toys = toy_gen.generate(
-        ...     nll_fn, params, observed, ("mu",), 1.0,
+        ...     nll_fn, params, observed, "mu", 1.0,
         ...     poi_alt=0.0,
         ...     key=jax.random.key(42),
         ...     predict_fn=my_predict_fn,
@@ -48,7 +48,7 @@ class ToyGenerator(eqx.Module):
         >>> dist = SimpleEmpiricalDistribution.from_toys(toys)
         >>> # Use with HypoTestCalculator
         >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=dist)
-        >>> result = calc(nll_fn, params, observed, ("mu",), 1.0)
+        >>> result = calc(nll_fn, params, observed, "mu", 1.0)
     """
 
     test_statistic: TestStatistic
@@ -75,7 +75,7 @@ class ToyGenerator(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data (used to profile nuisance parameters).
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI (the tested hypothesis).
             poi_alt: Alternative hypothesis POI value. If provided, toys are
                 generated under both hypotheses. If None, only null (tested)

@@ -44,7 +44,7 @@ class HypoTestCalculator(eqx.Module):
         nll_fn: Negative log-likelihood function taking (params, observation).
         params: Initial parameter state.
         observation: Observed data passed to nll_fn.
-        poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+        poi_key: Canonical key for the parameter of interest, e.g. "mu".
         test_statistic: Test statistic to use. Defaults to QTilde.
         distribution: Distribution for p-value computation.
             Defaults to QTildeAsymptotic.
@@ -133,7 +133,7 @@ class AsymptoticCalculator(HypoTestCalculator):
     Example:
         >>> calc = AsymptoticCalculator(
         ...     nll_fn=nll_fn, params=params, observation=observed,
-        ...     poi_key=("mu",), predict_fn=my_predict_fn,
+        ...     poi_key="mu", predict_fn=my_predict_fn,
         ... )
         >>> result = calc.test(poi_test=1.0)
 

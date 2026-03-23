@@ -375,14 +375,14 @@ def fit(
         ...     ) ** 2
         >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
         >>> observed = {"mu_target": 2.0, "sigma_target": 1.0}
-        >>> fixed = sl.State.from_pytree({("sigma",): ...})
+        >>> fixed = sl.State.from_pytree({"sigma": ...})
         >>> result = ew.fit(my_nll, initial_params, observed, fixed=fixed)
         >>> result.params["sigma"]  # Remains fixed
         0.5
 
         >>> # With parameter bounds
         >>> from everwillow._src.parameters.transforms import MinuitTransform
-        >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
+        >>> bounds = sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)})
         >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True

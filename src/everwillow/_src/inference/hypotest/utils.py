@@ -34,7 +34,7 @@ def make_asimov(
     Args:
         predict_fn: Function mapping parameter state to expected observation.
         params: Parameter state (used as template).
-        poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+        poi_key: Canonical key for the parameter of interest, e.g. "mu".
         mu_asimov: POI value at which to generate the Asimov dataset.
 
     Returns:

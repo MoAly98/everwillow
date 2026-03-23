@@ -1,7 +1,7 @@
 """Immutable mapping helpers for working with JAX pytrees.
 
 The utilities in this module provide read-only dictionaries that keep track of
-the canonical tuple keys JAX emits when flattening nested structures.
+the canonical keys JAX emits when flattening nested structures.
 """
 
 from __future__ import annotations
@@ -48,13 +48,13 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> tuple[str, ...]: ...
 
 
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = ".") -> K:
     """Convert a JAX key path to plain Python entries.
 
     Args:
         path: Key path emitted by :func:`jax.tree_util.tree_flatten_with_path`.
-        sep: Optional separator used to join the entries into a string. When
-            ``None`` (default) the key is returned as a tuple.
+        sep: Separator used to join the entries into a string. Defaults to
+            ``"."``. When ``None`` the key is returned as a tuple.
 
     Returns:
         Canonical key representation that can be used to index a :class:`State`.
@@ -64,16 +64,14 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
         ValueError: If a key segment contains the separator string.
 
     Examples:
-        Build tuple keys that match the structure of the original pytree:
-
         >>> import jax.tree_util as jtu
         >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)))
+        'a.0'
+
+        Use ``sep=None`` for tuple keys:
+
+        >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)), sep=None)
         ('a', 0)
-
-        Produce joined string keys when ``sep`` is provided:
-
-        >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)), sep="/")
-        'a/0'
     """
     result: list[tp.Any] = []
     for entry in path:
@@ -114,7 +112,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         >>> state = State.from_pytree({"a": 1.0})
         >>> isinstance(state, BaseMapping)
         True
-        >>> state[("a",)]
+        >>> state["a"]
         1.0
     """
 
@@ -143,7 +141,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
 
         Examples:
             >>> state = State.from_pytree({"a": 1.0})
-            >>> ("a",) in state.mapping
+            >>> "a" in state.mapping
             True
         """
 
@@ -152,14 +150,14 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
 
 @jtu.register_pytree_with_keys_class
 class State(BaseMapping[V]):
-    """Container that stores flattened pytrees keyed by canonical tuples.
+    """Container that stores flattened pytrees keyed by canonical keys.
 
     The state keeps track of the pytree definition so it can be converted back
     to the original nested structure.
 
     Examples:
         >>> state = State.from_pytree({"a": {"b": 2.0}})
-        >>> state[("a", "b")]
+        >>> state["a.b"]
         2.0
         >>> state.to_pytree()
         {'a': {'b': 2.0}}
@@ -195,7 +193,7 @@ class State(BaseMapping[V]):
         pytree: PyTree[V],
         *,
         is_leaf: tp.Callable[[V], bool] | None = None,
-        sep: str | None = None,
+        sep: str | None = ".",
     ) -> State[V]:
         """Build a :class:`State` instance from an arbitrary pytree.
 
@@ -203,15 +201,16 @@ class State(BaseMapping[V]):
             pytree: Nested structure supported by :mod:`jax.tree_util`.
             is_leaf: Optional callable passed to :func:`jax.tree_util.tree_flatten_with_path`
                 to customize which nodes are treated as leaves.
-            sep: Optional separator used to join key entries when constructing
-                public keys. When ``None`` (default), keys are returned as tuples.
+            sep: Separator used to join key entries when constructing
+                public keys. Defaults to ``"."``. When ``None``, keys are
+                returned as tuples.
 
         Returns:
             New :class:`State` representing ``pytree``.
 
         Examples:
             >>> State.from_pytree({"a": [1, 2]}).mapping
-            mappingproxy({('a', 0): 1, ('a', 1): 2})
+            mappingproxy({'a.0': 1, 'a.1': 2})
         """
 
         if isinstance(pytree, State):
@@ -258,9 +257,9 @@ class State(BaseMapping[V]):
 
         Examples:
             >>> state = State.from_pytree({"a": 1, "b": 2})
-            >>> left, _ = partition(state, predicate=lambda k, _: k == ("a",))
+            >>> left, _ = partition(state, predicate=lambda k, _: k == "a")
             >>> left.notnone
-            {('a',): 1}
+            {'a': 1}
         """
         return {k: v for k, v in self._mapping.items() if v is not None}
 
@@ -367,9 +366,9 @@ def partition(
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
-        >>> dict(right.notnone)
-        {('b',): 2}
+        >>> left, right = partition(state, predicate=lambda key, _: key == "a")
+        >>> right.notnone
+        {'b': 2}
     """
 
     left_data: dict[K, V] = {}
@@ -405,8 +404,8 @@ def combine_partitions(
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
-        >>> combine_partitions(left, right)["b",]
+        >>> left, right = partition(state, predicate=lambda key, _: key == "a")
+        >>> combine_partitions(left, right)["b"]
         2
     """
     if left.treedefmeta != right.treedefmeta:
@@ -441,8 +440,8 @@ def update(
 
     Examples:
         >>> base = State.from_pytree({"a": 1, "b": 2})
-        >>> update(base, updates={("b",): 99}).to_dict()
-        {('a',): 1, ('b',): 99}
+        >>> update(base, updates={"b": 99}).to_dict()
+        {'a': 1, 'b': 99}
     """
     if not isinstance(state, State):
         msg = "Can only update State types"  # type: ignore[unreachable]

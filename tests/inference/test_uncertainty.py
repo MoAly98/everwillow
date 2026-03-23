@@ -280,8 +280,8 @@ class TestUncertainties:
         errs = uncertainties(nll, params, OBSERVED)
 
         # sigma_i = sqrt(Cov_ii) = sigma_i (see module docstring)
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
-        assert jnp.isclose(errs["y",], sigma_y, atol=1e-10)
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-10)
+        assert jnp.isclose(errs["y"], sigma_y, atol=1e-10)
 
     def test_returns_state(self):
         """Result should be a State object."""
@@ -301,11 +301,11 @@ class TestUncertainties:
 
         errs = uncertainties(nll, params, OBSERVED, fixed=fixed)
 
-        assert ("x",) in errs
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-10)
+        assert "x" in errs
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-10)
         # 'y' should be in errs with value None
-        assert ("y",) in errs
-        assert errs["y",] is None
+        assert "y" in errs
+        assert errs["y"] is None
 
     def test_single_parameter(self):
         """Should work with single parameter."""
@@ -316,7 +316,7 @@ class TestUncertainties:
         params: FState = sl.State.from_pytree({"x": 5.0})
         errs = uncertainties(nll, params, {"x": 5.0})
 
-        assert jnp.isclose(errs["x",], 0.3, atol=1e-10)
+        assert jnp.isclose(errs["x"], 0.3, atol=1e-10)
 
     def test_nested_params(self):
         """Should work with nested parameter structure."""
@@ -328,7 +328,7 @@ class TestUncertainties:
         params: FState = sl.State.from_pytree({"level1": {"mu": 2.0}})
         errs = uncertainties(nll, params, {"mu": 2.0})
 
-        assert jnp.isclose(errs["level1", "mu"], sigma, atol=1e-10)
+        assert jnp.isclose(errs["level1.mu"], sigma, atol=1e-10)
 
 
 # ============================================================================
@@ -359,8 +359,8 @@ class TestUncertaintyIntegration:
         assert jnp.isclose(result.params["y"], 3.0, atol=1e-4)
 
         # Check uncertainties
-        assert jnp.isclose(errs["x",], sigma_x, atol=1e-4)
-        assert jnp.isclose(errs["y",], sigma_y, atol=1e-4)
+        assert jnp.isclose(errs["x"], sigma_x, atol=1e-4)
+        assert jnp.isclose(errs["y"], sigma_y, atol=1e-4)
 
     def test_covariance_and_uncertainties_consistent(self):
         """uncertainties should equal sqrt(diag(covariance))."""
@@ -372,8 +372,8 @@ class TestUncertaintyIntegration:
 
         # Manual extraction from covariance diagonal
         expected_errs = jnp.sqrt(jnp.diag(cov))
-        assert jnp.isclose(errs["x",], expected_errs[0], atol=1e-10)
-        assert jnp.isclose(errs["y",], expected_errs[1], atol=1e-10)
+        assert jnp.isclose(errs["x"], expected_errs[0], atol=1e-10)
+        assert jnp.isclose(errs["y"], expected_errs[1], atol=1e-10)
 
     def test_hessian_times_covariance_is_identity(self):
         """H @ Cov = I (by definition of covariance as inverse Hessian)."""

@@ -153,7 +153,7 @@ def upper_limit_toys(
         >>> # CLs-based upper limit with toys
         >>> def cls_objective(poi, key):
         ...     result = toy_calc(
-        ...         nll_fn, params, ("mu",), poi,
+        ...         nll_fn, params, "mu", poi,
         ...         sample_fn=sample_fn, nll_factory=nll_factory, key=key
         ...     )
         ...     return result.cl_s
@@ -295,7 +295,7 @@ def expected_upper_limit(
     Example:
         >>> calc = AsymptoticCalculator(
         ...     nll_fn=nll_fn, params=params, observation=observed,
-        ...     poi_key=("mu",), predict_fn=my_predict_fn,
+        ...     poi_key="mu", predict_fn=my_predict_fn,
         ... )
         >>> result = expected_upper_limit(calc, bounds=(0, 5))
         >>> print(f"Observed: {result.observed:.3f}")

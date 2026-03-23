@@ -217,11 +217,11 @@ def _iminimize(
 
 def _fit(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
-    bounds: sl.State[ewp.TransformBase] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
+    bounds: PyTree[ewp.TransformBase] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     interactive: bool = False,
     max_steps: int = 256,
@@ -236,20 +236,14 @@ def _fit(
     This function performs shared setup (validation, partitioning, transforms)
     then dispatches to _minimize() or _iminimize() based on the `interactive` flag.
     """
-    # Validate inputs
-    if not isinstance(params, sl.State):
-        raise TypeError("params must be a State")
+    # Convert inputs to State (idempotent for existing States)
+    params = sl.State.from_pytree(params)
 
     # Normalize fixed and bounds inputs
-    if fixed is None:
-        fixed = sl.State.from_pytree({})
-    if not isinstance(fixed, sl.State):
-        raise TypeError("fixed must be a State or None")
-
-    if bounds is None:
-        bounds = sl.State.from_pytree({})
-    if not isinstance(bounds, sl.State):
-        raise TypeError("bounds must be a State or None")
+    fixed = sl.State.from_pytree({}) if fixed is None else sl.State.from_pytree(fixed)
+    bounds = (
+        sl.State.from_pytree({}) if bounds is None else sl.State.from_pytree(bounds)
+    )
 
     # Set fixed values
     updated_params = sl.update(params, updates=fixed)
@@ -316,11 +310,11 @@ def _fit(
 
 def fit(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
-    bounds: sl.State[ewp.TransformBase] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
+    bounds: PyTree[ewp.TransformBase] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     max_steps: int = 256,
     **minimise_kwargs,
@@ -402,11 +396,11 @@ def fit(
 
 def ifit(
     nll_fn: tp.Callable[[PyTree[V], PyTree], float],
-    params: sl.State[V],
+    params: PyTree[V],
     observation: PyTree,
     *,
-    fixed: sl.State[V | EllipsisType] | None = None,
-    bounds: sl.State[ewp.TransformBase] | None = None,
+    fixed: PyTree[V | EllipsisType] | None = None,
+    bounds: PyTree[ewp.TransformBase] | None = None,
     solver: optx.AbstractMinimiser | None = None,
     max_steps: int = 256,
     progress: bool = True,

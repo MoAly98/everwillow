@@ -735,42 +735,78 @@ class TestFit:
 class TestFitInternal:
     """Tests for _fit() shared logic (validation, dispatch)."""
 
-    def test_validates_params_type(self):
-        """Should raise TypeError if params is not a State."""
+    @pytest.mark.parametrize(
+        "params",
+        [{"x": 0.0}, sl.State.from_pytree({"x": 0.0})],
+        ids=["dict", "State"],
+    )
+    def test_accepts_params_as_dict_or_state(self, params):
+        """fit() should accept both plain dicts and State objects as params."""
 
         def nll(params, observation):
-            return params["x"] ** 2
+            return (params["x"] - observation["target"]) ** 2
 
-        # Pass a dict instead of State
-        with pytest.raises(TypeError, match="params must be a State"):
-            ew.fit(nll, {"x": 0.0}, {})  # type: ignore[arg-type]
+        result = ew.fit(nll, params, {"target": 2.0})
+        assert jnp.isclose(result.params["x"], 2.0, atol=1e-4)
 
-    def test_validates_fixed_type(self):
-        """Should raise TypeError if fixed is not State or None."""
-
-        def nll(params, observation):
-            return params["x"] ** 2
-
-        with pytest.raises(TypeError, match="fixed must be a State or None"):
-            ew.fit(nll, sl.State.from_pytree({"x": 0.0}), {}, fixed={"x": ...})  # type: ignore[arg-type]
-
-    def test_validates_bounds_type(self):
-        """Should raise TypeError if bounds is not State or None."""
+    @pytest.mark.parametrize(
+        "fixed",
+        [
+            {("x",): ...},
+            sl.State.from_pytree({("x",): ...}),
+        ],
+        ids=["dict", "State"],
+    )
+    def test_accepts_fixed_as_dict_or_state(self, fixed):
+        """fit() should accept both plain dicts and State objects for fixed."""
 
         def nll(params, observation):
-            return params["x"] ** 2
+            return (params["x"] - observation["tx"]) ** 2 + (
+                params["y"] - observation["ty"]
+            ) ** 2
 
-        with pytest.raises(TypeError, match="bounds must be a State or None"):
-            ew.fit(nll, sl.State.from_pytree({"x": 0.0}), {}, bounds={"x": None})  # type: ignore[arg-type]
+        result = ew.fit(
+            nll,
+            sl.State.from_pytree({"x": 5.0, "y": 0.0}),
+            {"tx": 2.0, "ty": 3.0},
+            fixed=fixed,
+        )
+        # x is fixed at 5.0 (not fitted), y is fitted to 3.0
+        assert jnp.isclose(result.params["x"], 5.0, atol=1e-10)
+        assert jnp.isclose(result.params["y"], 3.0, atol=1e-4)
 
-    def test_ifit_validates_params_type(self):
-        """ifit should also validate params type."""
+    @pytest.mark.parametrize(
+        "bounds",
+        [
+            {("x",): MinuitTransform(lower=0.0, upper=10.0)},
+            sl.State.from_pytree({("x",): MinuitTransform(lower=0.0, upper=10.0)}),
+        ],
+        ids=["dict", "State"],
+    )
+    def test_accepts_bounds_as_dict_or_state(self, bounds):
+        """fit() should accept both plain dicts and State objects for bounds."""
 
         def nll(params, observation):
-            return params["x"] ** 2
+            return (params["x"] - observation["target"]) ** 2
 
-        with pytest.raises(TypeError, match="params must be a State"):
-            ew.ifit(nll, {"x": 0.0}, {}, progress=False)  # type: ignore[arg-type]
+        result = ew.fit(
+            nll, sl.State.from_pytree({"x": 5.0}), {"target": 2.0}, bounds=bounds
+        )
+        assert 0.0 <= result.params["x"] <= 10.0
+
+    @pytest.mark.parametrize(
+        "params",
+        [{"x": 0.0}, sl.State.from_pytree({"x": 0.0})],
+        ids=["dict", "State"],
+    )
+    def test_ifit_accepts_params_as_dict_or_state(self, params):
+        """ifit() should accept both plain dicts and State objects as params."""
+
+        def nll(params, observation):
+            return (params["x"] - observation["target"]) ** 2
+
+        result = ew.ifit(nll, params, {"target": 2.0}, progress=False)
+        assert jnp.isclose(result.params["x"], 2.0, atol=1e-4)
 
 
 # ============================================================================

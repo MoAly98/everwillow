@@ -247,6 +247,16 @@ class State(BaseMapping[V]):
         return self._treedefmeta
 
     @property
+    def is_merged(self) -> bool:
+        """Whether this state was produced by :func:`merge`.
+
+        Returns:
+            ``True`` if the internal treedef is a compound tuple of its children.
+        """
+        td = self._treedefmeta.treedef
+        return td == jtu.treedef_tuple(jtu.treedef_children(td))
+
+    @property
     def notnone(self) -> dict[K, V]:
         """Return a filtered view excluding keys with None values.
 
@@ -290,16 +300,16 @@ def merge(*states: State[V]) -> State[V]:
     When states share overlapping keys, the last value wins.
 
     Args:
-        *states: Sequence of :class:`State` instances to merge (at least two).
+        *states: Sequence of :class:`State` instances to merge (at least one).
 
     Returns:
         New :class:`State` containing all key/value pairs from the inputs.
 
     Raises:
-        ValueError: If fewer than two states are provided.
+        ValueError: If no states are provided.
     """
-    if len(states) < 2:
-        msg = "merge requires at least two states"
+    if len(states) < 1:
+        msg = "merge requires at least one state"
         raise ValueError(msg)
 
     all_keys: list[K] = []
@@ -331,12 +341,11 @@ def split(state: State[V]) -> tuple[State[V], ...]:
         ValueError: If ``state`` was not produced by :func:`merge`.
     """
 
-    td = state.treedefmeta.treedef
-    if td != jtu.treedef_tuple(jtu.treedef_children(td)):
+    if not state.is_merged:
         msg = "split requires a state produced by merge"
         raise ValueError(msg)
 
-    child_treedefs = jtu.treedef_children(td)
+    child_treedefs = jtu.treedef_children(state.treedefmeta.treedef)
     offset, states = 0, []
     for child_td in child_treedefs:
         n = child_td.num_leaves

@@ -263,17 +263,21 @@ def test_split_overlapping_keys_uses_merged_value() -> None:
     assert rb["x"] == 2.0
 
 
-def test_merge_rejects_single_state() -> None:
-    """Merging a single state raises ValueError."""
+def test_merge_single_state() -> None:
+    """Merging a single state wraps it as a merged state."""
     sa = sl.State.from_pytree({"a": 1.0})
+    merged = sl.merge(sa)
 
-    with pytest.raises(ValueError, match="at least two"):
-        sl.merge(sa)
+    assert merged.is_merged
+    assert merged["a"] == 1.0
+    # split should recover the original
+    (recovered,) = sl.split(merged)
+    assert recovered["a"] == 1.0
 
 
 def test_merge_rejects_empty_args() -> None:
     """Merging with no arguments raises ValueError."""
-    with pytest.raises(ValueError, match="at least two"):
+    with pytest.raises(ValueError, match="at least one"):
         sl.merge()
 
 

@@ -123,7 +123,7 @@ def constrained_fit(
         updated_params = sl.update(params, updates=fixed)
         nll_value = jnp.asarray(nll_fn(updated_params.to_pytree(), observation))
         return FitResult(
-            params=updated_params.to_pytree(),
+            params=updated_params,
             nll=nll_value,
             success=jnp.asarray(True),
             solver_result=None,

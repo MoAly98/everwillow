@@ -43,7 +43,7 @@ result = ew.fit(
 # make sure the solver converged
 assert result.success
 
-print(result.params)
+print(result.params.to_pytree())
 # {
 #   'loc': Array(0.39995897, dtype=float64),
 #   'scale': Array(0.40000754, dtype=float64),
@@ -57,10 +57,8 @@ After fitting, extract parameter uncertainties from the inverse Hessian of the N
 ```python
 from everwillow.uncertainty import uncertainties, covariance_matrix, correlation_matrix
 
-fitted_params = sl.State.from_pytree(result.params)
-
 # Parameter uncertainties: σ_i = √((H⁻¹)_ii)
-unc = uncertainties(neg_log_likelihood, fitted_params, data)
+unc = uncertainties(neg_log_likelihood, result.params, data)
 print(unc.to_pytree())
 # {
 #   'loc': Array(0.00040001, dtype=float64),
@@ -68,13 +66,13 @@ print(unc.to_pytree())
 # }
 
 # Full covariance matrix
-cov = covariance_matrix(neg_log_likelihood, fitted_params, data)
+cov = covariance_matrix(neg_log_likelihood, result.params, data)
 print(cov)
 # [[ 1.6001e-07,  1.2164e-16],
 #  [ 1.2164e-16,  8.0003e-08]]
 
 # Correlation matrix (normalized covariance, diagonal = 1)
-corr = correlation_matrix(neg_log_likelihood, fitted_params, data)
+corr = correlation_matrix(neg_log_likelihood, result.params, data)
 print(corr)
 # [[ 1.0000e+00,  1.0751e-09],
 #  [ 1.0751e-09,  1.0000e+00]]

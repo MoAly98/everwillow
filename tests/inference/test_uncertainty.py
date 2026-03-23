@@ -351,8 +351,7 @@ class TestUncertaintyIntegration:
         result = ew.fit(nll, initial_params, OBSERVED)
 
         # Extract uncertainties at fitted params
-        fitted_params: FState = sl.State.from_pytree(result.params)
-        errs = uncertainties(nll, fitted_params, OBSERVED)
+        errs = uncertainties(nll, result.params, OBSERVED)
 
         # Check fitted values
         assert jnp.isclose(result.params["x"], 2.0, atol=1e-4)

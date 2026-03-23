@@ -15,6 +15,7 @@ import everwillow as ew
 import everwillow.statelib as sl
 from everwillow._src.inference.fitting import (
     FitResult,  # noqa: PLC2701
+    PreparedNllFn,  # noqa: PLC2701
     _make_progress_context,  # noqa: PLC2701
     _ProgressUpdater,  # noqa: PLC2701
 )
@@ -140,7 +141,7 @@ class TestFitResult:
 
     def test_fitresult_creation(self):
         """Test creating a FitResult with all fields."""
-        params = {"mu": 1.0, "sigma": 0.5}
+        params = sl.State.from_pytree({"mu": 1.0, "sigma": 0.5})
         result: FitResult[float] = FitResult(
             params=params,
             nll=jnp.asarray(5.5),
@@ -148,7 +149,8 @@ class TestFitResult:
             solver_result=None,
         )
 
-        assert result.params == params
+        assert result.params["mu"] == 1.0
+        assert result.params["sigma"] == 0.5
         assert jnp.isclose(result.nll, 5.5)
         assert bool(result.success)
         assert result.solver_result is None
@@ -156,7 +158,7 @@ class TestFitResult:
     def test_fitresult_frozen(self):
         """Test that FitResult is immutable (frozen dataclass)."""
         result: FitResult[float] = FitResult(
-            params={},
+            params=sl.State.from_pytree({}),
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),
             solver_result=None,
@@ -168,7 +170,7 @@ class TestFitResult:
     def test_fitresult_allows_none_solver_result(self):
         """Test that solver_result accepts ``None``."""
         result: FitResult[float] = FitResult(
-            params={},
+            params=sl.State.from_pytree({}),
             nll=jnp.asarray(0.0),
             success=jnp.asarray(True),
             solver_result=None,
@@ -259,8 +261,8 @@ class TestFit:
             observation={"target_mu": 2.0, "target_sigma": 1.0},
         )
 
-        assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
-        assert abs(result.params["level1"]["sigma"] - 1.0) < 1e-4
+        assert abs(result.params["level1.mu"] - 2.0) < 1e-4
+        assert abs(result.params["level1.sigma"] - 1.0) < 1e-4
 
     def test_deeply_nested_dict(self):
         """Test fitting with deeply nested structure."""
@@ -275,7 +277,7 @@ class TestFit:
             observation={"target": 5.0},
         )
 
-        assert abs(result.params["a"]["b"]["c"] - 5.0) < 1e-4
+        assert abs(result.params["a.b.c"] - 5.0) < 1e-4
 
     def test_mixed_structure(self):
         """Test fitting with mixed flat and nested structure."""
@@ -295,7 +297,7 @@ class TestFit:
         )
 
         assert abs(result.params["flat"] - 1.0) < 1e-4
-        assert abs(result.params["nested"]["value"] - 2.0) < 1e-4
+        assert abs(result.params["nested.value"] - 2.0) < 1e-4
 
     # --- Fixed parameters ---
 
@@ -405,8 +407,8 @@ class TestFit:
             fixed=sl.State.from_pytree({"level1": {"sigma": ...}}),
         )
 
-        assert abs(result.params["level1"]["mu"] - 2.0) < 1e-4
-        assert abs(result.params["level1"]["sigma"] - 5.0) < 1e-10
+        assert abs(result.params["level1.mu"] - 2.0) < 1e-4
+        assert abs(result.params["level1.sigma"] - 5.0) < 1e-10
 
     # --- Additional arguments ---
 
@@ -1330,3 +1332,155 @@ class TestArgumentForwarding:
             # _make_progress_context(enabled, max_steps) - positional args
             call_args = mock_context.call_args[0]
             assert call_args[1] == 999  # max_steps
+
+
+# ============================================================================
+# PreparedNllFn tests
+# ============================================================================
+
+
+class TestPreparedNllFn:
+    """Tests for PreparedNllFn sentinel wrapper."""
+
+    def test_callable(self):
+        """PreparedNllFn should delegate to the wrapped function."""
+
+        def inner(params, obs):
+            return params["x"] + obs["y"]
+
+        prepared = PreparedNllFn(inner)
+        assert prepared({"x": 1.0}, {"y": 2.0}) == 3.0
+
+    def test_frozen(self):
+        """PreparedNllFn should be immutable."""
+        prepared = PreparedNllFn(lambda p, o: 0.0)
+        with pytest.raises(AttributeError):
+            prepared._fn = lambda p, o: 1.0  # type: ignore[misc]
+
+    def test_isinstance_check(self):
+        """isinstance check should identify PreparedNllFn."""
+        prepared = PreparedNllFn(lambda p, o: 0.0)
+        assert isinstance(prepared, PreparedNllFn)
+        assert not isinstance(lambda p, o: 0.0, PreparedNllFn)
+
+
+# ============================================================================
+# prepare() tests
+# ============================================================================
+
+
+class TestPrepare:
+    """Tests for prepare() model combination."""
+
+    def test_single_model(self):
+        """prepare() should work with a single model."""
+
+        def nll(params, obs):
+            return (params["x"] - obs["target"]) ** 2
+
+        state = sl.State.from_pytree({"x": 0.0})
+        combined_nll, merged = ew.prepare([nll], [state])
+
+        assert isinstance(combined_nll, PreparedNllFn)
+        assert isinstance(merged, sl.State)
+        assert merged.is_merged
+
+    def test_two_models_fit(self):
+        """prepare() with two models should produce correct combined fit."""
+
+        def nll_a(params, obs):
+            return (params["mass"] - obs["m_a"]) ** 2
+
+        def nll_b(params, obs):
+            return (params["m"] - obs["m_b"]) ** 2
+
+        state_a = sl.State.from_pytree({"mass": 0.0, "scale_a": 1.0})
+        state_b = sl.State.from_pytree({"m": 0.0, "scale_b": 1.0})
+
+        combined_nll, merged = ew.prepare([nll_a, nll_b], [state_a, state_b])
+
+        obs = {"m_a": 125.0, "m_b": 91.0}
+        result = ew.fit(combined_nll, merged, obs)
+
+        assert result.success
+        assert jnp.isclose(result.params["mass"], 125.0, atol=1e-3)
+        assert jnp.isclose(result.params["m"], 91.0, atol=1e-3)
+
+    def test_combined_nll_value(self):
+        """Combined NLL should be the sum of individual NLLs."""
+
+        def nll_a(params, obs):
+            return (params["x"] - 1.0) ** 2
+
+        def nll_b(params, obs):
+            return (params["y"] - 2.0) ** 2
+
+        state_a = sl.State.from_pytree({"x": 3.0})
+        state_b = sl.State.from_pytree({"y": 5.0})
+
+        combined_nll, merged = ew.prepare([nll_a, nll_b], [state_a, state_b])
+        pytree = merged.to_pytree()
+        val = combined_nll(pytree, {})
+
+        # (3-1)^2 + (5-2)^2 = 4 + 9 = 13
+        assert jnp.isclose(val, 13.0)
+
+    def test_rejects_nested_prepare(self):
+        """prepare() should reject PreparedNllFn inputs."""
+
+        def nll(params, obs):
+            return 0.0
+
+        state = sl.State.from_pytree({"x": 0.0})
+        combined_nll, _merged = ew.prepare([nll], [state])
+
+        with pytest.raises(TypeError, match="already produced by prepare"):
+            ew.prepare([combined_nll], [state])
+
+    def test_rejects_merged_state(self):
+        """prepare() should reject already-merged states."""
+        state_a = sl.State.from_pytree({"x": 0.0})
+        state_b = sl.State.from_pytree({"y": 0.0})
+        merged = sl.merge(state_a, state_b)
+
+        def nll(params, obs):
+            return 0.0
+
+        with pytest.raises(TypeError, match="already a merged state"):
+            ew.prepare([nll], [merged])
+
+    def test_rejects_length_mismatch(self):
+        """prepare() should reject mismatched nlls/states lengths."""
+
+        def nll(params, obs):
+            return 0.0
+
+        state = sl.State.from_pytree({"x": 0.0})
+
+        with pytest.raises(ValueError, match="same length"):
+            ew.prepare([nll, nll], [state])
+
+    def test_rejects_empty(self):
+        """prepare() should reject empty inputs."""
+        with pytest.raises(ValueError, match="must not be empty"):
+            ew.prepare([], [])
+
+    def test_split_after_fit(self):
+        """Should be able to split fitted merged state back into originals."""
+
+        def nll_a(params, obs):
+            return (params["x"] - obs["x_target"]) ** 2
+
+        def nll_b(params, obs):
+            return (params["y"] - obs["y_target"]) ** 2
+
+        state_a = sl.State.from_pytree({"x": 0.0})
+        state_b = sl.State.from_pytree({"y": 0.0})
+
+        combined_nll, merged = ew.prepare([nll_a, nll_b], [state_a, state_b])
+        result = ew.fit(combined_nll, merged, {"x_target": 3.0, "y_target": 7.0})
+
+        parts = sl.split(result.params)
+        assert len(parts) == 2
+        assert jnp.isclose(parts[0]["x"], 3.0, atol=1e-3)
+        assert jnp.isclose(parts[1]["y"], 7.0, atol=1e-3)

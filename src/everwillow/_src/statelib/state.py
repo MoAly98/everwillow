@@ -41,6 +41,10 @@ def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
 
 
 @tp.overload
+def canonicalize_key(path: tuple[tp.Any, ...]) -> str: ...
+
+
+@tp.overload
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 
 

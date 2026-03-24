@@ -105,19 +105,19 @@ class TestMakeAsimov:
     def test_asimov_at_background_only(self):
         """Asimov at mu=0 gives background-only expectation: n=5."""
         params = create_params(mu_init=1.0)
-        asimov = make_asimov(predict_fn, params, ("mu",), mu_asimov=0.0)
+        asimov = make_asimov(predict_fn, params, "mu", mu_asimov=0.0)
         assert asimov["n"] == pytest.approx(5.0, rel=1e-5)
 
     def test_asimov_at_signal_plus_background(self):
         """Asimov at mu=1 gives signal+background expectation: n=15."""
         params = create_params(mu_init=1.0)
-        asimov = make_asimov(predict_fn, params, ("mu",), mu_asimov=1.0)
+        asimov = make_asimov(predict_fn, params, "mu", mu_asimov=1.0)
         assert asimov["n"] == pytest.approx(15.0, rel=1e-5)
 
     def test_asimov_at_arbitrary_mu(self):
         """Asimov at mu=2 gives n = 2*10 + 5 = 25."""
         params = create_params(mu_init=1.0)
-        asimov = make_asimov(predict_fn, params, ("mu",), mu_asimov=2.0)
+        asimov = make_asimov(predict_fn, params, "mu", mu_asimov=2.0)
         assert asimov["n"] == pytest.approx(25.0, rel=1e-5)
 
 
@@ -147,7 +147,7 @@ class TestConstrainedFit:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = TestStatClass()(poisson_nll, params, observed, ("mu",), poi_test=1.0)
+        result = TestStatClass()(poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -176,7 +176,7 @@ class TestConstrainedFit:
         observed = create_observation(n_obs)
 
         result = TestStatClass()(
-            nll_with_nuisance, params, observed, ("mu",), poi_test=1.0
+            nll_with_nuisance, params, observed, "mu", poi_test=1.0
         )
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, rel=0.05)

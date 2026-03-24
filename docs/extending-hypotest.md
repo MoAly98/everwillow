@@ -117,7 +117,7 @@ calc = HypoTestCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
-    poi_key=("mu",),
+    poi_key="mu",
     test_statistic=QTilde(),  # or your custom TestStatistic
     distribution=HalfNormalDistribution(),  # or any Distribution
 )
@@ -164,7 +164,7 @@ toys = toy_gen.generate(
     nll,
     params,
     observed,
-    ("mu",),
+    "mu",
     poi_test=1.0,
     poi_alt=0.0,
     key=jax.random.key(0),

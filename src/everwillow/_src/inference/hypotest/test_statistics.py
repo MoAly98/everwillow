@@ -63,7 +63,7 @@ class TestStatistic(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI.
             **fit_kwargs: Additional arguments passed to fit().
 
@@ -154,7 +154,7 @@ class CowanTestStatistic(TestStatistic):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI.
             asimov_observation: Pre-computed Asimov dataset.
             predict_fn: Function to generate expected observation from parameters.
@@ -244,7 +244,7 @@ class QTilde(CowanTestStatistic):
         """Compute q̃ for a single observation."""
         # Free fit (unconditional MLE)
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
-        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
         # Constrained fit at mu_test: L(μ, θ̂̂(μ))
@@ -307,7 +307,7 @@ class QMu(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_μ for a single observation."""
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
-        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
@@ -396,7 +396,7 @@ class Q0(CowanTestStatistic):
         """Compute q_0 for a single observation."""
         # poi_test will always be 0.0 due to __call__ override
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
-        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
@@ -444,7 +444,7 @@ class TMu(CowanTestStatistic):
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute t_μ for a single observation."""
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
-        fitted_state: sl.State[Array] = sl.State.from_pytree(fit_free.params)
+        fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})

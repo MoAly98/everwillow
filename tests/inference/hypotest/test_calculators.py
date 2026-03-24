@@ -47,7 +47,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
         result = calc.test(poi_test=1.0)
@@ -70,7 +70,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             test_statistic=QTilde(),
             distribution=QTildeAsymptotic(),
         )
@@ -92,7 +92,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
         result = calc.test(poi_test=1.0)
@@ -112,7 +112,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
 
@@ -139,7 +139,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
         result = calc.test(poi_test=1.0)
@@ -160,7 +160,7 @@ class TestAsymptoticCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
         )
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             result = calc.test(poi_test=1.0)
@@ -184,7 +184,7 @@ class TestHypoTestCalculator:
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
-            poi_key=("mu",),
+            poi_key="mu",
         )
         assert isinstance(calc.test_statistic, QTilde)
 
@@ -202,7 +202,7 @@ class TestHypoTestCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
         )
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             calc.test(
@@ -215,7 +215,7 @@ class TestHypoTestCalculator:
             poisson_nll,
             params,
             observed,
-            ("mu",),
+            "mu",
             1.0,
             predict_fn=predict_fn,
             mu_asimov=0.0,
@@ -235,7 +235,7 @@ class TestHypoTestCalculator:
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
-            poi_key=("mu",),
+            poi_key="mu",
             test_statistic=QMu(),
             distribution=QMuAsymptotic(),
         )
@@ -265,7 +265,7 @@ class TestCalculatorCls:
             nll_fn=poisson_nll,
             params=create_params(mu_init=1.0),
             observation=create_observation(10.0),
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
         result = calc.test(poi_test=1.0)
@@ -287,7 +287,7 @@ class TestCalculatorCls:
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
-            poi_key=("mu",),
+            poi_key="mu",
             distribution=dist,
         )
         ts = TSResult(value=jnp.array(5.0), test=jnp.array(1.0))
@@ -308,7 +308,7 @@ class TestCalculatorCls:
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
-            poi_key=("mu",),
+            poi_key="mu",
             distribution=dist,
         )
         ts = TSResult(value=jnp.array(1.0), test=jnp.array(1.0))
@@ -340,7 +340,7 @@ class TestCalculatorExpected:
             nll_fn=poisson_nll,
             params=create_params(mu_init=1.0),
             observation=create_observation(15.0),
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
         )
         result = calc.test(poi_test=1.0)
@@ -387,7 +387,7 @@ class TestCalculatorExpected:
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
-            poi_key=("mu",),
+            poi_key="mu",
             distribution=dist,
         )
         ts = TSResult(value=jnp.array(5.0), test=jnp.array(1.0))
@@ -407,7 +407,7 @@ class TestCalculatorExpected:
             nll_fn=poisson_nll,
             params=create_params(mu_init=1.0),
             observation=create_observation(15.0),
-            poi_key=("mu",),
+            poi_key="mu",
             predict_fn=predict_fn,
             distribution=TMuAsymptotic(),
         )

@@ -47,14 +47,14 @@ def test_from_pytree_with_list_input() -> None:
     """Lists produce integer-indexed keys."""
     state = sl.State.from_pytree({"a": [10, 20]})
 
-    assert state.to_dict() == {("a", 0): 10, ("a", 1): 20}
+    assert state.to_dict() == {"a.0": 10, "a.1": 20}
 
 
 def test_from_pytree_with_tuple_input() -> None:
     """Tuples produce integer-indexed keys like lists."""
     state = sl.State.from_pytree({"a": (10, 20)})
 
-    assert state.to_dict() == {("a", 0): 10, ("a", 1): 20}
+    assert state.to_dict() == {"a.0": 10, "a.1": 20}
 
 
 def test_from_pytree_with_namedtuple_input() -> None:
@@ -65,14 +65,14 @@ def test_from_pytree_with_namedtuple_input() -> None:
     tree = {"p": Point(x=1.0, y=2.0)}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("p", "x"): 1.0, ("p", "y"): 2.0}
+    assert state.to_dict() == {"p.x": 1.0, "p.y": 2.0}
 
 
 def test_from_pytree_with_nested_sequences() -> None:
     """Nested lists/tuples produce compound integer-indexed keys."""
     state = sl.State.from_pytree([[1, 2], [3, 4]])
 
-    assert state.to_dict() == {(0, 0): 1, (0, 1): 2, (1, 0): 3, (1, 1): 4}
+    assert state.to_dict() == {"0.0": 1, "0.1": 2, "1.0": 3, "1.1": 4}
 
 
 def test_from_pytree_with_registered_dataclass() -> None:
@@ -91,7 +91,7 @@ def test_from_pytree_with_registered_dataclass() -> None:
     tree = {"v": Vec(x=1.0, y=2.0)}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("v", "x"): 1.0, ("v", "y"): 2.0}
+    assert state.to_dict() == {"v.x": 1.0, "v.y": 2.0}
 
 
 def test_from_pytree_with_flattened_index_key() -> None:
@@ -118,7 +118,7 @@ def test_from_pytree_with_flattened_index_key() -> None:
     tree = {"p": Pair(1.0, 2.0)}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("p", 0): 1.0, ("p", 1): 2.0}
+    assert state.to_dict() == {"p.0": 1.0, "p.1": 2.0}
 
 
 def test_from_pytree_with_tuple_dict_keys() -> None:
@@ -126,7 +126,7 @@ def test_from_pytree_with_tuple_dict_keys() -> None:
     tree = {("a", "b"): 1.0, ("c",): 2.0}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("a", "b"): 1.0, ("c",): 2.0}
+    assert state.to_dict() == {"a.b": 1.0, "c": 2.0}
 
 
 def test_from_pytree_with_nested_tuple_dict_keys() -> None:
@@ -134,7 +134,7 @@ def test_from_pytree_with_nested_tuple_dict_keys() -> None:
     tree = {(("a", "b"), "c"): 1.0}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("a", "b", "c"): 1.0}
+    assert state.to_dict() == {"a.b.c": 1.0}
 
 
 def test_from_pytree_with_string_dict_keys() -> None:
@@ -142,15 +142,15 @@ def test_from_pytree_with_string_dict_keys() -> None:
     tree = {"abc": 1.0}
     state = sl.State.from_pytree(tree)
 
-    assert state.to_dict() == {("abc",): 1.0}
+    assert state.to_dict() == {"abc": 1.0}
 
 
 def test_notnone_filters_none_values() -> None:
     """The ``.notnone`` property excludes keys with None values."""
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
-    left, _right = sl.partition(state, predicate=lambda k, _v: k == ("a",))
+    left, _right = sl.partition(state, predicate=lambda k, _v: k == "a")
 
-    assert dict(left.notnone) == {("a",): 1.0}
+    assert left.notnone == {"a": 1.0}
 
 
 def test_state_repr() -> None:
@@ -167,21 +167,21 @@ def test_update_replaces_values() -> None:
     """Updating a state returns a new instance with replaced values."""
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0, "c": 3.0})
 
-    updated = sl.update(state, updates={("a",): 10.0, ("c",): 30.0})
+    updated = sl.update(state, updates={"a": 10.0, "c": 30.0})
 
-    assert updated.to_dict() == {("a",): 10.0, ("b",): 2.0, ("c",): 30.0}
+    assert updated.to_dict() == {"a": 10.0, "b": 2.0, "c": 30.0}
     # Original unchanged
-    assert state.to_dict() == {("a",): 1.0, ("b",): 2.0, ("c",): 3.0}
+    assert state.to_dict() == {"a": 1.0, "b": 2.0, "c": 3.0}
 
 
 def test_update_ellipsis_skips_key() -> None:
     """Entries with Ellipsis as value are left unchanged."""
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
 
-    updated = sl.update(state, updates={("a",): ..., ("b",): 99.0})
+    updated = sl.update(state, updates={"a": ..., "b": 99.0})
 
-    assert updated["a",] == 1.0
-    assert updated["b",] == 99.0
+    assert updated["a"] == 1.0
+    assert updated["b"] == 99.0
 
 
 def test_update_rejects_missing_key() -> None:
@@ -189,7 +189,7 @@ def test_update_rejects_missing_key() -> None:
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
 
     with pytest.raises(KeyError):
-        sl.update(state, updates={("missing",): 0.0})
+        sl.update(state, updates={"missing": 0.0})
 
 
 def test_update_rejects_non_state() -> None:
@@ -231,9 +231,9 @@ def test_merge_three_states() -> None:
     sc = sl.State.from_pytree({"c": 3.0})
 
     merged = sl.merge(sa, sb, sc)
-    assert merged["a",] == 1.0
-    assert merged["b",] == 2.0
-    assert merged["c",] == 3.0
+    assert merged["a"] == 1.0
+    assert merged["b"] == 2.0
+    assert merged["c"] == 3.0
 
     ra, rb, rc = sl.split(merged)
     assert ra.to_pytree() == {"a": 1.0}
@@ -247,7 +247,7 @@ def test_merge_overlapping_keys_last_writer_wins() -> None:
     sb = sl.State.from_pytree({"x": 2.0})
 
     merged = sl.merge(sa, sb)
-    assert merged["x",] == 2.0
+    assert merged["x"] == 2.0
 
 
 def test_split_overlapping_keys_uses_merged_value() -> None:
@@ -259,21 +259,25 @@ def test_split_overlapping_keys_uses_merged_value() -> None:
     ra, rb = sl.split(merged)
 
     # Both segments get the merged value (last writer wins)
-    assert ra["x",] == 2.0
-    assert rb["x",] == 2.0
+    assert ra["x"] == 2.0
+    assert rb["x"] == 2.0
 
 
-def test_merge_rejects_single_state() -> None:
-    """Merging a single state raises ValueError."""
+def test_merge_single_state() -> None:
+    """Merging a single state wraps it as a merged state."""
     sa = sl.State.from_pytree({"a": 1.0})
+    merged = sl.merge(sa)
 
-    with pytest.raises(ValueError, match="at least two"):
-        sl.merge(sa)
+    assert merged.is_merged
+    assert merged["a"] == 1.0
+    # split should recover the original
+    (recovered,) = sl.split(merged)
+    assert recovered["a"] == 1.0
 
 
 def test_merge_rejects_empty_args() -> None:
     """Merging with no arguments raises ValueError."""
-    with pytest.raises(ValueError, match="at least two"):
+    with pytest.raises(ValueError, match="at least one"):
         sl.merge()
 
 
@@ -310,8 +314,8 @@ def test_partition_all_keys_match() -> None:
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
     left, right = sl.partition(state, predicate=lambda _k, _v: True)
 
-    assert dict(left.notnone) == {("a",): 1.0, ("b",): 2.0}
-    assert dict(right.notnone) == {}
+    assert left.notnone == {"a": 1.0, "b": 2.0}
+    assert right.notnone == {}
 
 
 def test_partition_no_keys_match() -> None:
@@ -319,8 +323,8 @@ def test_partition_no_keys_match() -> None:
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
     left, right = sl.partition(state, predicate=lambda _k, _v: False)
 
-    assert dict(left.notnone) == {}
-    assert dict(right.notnone) == {("a",): 1.0, ("b",): 2.0}
+    assert left.notnone == {}
+    assert right.notnone == {"a": 1.0, "b": 2.0}
 
 
 def test_combine_partitions_rejects_mismatched_origins() -> None:
@@ -330,11 +334,11 @@ def test_combine_partitions_rejects_mismatched_origins() -> None:
 
     left_one, _right_one = sl.partition(
         state_one,
-        predicate=lambda key, _value: key == ("a",),
+        predicate=lambda key, _value: key == "a",
     )
     _, right_two = sl.partition(
         state_two,
-        predicate=lambda key, _value: key == ("a",),
+        predicate=lambda key, _value: key == "a",
     )
 
     with pytest.raises(ValueError, match="same original state"):
@@ -342,6 +346,14 @@ def test_combine_partitions_rejects_mismatched_origins() -> None:
 
 
 # -- Edge cases and error handling --
+
+
+def test_canonicalize_key_rejects_separator_in_segment() -> None:
+    """canonicalize_key raises ValueError when a segment contains the separator."""
+    import jax.tree_util as jtu
+
+    with pytest.raises(ValueError, match="contains the separator"):
+        sl.canonicalize_key((jtu.DictKey("a.b"),), sep=".")
 
 
 def test_canonicalize_key_rejects_unknown_key_type() -> None:
@@ -359,7 +371,7 @@ def test_treedefmeta_to_pytree_rejects_mismatched_keys() -> None:
     state = sl.State.from_pytree({"a": 1.0, "b": 2.0})
     treedefmeta = state.treedefmeta
 
-    wrong_mapping = {("x",): 1.0, ("y",): 2.0}
+    wrong_mapping = {"x": 1.0, "y": 2.0}
 
     with pytest.raises(KeyError, match="Missing"):
         treedefmeta.to_pytree(wrong_mapping)
@@ -368,4 +380,4 @@ def test_treedefmeta_to_pytree_rejects_mismatched_keys() -> None:
 def test_state_constructor_rejects_invalid_treedefmeta() -> None:
     """State constructor raises TypeError if treedefmeta is not TreeDefMeta."""
     with pytest.raises(TypeError, match="TreeDefMeta"):
-        sl.State(mapping={("a",): 1.0}, treedefmeta="not a TreeDefMeta")
+        sl.State(mapping={"a": 1.0}, treedefmeta="not a TreeDefMeta")

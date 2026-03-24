@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import typing as tp
 from types import EllipsisType
 
@@ -44,10 +45,82 @@ def _reconstruct_full_state(
 class FitResult(eqx.Module, tp.Generic[V]):
     """Result of a fit operation."""
 
-    params: PyTree[V]  #: Fitted parameter state.
+    params: sl.State[V]  #: Fitted parameter state.
     nll: jax.Array  #: Negative log-likelihood at the optimum.
     success: jax.Array  #: Whether the optimisation converged.
     solver_result: PyTree  #: Raw solver result.
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PreparedNllFn:
+    """Sentinel wrapper around a combined NLL produced by :func:`prepare`.
+
+    This is a thin callable that delegates to the inner function.  Its only
+    purpose is to enable ``isinstance`` checks so that :func:`prepare` can
+    reject nested calls.
+    """
+
+    _fn: tp.Callable = dataclasses.field(repr=False)
+
+    def __call__(self, params: PyTree, observation: PyTree) -> float:
+        return self._fn(params, observation)
+
+
+def prepare(
+    nlls: tp.Sequence[tp.Callable],
+    states: tp.Sequence[sl.State],
+) -> tuple[PreparedNllFn, sl.State]:
+    """Combine multiple models for a joint fit.
+
+    Each NLL function and its corresponding state are merged so that a single
+    call to :func:`fit` optimises all parameters simultaneously.  Shared
+    parameters (aligned via :func:`~everwillow._src.statelib.transform.apply_transformations`)
+    are handled automatically.
+
+    Args:
+        nlls: Sequence of NLL callables ``(params_pytree, observation) -> float``.
+        states: Sequence of :class:`~everwillow._src.statelib.state.State` instances,
+            one per NLL.
+
+    Returns:
+        ``(combined_nll, merged_state)`` ready to pass to :func:`fit`.
+
+    Raises:
+        TypeError: If any element of *nlls* is already a :class:`PreparedNllFn`,
+            or any element of *states* is a merged state.
+        ValueError: If *nlls* and *states* have different lengths, or are empty.
+    """
+    if len(nlls) != len(states):
+        msg = f"nlls and states must have the same length, got {len(nlls)} and {len(states)}"
+        raise ValueError(msg)
+    if len(nlls) == 0:
+        msg = "nlls and states must not be empty"
+        raise ValueError(msg)
+
+    for i, nll in enumerate(nlls):
+        if isinstance(nll, PreparedNllFn):
+            msg = f"nlls[{i}] was already produced by prepare() — nested prepare() is not allowed"
+            raise TypeError(msg)
+
+    for i, state in enumerate(states):
+        if not isinstance(state, sl.State):
+            msg = f"states[{i}] is not a State instance"  # type: ignore[unreachable]
+            raise TypeError(msg)
+
+        if state.is_merged:
+            msg = f"states[{i}] is already a merged state — nested prepare() is not allowed"
+            raise TypeError(msg)
+
+    merged_state = sl.merge(*states)
+
+    def _combined_nll(params: PyTree, observation: PyTree) -> float:
+        total = 0.0
+        # params is a tuple of pytrees from merged_state.to_pytree()
+        for nll_fn, p in zip(nlls, params, strict=True):
+            total = total + nll_fn(p, observation)
+        return total
+
+    return PreparedNllFn(_combined_nll), merged_state
 
 
 def _minimize(
@@ -307,7 +380,7 @@ def _fit(
 
     # Return result
     return FitResult(
-        params=fitted_state.to_pytree(),
+        params=fitted_state,
         nll=wrapped_nll(solution.value, args),
         success=jax.numpy.asarray(solution.result == optx.RESULTS.successful),
         solver_result=solution,
@@ -375,14 +448,14 @@ def fit(
         ...     ) ** 2
         >>> initial_params = sl.State.from_pytree({"mu": 0.0, "sigma": 0.5})
         >>> observed = {"mu_target": 2.0, "sigma_target": 1.0}
-        >>> fixed = sl.State.from_pytree({("sigma",): ...})
+        >>> fixed = sl.State.from_pytree({"sigma": ...})
         >>> result = ew.fit(my_nll, initial_params, observed, fixed=fixed)
         >>> result.params["sigma"]  # Remains fixed
         0.5
 
         >>> # With parameter bounds
         >>> from everwillow._src.parameters.transforms import MinuitTransform
-        >>> bounds = sl.State.from_pytree({("mu",): MinuitTransform(lower=0.0, upper=5.0)})
+        >>> bounds = sl.State.from_pytree({"mu": MinuitTransform(lower=0.0, upper=5.0)})
         >>> result = ew.fit(my_nll, initial_params, observed, bounds=bounds)
         >>> 0.0 <= result.params["mu"] <= 5.0  # Respects bounds
         True

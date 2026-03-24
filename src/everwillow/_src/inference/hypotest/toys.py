@@ -39,7 +39,7 @@ class ToyGenerator(eqx.Module):
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
         >>> toys = toy_gen.generate(
-        ...     nll_fn, params, observed, ("mu",), 1.0,
+        ...     nll_fn, params, observed, "mu", 1.0,
         ...     poi_alt=0.0,
         ...     key=jax.random.key(42),
         ...     predict_fn=my_predict_fn,
@@ -47,8 +47,15 @@ class ToyGenerator(eqx.Module):
         >>> # Choose how to interpret the toys (open-world)
         >>> dist = SimpleEmpiricalDistribution.from_toys(toys)
         >>> # Use with HypoTestCalculator
-        >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=dist)
-        >>> result = calc(nll_fn, params, observed, ("mu",), 1.0)
+        >>> calc = HypoTestCalculator(
+        ...     nll_fn=nll_fn,
+        ...     params=params,
+        ...     observation=observed,
+        ...     poi_key="mu",
+        ...     test_statistic=QTilde(),
+        ...     distribution=dist,
+        ... )
+        >>> result = calc.test(1.0)
     """
 
     test_statistic: TestStatistic
@@ -75,7 +82,7 @@ class ToyGenerator(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data (used to profile nuisance parameters).
-            poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+            poi_key: Canonical key for the parameter of interest, e.g. "mu".
             poi_test: Test value for the POI (the tested hypothesis).
             poi_alt: Alternative hypothesis POI value. If provided, toys are
                 generated under both hypotheses. If None, only null (tested)
@@ -106,7 +113,7 @@ class ToyGenerator(eqx.Module):
         null_result = constrained_fit(
             nll_fn, params, observation, fixed_null, **fit_kwargs
         )
-        params_null: sl.State[ArrayLike] = sl.State.from_pytree(null_result.params)
+        params_null: sl.State[ArrayLike] = null_result.params
 
         # Alternative hypothesis: POI = poi_alt (only if provided)
         q_alt = None
@@ -119,7 +126,7 @@ class ToyGenerator(eqx.Module):
             alt_result = constrained_fit(
                 nll_fn, params, observation, fixed_alt, **fit_kwargs
             )
-            params_alt: sl.State[ArrayLike] = sl.State.from_pytree(alt_result.params)
+            params_alt: sl.State[ArrayLike] = alt_result.params
 
             q_alt = self._run_toys(
                 nll_fn,

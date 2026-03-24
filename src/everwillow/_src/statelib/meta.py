@@ -17,7 +17,7 @@ __all__ = ["TreeDefMeta"]
 @partial(
     jtu.register_dataclass,
     data_fields=[],
-    meta_fields=["treedef", "keys"],
+    meta_fields=["treedef", "keys", "merged"],
 )
 @dataclasses.dataclass(frozen=True, slots=True)
 class TreeDefMeta:
@@ -25,6 +25,7 @@ class TreeDefMeta:
 
     treedef: PyTreeDef
     keys: tp.Sequence[K]
+    merged: bool = False
 
     def to_pytree(
         self,

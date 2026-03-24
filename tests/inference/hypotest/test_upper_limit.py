@@ -298,7 +298,7 @@ class TestExpectedUpperLimit:
             nll_fn=_dummy_nll,
             params=_DUMMY_PARAMS,
             observation=_DUMMY_OBS,
-            poi_key=("mu",),
+            poi_key="mu",
             test_statistic=_IdentityTestStat(),
             distribution=_VaryingBandDist(),
         )
@@ -360,7 +360,7 @@ class TestExpectedUpperLimitAsymptotic:
             nll_fn=_dummy_nll,
             params=_DUMMY_PARAMS,
             observation=_DUMMY_OBS,
-            poi_key=("mu",),
+            poi_key="mu",
             test_statistic=_ConstantSigmaTestStat(),
             distribution=QMuAsymptotic(),
         )

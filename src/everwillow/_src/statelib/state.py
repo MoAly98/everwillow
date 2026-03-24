@@ -1,7 +1,7 @@
 """Immutable mapping helpers for working with JAX pytrees.
 
 The utilities in this module provide read-only dictionaries that keep track of
-the canonical tuple keys JAX emits when flattening nested structures.
+the canonical keys JAX emits when flattening nested structures.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 
-K: tp.TypeAlias = str | tuple[str, ...]
+K: tp.TypeAlias = str | tuple[str | int, ...]
 V = tp.TypeVar("V", bound=ArrayLike | None)
 
 
@@ -41,38 +41,43 @@ def _flatten_iterables(x: tp.Any) -> tp.Iterator[tp.Any]:
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> K: ...
+def canonicalize_key(path: tuple[tp.Any, ...]) -> str: ...
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> K: ...
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 
 
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
+@tp.overload
+def canonicalize_key(
+    path: tuple[tp.Any, ...], *, sep: None
+) -> tuple[str | int, ...]: ...
+
+
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = ".") -> K:
     """Convert a JAX key path to plain Python entries.
 
     Args:
         path: Key path emitted by :func:`jax.tree_util.tree_flatten_with_path`.
-        sep: Optional separator used to join the entries into a string. When
-            ``None`` (default) the key is returned as a tuple.
+        sep: Separator used to join the entries into a string. Defaults to
+            ``"."``. When ``None`` the key is returned as a tuple.
 
     Returns:
         Canonical key representation that can be used to index a :class:`State`.
 
     Raises:
         TypeError: If ``path`` contains an unsupported key type.
+        ValueError: If a key segment contains the separator string.
 
     Examples:
-        Build tuple keys that match the structure of the original pytree:
-
         >>> import jax.tree_util as jtu
         >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)))
+        'a.0'
+
+        Use ``sep=None`` for tuple keys:
+
+        >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)), sep=None)
         ('a', 0)
-
-        Produce joined string keys when ``sep`` is provided:
-
-        >>> canonicalize_key((jtu.DictKey("a"), jtu.SequenceKey(0)), sep="/")
-        'a/0'
     """
     result: list[tp.Any] = []
     for entry in path:
@@ -88,6 +93,14 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = None) -> K:
             msg = f"Unrecognised key path entry: {entry}"
             raise TypeError(msg)
     if sep is not None:
+        for entry in result:
+            s = str(entry)
+            if sep in s:
+                msg = (
+                    f"Key segment {s!r} contains the separator {sep!r}. "
+                    f"Use sep=None for tuple keys, or choose a different separator."
+                )
+                raise ValueError(msg)
         return sep.join(map(str, result))
 
     return tuple(result)
@@ -105,7 +118,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
         >>> state = State.from_pytree({"a": 1.0})
         >>> isinstance(state, BaseMapping)
         True
-        >>> state[("a",)]
+        >>> state["a"]
         1.0
     """
 
@@ -134,7 +147,7 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
 
         Examples:
             >>> state = State.from_pytree({"a": 1.0})
-            >>> ("a",) in state.mapping
+            >>> "a" in state.mapping
             True
         """
 
@@ -143,14 +156,14 @@ class BaseMapping(tp.Mapping[K, V], tp.Generic[V]):
 
 @jtu.register_pytree_with_keys_class
 class State(BaseMapping[V]):
-    """Container that stores flattened pytrees keyed by canonical tuples.
+    """Container that stores flattened pytrees keyed by canonical keys.
 
     The state keeps track of the pytree definition so it can be converted back
     to the original nested structure.
 
     Examples:
         >>> state = State.from_pytree({"a": {"b": 2.0}})
-        >>> state[("a", "b")]
+        >>> state["a.b"]
         2.0
         >>> state.to_pytree()
         {'a': {'b': 2.0}}
@@ -186,7 +199,7 @@ class State(BaseMapping[V]):
         pytree: PyTree[V],
         *,
         is_leaf: tp.Callable[[V], bool] | None = None,
-        sep: str | None = None,
+        sep: str | None = ".",
     ) -> State[V]:
         """Build a :class:`State` instance from an arbitrary pytree.
 
@@ -194,15 +207,16 @@ class State(BaseMapping[V]):
             pytree: Nested structure supported by :mod:`jax.tree_util`.
             is_leaf: Optional callable passed to :func:`jax.tree_util.tree_flatten_with_path`
                 to customize which nodes are treated as leaves.
-            sep: Optional separator used to join key entries when constructing
-                public keys. When ``None`` (default), keys are returned as tuples.
+            sep: Separator used to join key entries when constructing
+                public keys. Defaults to ``"."``. When ``None``, keys are
+                returned as tuples.
 
         Returns:
             New :class:`State` representing ``pytree``.
 
         Examples:
             >>> State.from_pytree({"a": [1, 2]}).mapping
-            mappingproxy({('a', 0): 1, ('a', 1): 2})
+            mappingproxy({'a.0': 1, 'a.1': 2})
         """
 
         if isinstance(pytree, State):
@@ -217,7 +231,7 @@ class State(BaseMapping[V]):
             data[key] = leaf
             keys.append(key)
 
-        treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys))
+        treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys), merged=False)
         return cls(data, treedefmeta=treedefmeta)
 
     def to_pytree(self) -> PyTree[V]:
@@ -239,23 +253,31 @@ class State(BaseMapping[V]):
         return self._treedefmeta
 
     @property
-    def notnone(self) -> tp.Mapping[K, V]:
+    def is_merged(self) -> bool:
+        """Whether this state was produced by :func:`merge`.
+
+        Returns:
+            ``True`` if the internal treedef is a compound tuple of its children.
+        """
+        tdm = self._treedefmeta
+        return tdm.merged
+
+    @property
+    def notnone(self) -> dict[K, V]:
         """Return a filtered view excluding keys with None values.
 
         This is useful after :func:`partition` to see only the active entries.
 
         Returns:
-            Read-only mapping containing only non-None entries.
+            Dictionary containing only non-None entries.
 
         Examples:
             >>> state = State.from_pytree({"a": 1, "b": 2})
-            >>> left, _ = partition(state, predicate=lambda k, _: k == ("a",))
+            >>> left, _ = partition(state, predicate=lambda k, _: k == "a")
             >>> left.notnone
-            {('a',): 1}
+            {'a': 1}
         """
-        return MappingProxyType(
-            {k: v for k, v in self._mapping.items() if v is not None}
-        )
+        return {k: v for k, v in self._mapping.items() if v is not None}
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
@@ -284,16 +306,16 @@ def merge(*states: State[V]) -> State[V]:
     When states share overlapping keys, the last value wins.
 
     Args:
-        *states: Sequence of :class:`State` instances to merge (at least two).
+        *states: Sequence of :class:`State` instances to merge (at least one).
 
     Returns:
         New :class:`State` containing all key/value pairs from the inputs.
 
     Raises:
-        ValueError: If fewer than two states are provided.
+        ValueError: If no states are provided.
     """
-    if len(states) < 2:
-        msg = "merge requires at least two states"
+    if len(states) < 1:
+        msg = "merge requires at least one state"
         raise ValueError(msg)
 
     all_keys: list[K] = []
@@ -306,7 +328,9 @@ def merge(*states: State[V]) -> State[V]:
 
     compound_treedef = jtu.treedef_tuple(child_treedefs)
     mapping = dict(zip(all_keys, all_vals, strict=False))
-    return State(mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys)))
+    return State(
+        mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys), merged=True)
+    )
 
 
 def split(state: State[V]) -> tuple[State[V], ...]:
@@ -325,12 +349,11 @@ def split(state: State[V]) -> tuple[State[V], ...]:
         ValueError: If ``state`` was not produced by :func:`merge`.
     """
 
-    td = state.treedefmeta.treedef
-    if td != jtu.treedef_tuple(jtu.treedef_children(td)):
+    if not state.is_merged:
         msg = "split requires a state produced by merge"
         raise ValueError(msg)
 
-    child_treedefs = jtu.treedef_children(td)
+    child_treedefs = jtu.treedef_children(state.treedefmeta.treedef)
     offset, states = 0, []
     for child_td in child_treedefs:
         n = child_td.num_leaves
@@ -360,9 +383,9 @@ def partition(
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
-        >>> dict(right.notnone)
-        {('b',): 2}
+        >>> left, right = partition(state, predicate=lambda key, _: key == "a")
+        >>> right.notnone
+        {'b': 2}
     """
 
     left_data: dict[K, V] = {}
@@ -398,8 +421,8 @@ def combine_partitions(
 
     Examples:
         >>> state = State.from_pytree({"a": 1, "b": 2})
-        >>> left, right = partition(state, predicate=lambda key, _: key == ("a",))
-        >>> combine_partitions(left, right)["b",]
+        >>> left, right = partition(state, predicate=lambda key, _: key == "a")
+        >>> combine_partitions(left, right)["b"]
         2
     """
     if left.treedefmeta != right.treedefmeta:
@@ -434,8 +457,8 @@ def update(
 
     Examples:
         >>> base = State.from_pytree({"a": 1, "b": 2})
-        >>> update(base, updates={("b",): 99}).to_dict()
-        {('a',): 1, ('b',): 99}
+        >>> update(base, updates={"b": 99}).to_dict()
+        {'a': 1, 'b': 99}
     """
     if not isinstance(state, State):
         msg = "Can only update State types"  # type: ignore[unreachable]

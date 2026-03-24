@@ -5,9 +5,9 @@ Example
 >>> from everwillow import statelib as sl
 >>> from everwillow.parameters import transforms
 >>> state = sl.State.from_pytree({"mu": 0.3})
->>> transform_map = {("mu",): transforms.MinuitTransform(lower=0.0, upper=1.0)}
+>>> transform_map = {"mu": transforms.MinuitTransform(lower=0.0, upper=1.0)}
 >>> unwrapped = unwrap(state, transform_map)
->>> jnp.isclose(wrap(unwrapped, transform_map)[("mu",)], state[("mu",)])
+>>> jnp.isclose(wrap(unwrapped, transform_map)["mu"], state["mu"])
 Array(True, dtype=bool)
 """
 

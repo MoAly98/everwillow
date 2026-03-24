@@ -29,12 +29,12 @@ class Transform(tp.Generic[V]):
     """Describe how a single key/value pair should be rewritten.
 
     Examples:
-        >>> transform = Transform(new_key=("scale",), value_fn=lambda _k, v: 2 * v)
+        >>> transform = Transform(new_key="scale", value_fn=lambda _k, v: 2 * v)
         >>> transform.new_key
-        ('scale',)
+        'scale'
     """
 
-    new_key: K  #: Replacement key tuple used in the transformed state.
+    new_key: K  #: Replacement canonical key used in the transformed state.
     value_fn: tp.Callable[[K, V], V] = dataclasses.field(
         default=_identity
     )  #: Callable applied to derive the transformed value.
@@ -60,9 +60,9 @@ def apply_transformations(
 
     Examples:
         >>> base = State.from_pytree({"a": 1, "b": 2})
-        >>> transform = {("a",): Transform(new_key=("alpha",))}
+        >>> transform = {"a": Transform(new_key="alpha")}
         >>> apply_transformations(base, transform).to_dict()
-        {('alpha',): 1, ('b',): 2}
+        {'alpha': 1, 'b': 2}
     """
     if not isinstance(state, State):
         message = "'state' must be a State instance"  # type: ignore[unreachable]

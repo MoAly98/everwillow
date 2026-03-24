@@ -34,7 +34,7 @@ def make_asimov(
     Args:
         predict_fn: Function mapping parameter state to expected observation.
         params: Parameter state (used as template).
-        poi_key: Canonical key for the parameter of interest, e.g. ("mu",).
+        poi_key: Canonical key for the parameter of interest, e.g. "mu".
         mu_asimov: POI value at which to generate the Asimov dataset.
 
     Returns:
@@ -123,7 +123,7 @@ def constrained_fit(
         updated_params = sl.update(params, updates=fixed)
         nll_value = jnp.asarray(nll_fn(updated_params.to_pytree(), observation))
         return FitResult(
-            params=updated_params.to_pytree(),
+            params=updated_params,
             nll=nll_value,
             success=jnp.asarray(True),
             solver_result=None,

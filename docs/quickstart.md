@@ -43,10 +43,31 @@ result = ew.fit(
 # make sure the solver converged
 assert result.success
 
-print(result.params)
+print(result.params.to_pytree())
 # {
 #   'loc': Array(0.39995897, dtype=float64),
 #   'scale': Array(0.40000754, dtype=float64),
+# }
+```
+
+### Fixing parameters
+
+To hold parameters constant during a fit, pass a `State` with `...` (Ellipsis) values via the `fixed` argument. For example, fix `scale` at its initial value and only fit `loc`:
+
+```python
+result_fixed = ew.fit(
+    nll_fn=neg_log_likelihood,
+    params=sl.State.from_pytree(init_params),
+    observation=data,
+    fixed=sl.State.from_pytree({"scale": ...}),
+    solver=optx.BFGS(rtol=1e-6, atol=1e-6),
+    max_steps=1_000,
+)
+
+print(result_fixed.params.to_pytree())
+# {
+#   'loc': Array(0.39995897, dtype=float64),
+#   'scale': 1.0,  # frozen at initial value
 # }
 ```
 
@@ -57,10 +78,8 @@ After fitting, extract parameter uncertainties from the inverse Hessian of the N
 ```python
 from everwillow.uncertainty import uncertainties, covariance_matrix, correlation_matrix
 
-fitted_params = sl.State.from_pytree(result.params)
-
 # Parameter uncertainties: σ_i = √((H⁻¹)_ii)
-unc = uncertainties(neg_log_likelihood, fitted_params, data)
+unc = uncertainties(neg_log_likelihood, result.params, data)
 print(unc.to_pytree())
 # {
 #   'loc': Array(0.00040001, dtype=float64),
@@ -68,13 +87,13 @@ print(unc.to_pytree())
 # }
 
 # Full covariance matrix
-cov = covariance_matrix(neg_log_likelihood, fitted_params, data)
+cov = covariance_matrix(neg_log_likelihood, result.params, data)
 print(cov)
 # [[ 1.6001e-07,  1.2164e-16],
 #  [ 1.2164e-16,  8.0003e-08]]
 
 # Correlation matrix (normalized covariance, diagonal = 1)
-corr = correlation_matrix(neg_log_likelihood, fitted_params, data)
+corr = correlation_matrix(neg_log_likelihood, result.params, data)
 print(corr)
 # [[ 1.0000e+00,  1.0751e-09],
 #  [ 1.0751e-09,  1.0000e+00]]
@@ -121,7 +140,7 @@ calc = AsymptoticCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
-    poi_key=("mu",),
+    poi_key="mu",
     predict_fn=predict,
     test_statistic=QTilde(),
     distribution=QTildeAsymptotic(),
@@ -175,9 +194,9 @@ for name, val in brazil.expected:
 
 Hypothesis testing in everwillow is built from three composable pieces:
 
-- **Test statistic** — computes a scalar from the NLL and data. `QTilde` (default) and `QMu` are one-sided for upper limits, `Q0` is for discovery, `TMu` is two-sided for intervals.
-- **Distribution** — converts the test statistic into p-values. Asymptotic distributions (`QTildeAsymptotic`, `QMuAsymptotic`, etc.) use the Cowan et al. formulas. `SimpleEmpiricalDistribution` uses toys.
-- **Calculator** — binds the model (NLL, parameters, data) and orchestrates the test. `AsymptoticCalculator` extends `HypoTestCalculator` with Asimov dataset generation via `predict_fn`.
+- **Test statistic**  - computes a scalar from the NLL and data. `QTilde` (default) and `QMu` are one-sided for upper limits, `Q0` is for discovery, `TMu` is two-sided for intervals.
+- **Distribution**  - converts the test statistic into p-values. Asymptotic distributions (`QTildeAsymptotic`, `QMuAsymptotic`, etc.) use the Cowan et al. formulas. `SimpleEmpiricalDistribution` uses toys.
+- **Calculator**  - binds the model (NLL, parameters, data) and orchestrates the test. `AsymptoticCalculator` extends `HypoTestCalculator` with Asimov dataset generation via `predict_fn`.
 
 ### Toy-based p-values
 
@@ -199,7 +218,7 @@ toys = toy_gen.generate(
     nll,
     params,
     observed,
-    ("mu",),
+    "mu",
     poi_test=1.0,
     poi_alt=0.0,
     key=jax.random.key(42),
@@ -214,7 +233,7 @@ calc = HypoTestCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
-    poi_key=("mu",),
+    poi_key="mu",
     test_statistic=QTilde(),
     distribution=dist,
 )

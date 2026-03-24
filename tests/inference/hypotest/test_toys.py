@@ -50,7 +50,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(42),
             **{gen_method: gen_fn},
@@ -74,14 +74,14 @@ class TestToyGenerator:
                 params,
                 observed,
                 "mu",
-                poi_test=1.0,
+                poi_null=1.0,
                 key=jax.random.key(42),
             )
 
     def test_q_alt_vs_q_null_distribution(self):
         """Test that q_alt and q_null have different distributions.
 
-        Under null (poi_test=1.0), data is consistent -> q_null tends to be small.
+        Under null (poi_null=1.0), data is consistent -> q_null tends to be small.
         Under alt (poi_alt=0.0), data inconsistent with poi_test -> q_alt large.
         """
         params = create_params(mu_init=1.0)
@@ -93,7 +93,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(123),
             predict_fn=predict_fn,
@@ -117,7 +117,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(999),
             predict_fn=predict_fn,
@@ -128,7 +128,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(999),
             predict_fn=predict_fn,
@@ -149,7 +149,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(111),
             predict_fn=predict_fn,
@@ -160,7 +160,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(222),
             predict_fn=predict_fn,
@@ -193,7 +193,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=key,
             predict_fn=predict_fn,
@@ -203,7 +203,7 @@ class TestToyGenerator:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=key,
             predict_fn=predict_fn,
@@ -219,7 +219,7 @@ class TestToyGeneratorPoissonSampler:
     def test_poisson_samples_values(self):
         """Test that Poisson toys produce expected q distributions.
 
-        Under null (poi_test=1.0): testing at true mu, so
+        Under null (poi_null=1.0): testing at true mu, so
         QTilde gives q=0 for most toys (mu_hat ≈ mu_test).
         Median q_null should be near 0.0.
         """
@@ -232,7 +232,7 @@ class TestToyGeneratorPoissonSampler:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(42),
             predict_fn=predict_fn,
@@ -240,7 +240,7 @@ class TestToyGeneratorPoissonSampler:
 
         assert jnp.all(jnp.isfinite(toys.q_alt))
         assert jnp.all(jnp.isfinite(toys.q_null))
-        # Under null (poi_test=1.0), testing at true mu: median q_null ≈ 0
+        # Under null (poi_null=1.0), testing at true mu: median q_null ≈ 0
         assert float(jnp.median(toys.q_null)) == pytest.approx(0.0, abs=0.5)
 
     def test_poisson_mean_matches_expectation(self):
@@ -293,7 +293,7 @@ class TestToyGeneratorIntegration:
             params,
             observed,
             "mu",
-            poi_test=1.0,
+            poi_null=1.0,
             poi_alt=0.0,
             key=jax.random.key(42),
             predict_fn=predict_fn,

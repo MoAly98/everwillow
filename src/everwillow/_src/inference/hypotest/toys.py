@@ -23,7 +23,7 @@ __all__ = ["ToyGenerator"]
 class ToyGenerator(eqx.Module):
     """Generates toy experiments for hypothesis testing.
 
-    Creates toys under the tested hypothesis (poi_test) and optionally
+    Creates toys under the null hypothesis (poi_null) and optionally
     under an alternative hypothesis (poi_alt). Returns a ToyResult
     with raw test statistic arrays that can be fed into any
     EmpiricalDistribution subclass for p-value computation.
@@ -33,8 +33,9 @@ class ToyGenerator(eqx.Module):
         ntoys: Number of toys per hypothesis. Defaults to 1000.
         map_fn: Function that maps a scalar function over an array of keys.
             Defaults to ``jax.vmap``. Replace with e.g.
-            ``partial(jax.lax.map, batch_size=8)`` for batched sequential
-            execution, or a Python loop for debugging.
+            ``lambda fn: partial(jax.lax.map, fn, batch_size=8)`` to
+            process toys in groups instead of all at once, or a Python
+            loop for step-through debugging.
 
     Example:
         >>> toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10000)
@@ -68,7 +69,7 @@ class ToyGenerator(eqx.Module):
         params: sl.State,
         observation: PyTree,
         poi_key: sl.K,
-        poi_test: float,
+        poi_null: float,
         *,
         poi_alt: float | None = None,
         key: PRNGKeyArray,
@@ -83,10 +84,12 @@ class ToyGenerator(eqx.Module):
             params: Initial parameter state.
             observation: Observed data (used to profile nuisance parameters).
             poi_key: Canonical key for the parameter of interest, e.g. "mu".
-            poi_test: Test value for the POI (the tested hypothesis).
+            poi_null: Null hypothesis POI value. Toys generated under this
+                hypothesis populate q_null. The test statistic is evaluated
+                at this value for each toy.
             poi_alt: Alternative hypothesis POI value. If provided, toys are
-                generated under both hypotheses. If None, only null (tested)
-                toys are generated and q_alt will be None in the result.
+                generated under both hypotheses. If None, only null toys are
+                generated and q_alt will be None in the result.
                 For exclusion tests, typically 0.0. For discovery, typically 1.0.
             key: JAX PRNG key for reproducibility.
             sample_fn: Function to generate toy data. Called as
@@ -108,8 +111,8 @@ class ToyGenerator(eqx.Module):
                 raise ValueError("Either sample_fn or predict_fn must be provided")
             sample_fn = self._make_poisson_sampler(predict_fn)
 
-        # Null hypothesis (tested): POI = poi_test
-        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
+        # Null hypothesis: POI = poi_null
+        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: poi_null})
         null_result = constrained_fit(
             nll_fn, params, observation, fixed_null, **fit_kwargs
         )
@@ -133,7 +136,7 @@ class ToyGenerator(eqx.Module):
                 params_alt,
                 params,
                 poi_key,
-                poi_test,
+                poi_null,
                 sample_fn,
                 keys_alt,
                 fit_kwargs,
@@ -141,13 +144,13 @@ class ToyGenerator(eqx.Module):
         else:
             keys_null = jax.random.split(key, self.ntoys)
 
-        # Generate toys under null (tested) hypothesis
+        # Generate toys under null hypothesis
         q_null = self._run_toys(
             nll_fn,
             params_null,
             params,
             poi_key,
-            poi_test,
+            poi_null,
             sample_fn,
             keys_null,
             fit_kwargs,
@@ -161,7 +164,7 @@ class ToyGenerator(eqx.Module):
         sample_params: sl.State,
         fit_params: sl.State,
         poi_key: sl.K,
-        poi_test: float,
+        poi_null: float,
         sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
         keys: PRNGKeyArray,
         fit_kwargs: dict[str, tp.Any],
@@ -175,7 +178,7 @@ class ToyGenerator(eqx.Module):
             sample_params: Parameters to use for sampling (State).
             fit_params: Parameters to use for fitting (State).
             poi_key: Canonical key for the POI.
-            poi_test: Test value for POI.
+            poi_null: Null hypothesis POI value.
             sample_fn: Sampling function.
             keys: Array of PRNG keys, one per toy.
             fit_kwargs: Additional fit arguments.
@@ -188,8 +191,8 @@ class ToyGenerator(eqx.Module):
             # Generate toy observation
             toy_observation = sample_fn(sample_params, key)
             # Compute test statistic using toy as observation
-            result = self.test_statistic(
-                nll_fn, fit_params, toy_observation, poi_key, poi_test, **fit_kwargs
+            result = self.test_statistic.compute(
+                nll_fn, fit_params, toy_observation, poi_key, poi_null, **fit_kwargs
             )
             return result.value
 

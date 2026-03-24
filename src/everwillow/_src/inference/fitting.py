@@ -103,6 +103,10 @@ def prepare(
             raise TypeError(msg)
 
     for i, state in enumerate(states):
+        if not isinstance(state, sl.State):
+            msg = f"states[{i}] is not a State instance"  # type: ignore[unreachable]
+            raise TypeError(msg)
+
         if state.is_merged:
             msg = f"states[{i}] is already a merged state — nested prepare() is not allowed"
             raise TypeError(msg)

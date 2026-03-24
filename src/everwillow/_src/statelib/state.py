@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 
-K: tp.TypeAlias = str | tuple[str, ...]
+K: tp.TypeAlias = str | tuple[str | int, ...]
 V = tp.TypeVar("V", bound=ArrayLike | None)
 
 
@@ -45,7 +45,9 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 
 
 @tp.overload
-def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> tuple[str, ...]: ...
+def canonicalize_key(
+    path: tuple[tp.Any, ...], *, sep: None
+) -> tuple[str | int, ...]: ...
 
 
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = ".") -> K:
@@ -225,7 +227,7 @@ class State(BaseMapping[V]):
             data[key] = leaf
             keys.append(key)
 
-        treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys))
+        treedefmeta = TreeDefMeta(treedef=treedef, keys=tuple(keys), merged=False)
         return cls(data, treedefmeta=treedefmeta)
 
     def to_pytree(self) -> PyTree[V]:
@@ -253,8 +255,8 @@ class State(BaseMapping[V]):
         Returns:
             ``True`` if the internal treedef is a compound tuple of its children.
         """
-        td = self._treedefmeta.treedef
-        return td == jtu.treedef_tuple(jtu.treedef_children(td))
+        tdm = self._treedefmeta
+        return tdm.merged
 
     @property
     def notnone(self) -> dict[K, V]:
@@ -322,7 +324,9 @@ def merge(*states: State[V]) -> State[V]:
 
     compound_treedef = jtu.treedef_tuple(child_treedefs)
     mapping = dict(zip(all_keys, all_vals, strict=False))
-    return State(mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys)))
+    return State(
+        mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys), merged=True)
+    )
 
 
 def split(state: State[V]) -> tuple[State[V], ...]:

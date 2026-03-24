@@ -47,8 +47,15 @@ class ToyGenerator(eqx.Module):
         >>> # Choose how to interpret the toys (open-world)
         >>> dist = SimpleEmpiricalDistribution.from_toys(toys)
         >>> # Use with HypoTestCalculator
-        >>> calc = HypoTestCalculator(test_statistic=QTilde(), distribution=dist)
-        >>> result = calc(nll_fn, params, observed, "mu", 1.0)
+        >>> calc = HypoTestCalculator(
+        ...     nll_fn=nll_fn,
+        ...     params=params,
+        ...     observation=observed,
+        ...     poi_key="mu",
+        ...     test_statistic=QTilde(),
+        ...     distribution=dist,
+        ... )
+        >>> result = calc.test(1.0)
     """
 
     test_statistic: TestStatistic

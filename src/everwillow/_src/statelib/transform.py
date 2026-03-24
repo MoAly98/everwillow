@@ -34,7 +34,7 @@ class Transform(tp.Generic[V]):
         'scale'
     """
 
-    new_key: K  #: Replacement key tuple used in the transformed state.
+    new_key: K  #: Replacement canonical key used in the transformed state.
     value_fn: tp.Callable[[K, V], V] = dataclasses.field(
         default=_identity
     )  #: Callable applied to derive the transformed value.

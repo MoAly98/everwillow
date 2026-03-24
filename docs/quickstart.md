@@ -265,6 +265,7 @@ from everwillow.hypotest.upper_limit import upper_limit
 def cls_objective(poi):
     return calc.cls(calc.test(poi))
 
+
 # solve for objective = level
 limit = upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
 print(f"95% CL upper limit: {float(limit):.4f}")
@@ -272,7 +273,7 @@ print(f"95% CL upper limit: {float(limit):.4f}")
 ```
 
 **`upper_limit_scan`** — evaluates the objective on a grid and interpolates.
-Useful when you already know a narrow region around which the limit sits. 
+Useful when you already know a narrow region around which the limit sits.
 
 ```python
 from everwillow.hypotest.upper_limit import upper_limit_scan

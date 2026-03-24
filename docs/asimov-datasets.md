@@ -56,7 +56,11 @@ There are two ways:
 
    ```python
    result = QTilde().compute(
-       nll, params, observed, "mu", poi_test=1.0,
+       nll,
+       params,
+       observed,
+       "mu",
+       poi_test=1.0,
        asimov_observation={"n": 5.0},
    )
    ```

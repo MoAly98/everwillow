@@ -13,7 +13,6 @@ from jaxtyping import Array
 __all__ = [
     "BandValues",
     "ExpectedBands",
-    "ExpectedLimitResult",
     "HypoTestResult",
     "TestStatResult",
     "ToyResult",
@@ -129,18 +128,3 @@ class HypoTestResult(eqx.Module):
     pnull: Array | None
     palt: Array | None
     test_stat_result: TestStatResult
-
-
-class ExpectedLimitResult(eqx.Module):
-    """Result of expected upper limit computation with Brazil bands.
-
-    Contains observed limit and expected limits at standard sigma levels,
-    suitable for producing Brazil band plots.
-
-    Attributes:
-        observed: Observed upper limit.
-        expected: Expected limits at ±Nσ fluctuation bands.
-    """
-
-    observed: Array
-    expected: BandValues

@@ -44,11 +44,11 @@ class TestStatistic(eqx.Module):
     handled separately by Distribution classes.
 
     Subclasses must implement:
-        - ``_compute_q``: Compute the core test statistic formula.
+        - ``_compute``: Compute the core test statistic formula.
 
     """
 
-    def __call__(
+    def compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -70,7 +70,7 @@ class TestStatistic(eqx.Module):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute_q(
+        q_obs, extras = self._compute(
             nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
         )
 
@@ -79,7 +79,7 @@ class TestStatistic(eqx.Module):
         )
 
     @abc.abstractmethod
-    def _compute_q(
+    def _compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -135,7 +135,7 @@ class CowanTestStatistic(TestStatistic):
 
     mu_asimov: float = 0.0
 
-    def __call__(
+    def compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -165,7 +165,7 @@ class CowanTestStatistic(TestStatistic):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute_q(
+        q_obs, extras = self._compute(
             nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
         )
 
@@ -178,7 +178,7 @@ class CowanTestStatistic(TestStatistic):
 
         q_asimov = None
         if asimov_obs is not None:
-            q_asimov_val, asimov_extras = self._compute_q(
+            q_asimov_val, asimov_extras = self._compute(
                 nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs
             )
             q_asimov = q_asimov_val
@@ -232,7 +232,7 @@ class QTilde(CowanTestStatistic):
     This is the standard test statistic for CLs upper limit calculations.
     """
 
-    def _compute_q(
+    def _compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -296,7 +296,7 @@ class QMu(CowanTestStatistic):
     protects against excluding signal when there is an upward fluctuation.
     """
 
-    def _compute_q(
+    def _compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -354,7 +354,7 @@ class Q0(CowanTestStatistic):
 
     mu_asimov: float = 1.0
 
-    def __call__(
+    def compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -372,7 +372,7 @@ class Q0(CowanTestStatistic):
         Note:
             The ``poi_test`` argument is ignored; Q0 always tests μ=0 by design.
         """
-        return super().__call__(
+        return super().compute(
             nll_fn,
             params,
             observation,
@@ -384,7 +384,7 @@ class Q0(CowanTestStatistic):
             **fit_kwargs,
         )
 
-    def _compute_q(
+    def _compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
@@ -433,7 +433,7 @@ class TMu(CowanTestStatistic):
     take any non-negative value regardless of :math:`\hat{\mu}`.
     """
 
-    def _compute_q(
+    def _compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,

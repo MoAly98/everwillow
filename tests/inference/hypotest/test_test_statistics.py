@@ -20,16 +20,16 @@ from ._counting_model import (
 
 
 class TestTestStatisticBase:
-    """Tests for TestStatistic.__call__ (base class, not CowanTestStatistic)."""
+    """Tests for TestStatistic.compute (base class, not CowanTestStatistic)."""
 
-    def test_call_returns_correct_fields(self):
-        """Base __call__ sets value, test=poi_test, q_asimov=None, extras."""
+    def test_compute_returns_correct_fields(self):
+        """Base compute sets value, test=poi_test, q_asimov=None, extras."""
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        # Call the base TestStatistic.__call__ directly, bypassing
+        # Call the base TestStatistic.compute directly, bypassing
         # CowanTestStatistic's override (which adds Asimov handling).
-        result = TestStatistic.__call__(
+        result = TestStatistic.compute(
             QTilde(), poisson_nll, params, observed, "mu", poi_test=1.0
         )
 
@@ -73,7 +73,7 @@ class TestQTilde:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = QTilde()(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = QTilde().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -112,7 +112,7 @@ class TestQMu:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = QMu()(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = QMu().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -151,7 +151,7 @@ class TestTMu:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = TMu()(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = TMu().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_t, abs=1e-4)
@@ -190,7 +190,7 @@ class TestQ0:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = Q0()(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = Q0().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -200,9 +200,9 @@ class TestQ0:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result0 = Q0()(poisson_nll, params, observed, "mu", poi_test=0.0)
-        result1 = Q0()(poisson_nll, params, observed, "mu", poi_test=1.0)
-        result2 = Q0()(poisson_nll, params, observed, "mu", poi_test=2.0)
+        result0 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=0.0)
+        result1 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result2 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=2.0)
 
         assert result0.value == pytest.approx(result1.value, abs=1e-6)
         assert result1.value == pytest.approx(result2.value, abs=1e-6)
@@ -233,7 +233,9 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass()(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = TestStatClass().compute(
+            poisson_nll, params, observed, "mu", poi_test=1.0
+        )
 
         assert result.test == pytest.approx(expected_test)
 
@@ -243,7 +245,9 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass()(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = TestStatClass().compute(
+            poisson_nll, params, observed, "mu", poi_test=1.0
+        )
 
         assert result.q_asimov is None
 
@@ -264,7 +268,7 @@ class TestCowanTestStatisticGeneral:
         @jax.jit
         def compute_q(obs_n):
             obs = {"n": obs_n}
-            return test_stat(poisson_nll, params, obs, "mu", poi_test=1.0).value
+            return test_stat.compute(poisson_nll, params, obs, "mu", poi_test=1.0).value
 
         q = compute_q(15.0)
         assert q == pytest.approx(expected_q, abs=1e-4)
@@ -276,7 +280,7 @@ class TestCowanTestStatisticGeneral:
         observed = create_observation(10.0)
         asimov = create_observation(15.0)  # Expected for mu=1
 
-        result = TestStatClass()(
+        result = TestStatClass().compute(
             poisson_nll,
             params,
             observed,
@@ -296,7 +300,7 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
-        result = TestStatClass()(
+        result = TestStatClass().compute(
             poisson_nll,
             params,
             observed,
@@ -325,7 +329,7 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
-        result = TestStatClass()(
+        result = TestStatClass().compute(
             poisson_nll,
             params,
             observed,

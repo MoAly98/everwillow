@@ -97,9 +97,9 @@ unc_combined = uncertainties(combined_nll, result.params, obs)
 print(f"σ(mass) exp A only:  {float(unc_a['mass']):.3f}")
 print(f"σ(mass) exp B only:  {float(unc_b['m']):.3f}")
 print(f"σ(mass) combined:    {float(unc_combined['mass']):.3f}")
-# σ(mass) exp A only:  1.500
-# σ(mass) exp B only:  2.000
-# σ(mass) combined:    1.200
+# σ(mass) exp A only:  2.924
+# σ(mass) exp B only:  4.245
+# σ(mass) combined:    2.408
 ```
 
 The combined constraint is tighter than either individual measurement  - the merged state ensures both models are optimized with a single shared mass parameter.

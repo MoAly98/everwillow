@@ -15,8 +15,9 @@ the box.
 
 ## Custom test statistic
 
-Subclass `TestStatistic` and implement `_compute_q`. The base class handles the
-rest (calling your method, packaging the result):
+Subclass `TestStatistic` and implement `_compute`. The base class `compute()`
+method calls `_compute()`, packages the result into a `TestStatResult`, and
+returns it:
 
 ```python
 import jax.numpy as jnp
@@ -30,9 +31,9 @@ from everwillow.hypotest.utils import constrained_fit
 class SignedQMu(TestStatistic):
     """Signed q_mu: negative when mu_hat > mu_test."""
 
-    def _compute_q(self, nll_fn, params, observation, poi_key, poi_test, **kw):
+    def _compute(self, nll_fn, params, observation, poi_key, poi_test, **kw):
         fit_free = ew.fit(nll_fn, params, observation, **kw)
-        mu_hat = sl.State.from_pytree(fit_free.params)[poi_key]
+        mu_hat = fit_free.params[poi_key]
 
         fixed = sl.State.from_pytree({poi_key: poi_test})
         fit_cond = constrained_fit(nll_fn, params, observation, fixed, **kw)
@@ -165,7 +166,7 @@ toys = toy_gen.generate(
     params,
     observed,
     "mu",
-    poi_test=1.0,
+    poi_null=1.0,
     poi_alt=0.0,
     key=jax.random.key(0),
     sample_fn=sample_fn,
@@ -185,14 +186,18 @@ keys. The `map_fn` argument lets you swap in any mapping strategy with the same
 from functools import partial
 
 import jax
+import jax.numpy as jnp
 
 from everwillow.hypotest.test_statistics import QTilde
 from everwillow.hypotest.toys import ToyGenerator
 
-# Sequential execution (useful for debugging)
-ToyGenerator(test_statistic=QTilde(), map_fn=lambda fn: partial(jax.lax.map, fn))
+# Batched mapping (processes toys in groups of 8 instead of all at once)
+ToyGenerator(
+    test_statistic=QTilde(),
+    map_fn=lambda fn: partial(jax.lax.map, fn, batch_size=8),
+)
 
-# Python loop (no JIT, full traceability)
+# Python loop (no JIT, useful for step-through debugging)
 ToyGenerator(
     test_statistic=QTilde(),
     map_fn=lambda fn: lambda keys: jnp.stack([fn(k) for k in keys]),

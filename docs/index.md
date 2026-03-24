@@ -13,6 +13,8 @@ quickstart
 statelib
 combining-models
 extending-hypotest
+asimov-datasets
+tips
 interoperability
 ```
 

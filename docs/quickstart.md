@@ -111,7 +111,6 @@ import everwillow.statelib as sl
 from everwillow.hypotest.calculators import AsymptoticCalculator
 from everwillow.hypotest.distributions import QTildeAsymptotic
 from everwillow.hypotest.test_statistics import QTilde
-from everwillow.hypotest.upper_limit import expected_upper_limit, upper_limit
 
 jax.config.update("jax_enable_x64", True)
 
@@ -135,7 +134,8 @@ def predict(params_state):
 params = sl.State.from_pytree({"mu": 1.0})
 observed = {"n": 12.0}
 
-# Run hypothesis test at mu=1
+# AsymptoticCalculator binds the model and provides predict_fn for Asimov
+# dataset generation. QTilde + QTildeAsymptotic are the defaults.
 calc = AsymptoticCalculator(
     nll_fn=nll,
     params=params,
@@ -145,6 +145,8 @@ calc = AsymptoticCalculator(
     test_statistic=QTilde(),
     distribution=QTildeAsymptotic(),
 )
+
+# Run hypothesis test at mu=1
 result = calc.test(1.0)
 
 print(f"Test statistic: {result.q_obs:.4f}")
@@ -156,7 +158,8 @@ print(f"CLs:            {calc.cls(result):.6f}")
 # Alt p-value:    0.986078
 # CLs:            0.214013
 
-# Expected CLs at standard sigma bands (from Asimov dataset)
+# Expected CLs at standard sigma bands (from Asimov dataset).
+# bands.cl_s is a BandValues — iterable as (name, value) pairs.
 bands = calc.expected(result)
 for name, val in bands.cl_s:
     print(f"  {name}: {float(val):.6f}")
@@ -165,31 +168,31 @@ for name, val in bands.cl_s:
 # median:       0.002679
 # plus_1sigma:  0.026892
 # plus_2sigma:  0.161777
+```
+
+### Extra NLL arguments via `functools.partial`
+
+If your NLL function takes extra arguments beyond `(params, observation)`, use
+`functools.partial` to bind them before passing to `fit()`:
+
+```python
+from functools import partial
 
 
-# upper_limit finds the POI value where CLs crosses a confidence level
-def cls_objective(poi):
-    return calc.cls(calc.test(poi))
+def nll_with_config(params, observation, signal, background):
+    mu = params["mu"]
+    expected = mu * signal + background
+    return expected - observation["n"] * jnp.log(expected)
 
 
-# 95% CL upper limit on mu
-limit = upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
+# Bind signal and background, leaving (params, observation) free
+nll_fn = partial(nll_with_config, signal=10.0, background=5.0)
 
-print(f"95% CL upper limit: {float(limit):.4f}")
-# 95% CL upper limit: 1.3673
-
-# Expected upper limit with ±1σ/±2σ Brazil bands
-brazil = expected_upper_limit(calc, bounds=(0.0, 5.0), level=0.05)
-
-print(f"Observed:  {float(brazil.observed):.4f}")
-for name, val in brazil.expected:
-    print(f"  {name}: {float(val):.4f}")
-# Observed:  1.3673
-# minus_2sigma: 0.2734
-# minus_1sigma: 0.3854
-# median:       0.5746
-# plus_1sigma:  0.8792
-# plus_2sigma:  1.3121
+result = ew.fit(
+    nll_fn=nll_fn,
+    params=sl.State.from_pytree({"mu": 1.0}),
+    observation={"n": 12.0},
+)
 ```
 
 Hypothesis testing in everwillow is built from three composable pieces:
@@ -209,17 +212,18 @@ from everwillow.hypotest.calculators import HypoTestCalculator
 from everwillow.hypotest.distributions import SimpleEmpiricalDistribution
 from everwillow.hypotest.test_statistics import QTilde
 from everwillow.hypotest.toys import ToyGenerator
-from everwillow.hypotest.upper_limit import expected_upper_limit, upper_limit
 
-# Generate toys under tested (mu=1) and alternative (mu=0) hypotheses
-# Toys will be generated in a vectorised mannter using jax.vmap by default
+# Generate toys under null (poi_null=1.0) and alternative (poi_alt=0.0) hypotheses.
+# poi_null is the hypothesis under which null toys are generated.
+# poi_alt is the hypothesis under which alternative toys are generated.
+# Toys are generated in a vectorised manner using jax.vmap by default.
 toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=5000)
 toys = toy_gen.generate(
     nll,
     params,
     observed,
     "mu",
-    poi_test=1.0,
+    poi_null=1.0,
     poi_alt=0.0,
     key=jax.random.key(42),
     predict_fn=predict,
@@ -228,8 +232,11 @@ toys = toy_gen.generate(
 # Build empirical distribution from toys
 dist = SimpleEmpiricalDistribution.from_toys(toys)
 
-# Use with calculator for p-values and limits
-calc = HypoTestCalculator(
+# Use with calculator for p-values.
+# calc.test(poi_value) evaluates the test statistic at poi_value using
+# the distribution built from toys — this should match poi_null for
+# the distribution to be valid.
+toy_calc = HypoTestCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
@@ -237,6 +244,103 @@ calc = HypoTestCalculator(
     test_statistic=QTilde(),
     distribution=dist,
 )
-result = calc.test(1.0)
-print(f"CLs (toy): {calc.cls(result):.4f}")
+result = toy_calc.test(1.0)
+print(f"CLs (toy): {toy_calc.cls(result):.4f}")
+```
+
+### Upper limits
+
+All upper limit functions take a user-composed objective and find where it
+crosses a target level. They work with any calculator — asymptotic or toy-based.
+
+**`upper_limit`** — determine limit by using a bisection root-finding algorithm.
+This is the standard choice for asymptotic distributions and cases where the objective is a
+deterministic function of POI:
+
+```python
+from everwillow.hypotest.upper_limit import upper_limit
+
+
+# Compose a poi -> scalar objective from the calculator:
+def cls_objective(poi):
+    return calc.cls(calc.test(poi))
+
+# solve for objective = level
+limit = upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
+print(f"95% CL upper limit: {float(limit):.4f}")
+# 95% CL upper limit: 1.3673
+```
+
+**`upper_limit_scan`** — evaluates the objective on a grid and interpolates.
+Useful when you already know a narrow region around which the limit sits. 
+
+```python
+from everwillow.hypotest.upper_limit import upper_limit_scan
+
+scan = jnp.linspace(0.0, 3.0, 100)
+limit_scan = upper_limit_scan(cls_objective, scan, level=0.05)
+print(f"95% CL upper limit (scan): {float(limit_scan):.4f}")
+```
+
+**`upper_limit_toys`** — stochastic bisection for objectives that regenerate
+toys at each POI evaluation. Takes `(poi, key)` and uses a fresh PRNG key per
+iteration:
+
+```python
+from everwillow.hypotest.upper_limit import upper_limit_toys
+
+
+def stochastic_cls(poi, key):
+    """Regenerate toys at each POI value during the search."""
+    toys = toy_gen.generate(
+        nll,
+        params,
+        observed,
+        "mu",
+        poi_null=poi,
+        poi_alt=0.0,
+        key=key,
+        predict_fn=predict,
+    )
+    dist = SimpleEmpiricalDistribution.from_toys(toys)
+    toy_calc = HypoTestCalculator(
+        nll_fn=nll,
+        params=params,
+        observation=observed,
+        poi_key="mu",
+        test_statistic=QTilde(),
+        distribution=dist,
+    )
+    return toy_calc.cls(toy_calc.test(poi))
+
+
+limit_toys = upper_limit_toys(
+    stochastic_cls, bounds=(0.0, 5.0), key=jax.random.key(0), tol=0.01
+)
+```
+
+**`expected_upper_limit`** — finds expected limits at each sigma band. Takes a
+`poi -> BandValues` objective and calls `upper_limit` five times (once per
+band):
+
+```python
+from everwillow.hypotest.upper_limit import expected_upper_limit
+
+
+def band_cls_objective(poi):
+    result = calc.test(poi)
+    bands = calc.expected(result)
+    return bands.cl_s
+
+
+# Returns BandValues — each entry is the upper limit at that sigma band.
+brazil = expected_upper_limit(band_cls_objective, bounds=(0.0, 5.0), level=0.05)
+
+for name, val in brazil:
+    print(f"  {name}: {float(val):.4f}")
+# minus_2sigma: 0.2734
+# minus_1sigma: 0.3854
+# median:       0.5746
+# plus_1sigma:  0.8792
+# plus_2sigma:  1.3121
 ```

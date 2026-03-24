@@ -32,13 +32,7 @@ import jax.numpy as jnp
 import optimistix as optx
 from jaxtyping import Array, PRNGKeyArray
 
-from everwillow._src.inference.hypotest.calculators import HypoTestCalculator
-from everwillow._src.inference.hypotest.results import (
-    BandValues,
-    ExpectedBands,
-    ExpectedLimitResult,
-)
-from everwillow._src.inference.hypotest.utils import cl_s
+from everwillow._src.inference.hypotest.results import BandValues
 
 __all__ = [
     "expected_upper_limit",
@@ -269,79 +263,47 @@ def upper_limit_scan(
 
 
 def expected_upper_limit(
-    calc: HypoTestCalculator,
+    band_objective_fn: tp.Callable[[float], BandValues],
     bounds: tuple[float, float],
     level: float = 0.05,
-    objective_fn: tp.Callable[[Array, Array], Array] | None = None,
     **solver_kwargs: tp.Any,
-) -> ExpectedLimitResult:
-    """Compute observed and expected upper limits with Brazil bands.
+) -> BandValues:
+    """Find expected upper limits at each sigma band.
 
-    Uses the calculator's expected bands to compute limits at
-    standard sigma fluctuations (-2σ, -1σ, median, +1σ, +2σ).
+    Calls :func:`upper_limit` five times — once per band — extracting
+    the corresponding scalar from the ``BandValues`` returned by
+    ``band_objective_fn``.
 
     Args:
-        calc: Hypothesis test calculator (stores nll_fn, params, etc.).
+        band_objective_fn: Function mapping POI value to ``BandValues``
+            of the objective quantity (e.g. expected CLs at each sigma band).
         bounds: (lower, upper) search range for POI value.
         level: Target level (default 0.05 for 95% CL).
-        objective_fn: Function mapping (pnull, palt) to scalar objective.
-                      Defaults to CLs = pnull / palt.
         **solver_kwargs: Additional arguments passed to :func:`upper_limit`
             (e.g., ``rtol``, ``atol``, ``max_steps``).
 
     Returns:
-        ExpectedLimitResult with observed and expected limits at all bands.
+        BandValues where each entry is the upper limit at that sigma band.
 
     Example:
-        >>> calc = AsymptoticCalculator(
-        ...     nll_fn=nll_fn, params=params, observation=observed,
-        ...     poi_key="mu", predict_fn=my_predict_fn,
-        ... )
-        >>> result = expected_upper_limit(calc, bounds=(0, 5))
-        >>> print(f"Observed: {result.observed:.3f}")
-        >>> print(f"Expected: {result.expected.median:.3f}")
+        >>> def band_cls_objective(poi):
+        ...     result = calc.test(poi)
+        ...     bands = calc.expected(result)
+        ...     return bands.cl_s
+        >>> brazil = expected_upper_limit(band_cls_objective, bounds=(0, 5))
+        >>> for name, val in brazil:
+        ...     print(f"  {name}: {float(val):.4f}")
     """
-
-    if objective_fn is None:
-        objective_fn = cl_s
-
-    # Observed limit
-    def _observed_objective(poi: float) -> Array:
-        r = calc.test(poi)
-        return objective_fn(r.pnull, r.palt)
-
-    observed = upper_limit(
-        _observed_objective,
-        bounds,
-        level,
-        **solver_kwargs,
-    )
-
-    # Expected limits at each sigma band
-    def _get_bands(poi: Array) -> ExpectedBands:
-        result = calc.test(poi)
-        bands = calc.expected(result)
-        if bands is None:
-            msg = "Distribution does not support expected p-values"
-            raise ValueError(msg)
-        return bands
-
-    def _band_objective(band: str) -> tp.Callable[[float], Array]:
-        def fn(poi: float) -> Array:
-            bands = _get_bands(poi)
-            return objective_fn(bands.null_pvalue[band], bands.alt_pvalue[band])
-
-        return fn
-
     band_limits = {}
     for band_name in BandValues._NAMES:
+
+        def _band_fn(poi: float, _name: str = band_name) -> Array:
+            return band_objective_fn(poi)[_name]
+
         band_limits[band_name] = upper_limit(
-            _band_objective(band_name),
+            _band_fn,
             bounds,
             level,
             **solver_kwargs,
         )
-    return ExpectedLimitResult(
-        observed=observed,
-        expected=BandValues(**band_limits),
-    )
+    return BandValues(**band_limits)

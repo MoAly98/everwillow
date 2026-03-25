@@ -73,7 +73,7 @@ class HypoTestCalculator(eqx.Module):
         Returns:
             HypoTestResult with observed p-values.
         """
-        ts_result = self.test_statistic(
+        ts_result = self.test_statistic.compute(
             self.nll_fn,
             self.params,
             self.observation,

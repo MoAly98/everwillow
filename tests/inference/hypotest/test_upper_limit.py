@@ -197,7 +197,7 @@ _DUMMY_OBS = {}
 class _IdentityTestStat(TestStatistic):
     """Returns poi_test as the test stat value (no fitting)."""
 
-    def _compute_q(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
+    def _compute(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
         return jnp.asarray(poi_test), {}
 
 
@@ -207,11 +207,11 @@ class _ConstantSigmaTestStat(TestStatistic):
     Overrides __call__ to set q_asimov (base class leaves it None).
     """
 
-    def __call__(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
+    def compute(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
         q = jnp.asarray(poi_test) ** 2
         return TSResult(value=q, test=jnp.asarray(poi_test), q_asimov=q)
 
-    def _compute_q(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
+    def _compute(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
         return jnp.asarray(poi_test) ** 2, {}
 
 
@@ -280,14 +280,12 @@ class TestExpectedUpperLimit:
 
         CLs = pnull/palt, with palt=0.5 constant.
         Distribution varies sensitivity per band:
-        - observed CLs = exp(-poi)     → limit = -ln(0.05)     = 2.996
         - -2σ CLs = exp(-0.5*poi)      → limit = -ln(0.05)/0.5 = 5.991
         - -1σ CLs = exp(-0.6*poi)      → limit = -ln(0.05)/0.6 = 4.993
         - median CLs = exp(-0.8*poi)   → limit = -ln(0.05)/0.8 = 3.745
         - +1σ CLs = exp(-1.0*poi)      → limit = -ln(0.05)/1.0 = 2.996
         - +2σ CLs = exp(-1.2*poi)      → limit = -ln(0.05)/1.2 = 2.496
         """
-        expected_observed = 2.99573  # -ln(0.05)
         expected_minus2 = 5.99146  # -ln(0.05) / 0.5
         expected_minus1 = 4.99289  # -ln(0.05) / 0.6
         expected_median = 3.74466  # -ln(0.05) / 0.8
@@ -303,22 +301,21 @@ class TestExpectedUpperLimit:
             distribution=_VaryingBandDist(),
         )
 
-        result = expected_upper_limit(calc, bounds=(0.0, 10.0), level=0.05)
+        def band_cls_objective(poi):
+            result = calc.test(poi)
+            bands = calc.expected(result)
+            assert bands is not None
+            return bands.cl_s
 
-        assert float(result.observed) == pytest.approx(expected_observed, rel=1e-3)
-        assert float(result.expected.minus_2sigma) == pytest.approx(
-            expected_minus2, rel=1e-3
+        result = expected_upper_limit(
+            band_cls_objective, bounds=(0.0, 10.0), level=0.05
         )
-        assert float(result.expected.minus_1sigma) == pytest.approx(
-            expected_minus1, rel=1e-3
-        )
-        assert float(result.expected.median) == pytest.approx(expected_median, rel=1e-3)
-        assert float(result.expected.plus_1sigma) == pytest.approx(
-            expected_plus1, rel=1e-3
-        )
-        assert float(result.expected.plus_2sigma) == pytest.approx(
-            expected_plus2, rel=1e-3
-        )
+
+        assert float(result.minus_2sigma) == pytest.approx(expected_minus2, rel=1e-3)
+        assert float(result.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
+        assert float(result.median) == pytest.approx(expected_median, rel=1e-3)
+        assert float(result.plus_1sigma) == pytest.approx(expected_plus1, rel=1e-3)
+        assert float(result.plus_2sigma) == pytest.approx(expected_plus2, rel=1e-3)
 
 
 # =============================================================================
@@ -396,8 +393,16 @@ class TestExpectedUpperLimitAsymptotic:
         analytic = self._analytic_upper_limit(n_sigma, self.SIGMA, self.ALPHA)
         assert analytic == pytest.approx(expected, abs=0.001)
 
-        result = expected_upper_limit(calc, bounds=(0.01, 8.0), level=self.ALPHA)
-        actual = float(result.expected[band_name])
+        def band_cls_objective(poi):
+            result = calc.test(poi)
+            bands = calc.expected(result)
+            assert bands is not None
+            return bands.cl_s
+
+        result = expected_upper_limit(
+            band_cls_objective, bounds=(0.01, 8.0), level=self.ALPHA
+        )
+        actual = float(result[band_name])
 
         assert actual == pytest.approx(expected, rel=1e-2)
 
@@ -408,9 +413,17 @@ class TestExpectedUpperLimitAsymptotic:
         expected_pvalues must handle this gracefully.
         Expected median limit = 1.960 (same as with bounds=(0.01, 8.0)).
         """
-        result = expected_upper_limit(calc, bounds=(0.0, 8.0), level=self.ALPHA)
 
-        assert jnp.isfinite(result.observed)
-        for _, val in result.expected:
+        def band_cls_objective(poi):
+            result = calc.test(poi)
+            bands = calc.expected(result)
+            assert bands is not None
+            return bands.cl_s
+
+        result = expected_upper_limit(
+            band_cls_objective, bounds=(0.0, 8.0), level=self.ALPHA
+        )
+
+        for _, val in result:
             assert jnp.isfinite(val)
-        assert float(result.expected.median) == pytest.approx(1.960, rel=1e-2)
+        assert float(result.median) == pytest.approx(1.960, rel=1e-2)

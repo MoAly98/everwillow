@@ -8,7 +8,6 @@ import pytest
 from everwillow.hypotest.results import (
     BandValues,
     ExpectedBands,
-    ExpectedLimitResult,
     HypoTestResult,
     ToyResult,
 )
@@ -307,29 +306,3 @@ class TestHypoTestResult:
         )
         assert result.pnull is None
         assert result.palt is None
-
-
-# =============================================================================
-# ExpectedLimitResult Tests
-# =============================================================================
-
-
-class TestExpectedLimitResult:
-    """Tests for ExpectedLimitResult container."""
-
-    def test_fields_stored(self):
-        """observed limit and expected BandValues are stored."""
-        expected = BandValues(
-            minus_2sigma=jnp.array(0.8),
-            minus_1sigma=jnp.array(1.1),
-            median=jnp.array(1.5),
-            plus_1sigma=jnp.array(2.1),
-            plus_2sigma=jnp.array(2.8),
-        )
-        result = ExpectedLimitResult(
-            observed=jnp.array(1.7),
-            expected=expected,
-        )
-        assert float(result.observed) == pytest.approx(1.7)
-        assert result.expected is expected
-        assert float(result.expected.median) == pytest.approx(1.5)

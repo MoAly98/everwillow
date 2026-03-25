@@ -190,7 +190,7 @@ class TestHypoTestCalculator:
 
     @mock.patch.object(
         QTilde,
-        "__call__",
+        "compute",
         return_value=TSResult(value=jnp.array(0.0), test=jnp.array(1.0)),
     )
     def test_kwargs_passthrough(self, mock_ts):

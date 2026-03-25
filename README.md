@@ -27,7 +27,7 @@ From source:
 ```bash
 git clone https://github.com/MoAly98/everwillow.git
 cd everwillow
-uv sync --group dev
+uv sync
 ```
 
 ## Example

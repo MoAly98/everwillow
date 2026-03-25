@@ -14,13 +14,6 @@ import treescope
 import treescope.repr_lib
 from jaxtyping import ArrayLike, PyTree
 
-try:
-    from IPython import get_ipython
-
-    _in_ipython = get_ipython() is not None
-except ImportError:
-    _in_ipython = False
-
 from everwillow._src.statelib.meta import TreeDefMeta
 
 __all__ = [
@@ -34,6 +27,15 @@ __all__ = [
     "split",
     "update",
 ]
+
+
+def _in_ipython() -> bool:
+    try:
+        from IPython import get_ipython
+
+        return get_ipython() is not None
+    except ImportError:
+        return False
 
 
 K: tp.TypeAlias = str | tuple[str | int, ...]
@@ -301,7 +303,7 @@ class State(BaseMapping[V]):
 
     def show(self) -> None:
         """Pretty-print this State with rich array visualization."""
-        if _in_ipython:
+        if _in_ipython():
             treescope.display(self, ignore_exceptions=True)
         else:
             print(treescope.render_to_text(self))

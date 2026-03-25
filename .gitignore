@@ -164,7 +164,6 @@ Thumbs.db
 .zed/
 .pixi/
 pixi.lock
-uv.lock
 pyrightconfig.json
 
 # pixi environments

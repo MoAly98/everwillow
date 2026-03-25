@@ -14,6 +14,7 @@ statelib
 combining-models
 extending-hypotest
 interoperability
+features
 ```
 
 ```{toctree}

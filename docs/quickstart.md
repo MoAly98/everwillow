@@ -34,7 +34,7 @@ def neg_log_likelihood(params, observation):
 
 result = ew.fit(
     nll_fn=neg_log_likelihood,
-    params=sl.State.from_pytree(params),
+    params=sl.State.from_pytree(init_params),
     observation=data,
     solver=optx.BFGS(rtol=1e-6, atol=1e-6),
     max_steps=1_000,

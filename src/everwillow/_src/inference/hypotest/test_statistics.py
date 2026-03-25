@@ -394,7 +394,7 @@ class Q0(CowanTestStatistic):
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_0 for a single observation."""
-        # poi_test will always be 0.0 due to __call__ override
+        # poi_test will always be 0.0 due to compute() override
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]

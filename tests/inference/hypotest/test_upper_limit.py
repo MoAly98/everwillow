@@ -304,6 +304,7 @@ class TestExpectedUpperLimit:
         def band_cls_objective(poi):
             result = calc.test(poi)
             bands = calc.expected(result)
+            assert bands is not None
             return bands.cl_s
 
         result = expected_upper_limit(
@@ -395,6 +396,7 @@ class TestExpectedUpperLimitAsymptotic:
         def band_cls_objective(poi):
             result = calc.test(poi)
             bands = calc.expected(result)
+            assert bands is not None
             return bands.cl_s
 
         result = expected_upper_limit(
@@ -415,6 +417,7 @@ class TestExpectedUpperLimitAsymptotic:
         def band_cls_objective(poi):
             result = calc.test(poi)
             bands = calc.expected(result)
+            assert bands is not None
             return bands.cl_s
 
         result = expected_upper_limit(

@@ -298,7 +298,21 @@ def expected_upper_limit(
     for band_name in BandValues._NAMES:
 
         def _band_fn(poi: float, _name: str = band_name) -> Array:
-            return band_objective_fn(poi)[_name]
+            bands = band_objective_fn(poi)
+            if bands is None:
+                msg = (
+                    f"expected_upper_limit: 'band_objective_fn' returned None "
+                    f"for POI value {poi!r}; expected a BandValues instance."
+                )
+                raise ValueError(msg)
+            try:
+                return bands[_name]
+            except (KeyError, TypeError, AttributeError) as exc:
+                msg = f"expected_upper_limit: 'band_objective_fn' returned an \
+                        object that does not provide the requested band \
+                        {_name!r}. Ensure it returns a valid BandValues with \
+                        all expected bands."
+                raise ValueError(msg) from exc
 
         band_limits[band_name] = upper_limit(
             _band_fn,

@@ -578,7 +578,7 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
 
     def null_pval(self, result: TestStatResult) -> Array:
         r"""Empirical p-value under tested hypothesis: fraction of :math:`q_\text{null} \geq q_\text{obs}`."""
-        return jnp.mean(self.q_null >= result.value)
+        return jnp.mean((self.q_null >= result.value).astype(self.q_null.dtype))
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
         r"""Empirical p-value under alternative: fraction of :math:`q_\text{alt} \geq q_\text{obs}`.
@@ -593,7 +593,7 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
                 stacklevel=2,
             )
             return None
-        return jnp.mean(self.q_alt >= result.value)
+        return jnp.mean((self.q_alt >= result.value).astype(self.q_alt.dtype))
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
         """Compute expected p-values at standard sigma bands using toy quantiles.

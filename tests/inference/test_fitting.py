@@ -38,9 +38,7 @@ def simple_quadratic_nll():
     """Simple quadratic NLL: min at x=target_x, y=target_y."""
 
     def nll(params, observation):
-        return (params["x"] - observation["target_x"]) ** 2 + (
-            params["y"] - observation["target_y"]
-        ) ** 2
+        return (params["x"] - observation["target_x"]) ** 2 + (params["y"] - observation["target_y"]) ** 2
 
     return nll
 
@@ -192,9 +190,7 @@ class TestFit:
         """Test fitting a simple quadratic NLL."""
 
         def nll(params, observation):
-            return (params["mu"] - observation["target_mu"]) ** 2 + (
-                params["sigma"] - observation["target_sigma"]
-            ) ** 2
+            return (params["mu"] - observation["target_mu"]) ** 2 + (params["sigma"] - observation["target_sigma"]) ** 2
 
         result = _fit_and_compare(
             nll,
@@ -252,9 +248,7 @@ class TestFit:
                 params["level1"]["sigma"] - observation["target_sigma"]
             ) ** 2
 
-        initial: sl.State[float] = sl.State.from_pytree(
-            {"level1": {"mu": 0.0, "sigma": 0.5}}
-        )
+        initial: sl.State[float] = sl.State.from_pytree({"level1": {"mu": 0.0, "sigma": 0.5}})
         result = _fit_and_compare(
             nll,
             params=initial,
@@ -287,9 +281,7 @@ class TestFit:
                 params["nested"]["value"] - observation["target_nested"]
             ) ** 2
 
-        initial: sl.State[float] = sl.State.from_pytree(
-            {"flat": 0.0, "nested": {"value": 0.0}}
-        )
+        initial: sl.State[float] = sl.State.from_pytree({"flat": 0.0, "nested": {"value": 0.0}})
         result = _fit_and_compare(
             nll,
             params=initial,
@@ -320,9 +312,7 @@ class TestFit:
 
         assert abs(result.params["mu"] - 2.0) < 1e-4
         assert abs(result.params["sigma"] - 1.0) < 1e-4
-        assert (
-            abs(result.params["background"] - 50.0) < 1e-10
-        )  # Should be exactly fixed
+        assert abs(result.params["background"] - 50.0) < 1e-10  # Should be exactly fixed
 
     def test_multiple_fixed_parameters(self):
         """Test fixing multiple parameters."""
@@ -397,9 +387,7 @@ class TestFit:
                 params["level1"]["sigma"] - observation["target_sigma"]
             ) ** 2
 
-        initial: sl.State[float] = sl.State.from_pytree(
-            {"level1": {"mu": 0.0, "sigma": 5.0}}
-        )
+        initial: sl.State[float] = sl.State.from_pytree({"level1": {"mu": 0.0, "sigma": 5.0}})
         result = _fit_and_compare(
             nll,
             initial,
@@ -417,9 +405,7 @@ class TestFit:
         target_mu, target_sigma = 3.0, 1.5
 
         def nll(params, observation):
-            return (params["mu"] - target_mu) ** 2 + (
-                params["sigma"] - target_sigma
-            ) ** 2
+            return (params["mu"] - target_mu) ** 2 + (params["sigma"] - target_sigma) ** 2
 
         result = _fit_and_compare(
             nll,
@@ -470,9 +456,7 @@ class TestFit:
         """Test observation combined with fixed parameters."""
 
         def nll(params, observation):
-            return (params["a"] - observation["scale"]) ** 2 + (
-                params["b"] - observation["target_b"]
-            ) ** 2
+            return (params["a"] - observation["scale"]) ** 2 + (params["b"] - observation["target_b"]) ** 2
 
         result = _fit_and_compare(
             nll,
@@ -536,9 +520,7 @@ class TestFit:
 
         # MLE for Poisson: expected ≈ observed
         expected_total = result.params["mu"] * 10.0 + result.params["background"]
-        assert (
-            abs(expected_total - 25.0) < 0.02
-        )  # Relaxed tolerance for optimizer convergence
+        assert abs(expected_total - 25.0) < 0.02  # Relaxed tolerance for optimizer convergence
 
     def test_gaussian_with_constraint(self):
         """Test Gaussian likelihood with constraint term."""
@@ -856,9 +838,7 @@ class TestMakeProgressContext:
 class TestIminimize:
     """Tests for _iminimize interactive minimization loop."""
 
-    def test_callback_called_each_iteration(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_callback_called_each_iteration(self, simple_quadratic_nll, simple_params, simple_observation):
         """Callback should be invoked at every solver step."""
         call_count = []
 
@@ -877,9 +857,7 @@ class TestIminimize:
         assert len(call_count) > 0
         assert result.success
 
-    def test_callback_receives_correct_step_index(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_callback_receives_correct_step_index(self, simple_quadratic_nll, simple_params, simple_observation):
         """First arg should be 0, 1, 2, ... for each iteration."""
         steps = []
 
@@ -904,9 +882,7 @@ class TestIminimize:
 
         # Use a harder problem so NLL doesn't start at 0
         def nll(params, observation):
-            return (params["x"] - observation["target_x"]) ** 2 + (
-                params["y"] - observation["target_y"]
-            ) ** 2
+            return (params["x"] - observation["target_x"]) ** 2 + (params["y"] - observation["target_y"]) ** 2
 
         def record_nll(step, y, state):
             nlls.append(float(state.f_info.f))
@@ -927,9 +903,7 @@ class TestIminimize:
         assert result.success
         assert abs(result.params["x"] - 10.0) < 1e-3
 
-    def test_no_callback_when_none(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_no_callback_when_none(self, simple_quadratic_nll, simple_params, simple_observation):
         """Should work without callback (callback=None)."""
         result = ew.ifit(
             simple_quadratic_nll,
@@ -943,9 +917,7 @@ class TestIminimize:
         assert abs(result.params["x"] - 2.0) < 1e-3
         assert abs(result.params["y"] - 3.0) < 1e-3
 
-    def test_early_termination_before_max_steps(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_early_termination_before_max_steps(self, simple_quadratic_nll, simple_params, simple_observation):
         """Should stop when solver converges, not wait for max_steps."""
         result = ew.ifit(
             simple_quadratic_nll,
@@ -964,10 +936,7 @@ class TestIminimize:
 
         # Use a hard NLL that won't converge quickly
         def hard_nll(params, observation):
-            return (
-                jnp.sin(params["x"] * 10) ** 2
-                + (params["x"] - observation["target"]) ** 2
-            )
+            return jnp.sin(params["x"] * 10) ** 2 + (params["x"] - observation["target"]) ** 2
 
         result: FitResult[float] = ew.ifit(
             hard_nll,
@@ -979,9 +948,7 @@ class TestIminimize:
 
         assert result.solver_result.stats["num_steps"] <= 5
 
-    def test_returns_actual_step_count_in_stats(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_returns_actual_step_count_in_stats(self, simple_quadratic_nll, simple_params, simple_observation):
         """stats should have num_steps with actual iteration count."""
         result = ew.ifit(
             simple_quadratic_nll,
@@ -995,44 +962,32 @@ class TestIminimize:
         assert int(result.solver_result.stats["num_steps"]) > 0
         assert int(result.solver_result.stats["num_steps"]) <= 100
 
-    def test_progress_updater_update_called(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_progress_updater_update_called(self, simple_quadratic_nll, simple_params, simple_observation):
         """update() should be called each iteration when progress=True."""
         from unittest.mock import MagicMock, patch
 
         mock_updater = MagicMock()
 
-        with patch(
-            "everwillow._src.inference.fitting._make_progress_context"
-        ) as mock_context:
+        with patch("everwillow._src.inference.fitting._make_progress_context") as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
-            ew.ifit(
-                simple_quadratic_nll, simple_params, simple_observation, progress=True
-            )
+            ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=True)
 
             # update() should have been called at least once
             assert mock_updater.update.call_count > 0
 
-    def test_progress_updater_finalize_called(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_progress_updater_finalize_called(self, simple_quadratic_nll, simple_params, simple_observation):
         """finalize() should be called when optimization completes."""
         from unittest.mock import MagicMock, patch
 
         mock_updater = MagicMock()
 
-        with patch(
-            "everwillow._src.inference.fitting._make_progress_context"
-        ) as mock_context:
+        with patch("everwillow._src.inference.fitting._make_progress_context") as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
-            ew.ifit(
-                simple_quadratic_nll, simple_params, simple_observation, progress=True
-            )
+            ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=True)
 
             # finalize() should have been called exactly once
             mock_updater.finalize.assert_called_once()
@@ -1045,15 +1000,11 @@ class TestIminimize:
 
         mock_updater = MagicMock()
 
-        with patch(
-            "everwillow._src.inference.fitting._make_progress_context"
-        ) as mock_context:
+        with patch("everwillow._src.inference.fitting._make_progress_context") as mock_context:
             mock_context.return_value.__enter__ = MagicMock(return_value=mock_updater)
             mock_context.return_value.__exit__ = MagicMock(return_value=False)
 
-            result = ew.ifit(
-                simple_quadratic_nll, simple_params, simple_observation, progress=True
-            )
+            result = ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=True)
 
             # finalize() should be called with final_step and nll_value
             call_args = mock_updater.finalize.call_args
@@ -1074,46 +1025,32 @@ class TestIminimize:
 class TestIfit:
     """Tests for ifit() public API."""
 
-    def test_simple_quadratic(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_simple_quadratic(self, simple_quadratic_nll, simple_params, simple_observation):
         """Test ifit finds correct minimum."""
-        result = ew.ifit(
-            simple_quadratic_nll, simple_params, simple_observation, progress=False
-        )
+        result = ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=False)
 
         assert abs(result.params["x"] - 2.0) < 1e-3
         assert abs(result.params["y"] - 3.0) < 1e-3
         assert float(result.nll) < 1e-6
         assert result.success
 
-    def test_converges_to_same_result_as_fit(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_converges_to_same_result_as_fit(self, simple_quadratic_nll, simple_params, simple_observation):
         """ifit and fit should produce equivalent results."""
         fit_result = ew.fit(simple_quadratic_nll, simple_params, simple_observation)
-        ifit_result = ew.ifit(
-            simple_quadratic_nll, simple_params, simple_observation, progress=False
-        )
+        ifit_result = ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=False)
 
         assert jnp.allclose(fit_result.params["x"], ifit_result.params["x"], atol=1e-4)
         assert jnp.allclose(fit_result.params["y"], ifit_result.params["y"], atol=1e-4)
         assert jnp.allclose(fit_result.nll, ifit_result.nll, atol=1e-6)
 
-    def test_with_progress_disabled(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_with_progress_disabled(self, simple_quadratic_nll, simple_params, simple_observation):
         """Should work with progress=False."""
-        result = ew.ifit(
-            simple_quadratic_nll, simple_params, simple_observation, progress=False
-        )
+        result = ew.ifit(simple_quadratic_nll, simple_params, simple_observation, progress=False)
 
         assert result.success
         assert result.solver_result is not None
 
-    def test_with_fixed_params(
-        self, simple_quadratic_nll, simple_params, simple_observation
-    ):
+    def test_with_fixed_params(self, simple_quadratic_nll, simple_params, simple_observation):
         """Fixed parameters should remain unchanged."""
         result = ew.ifit(
             simple_quadratic_nll,
@@ -1149,9 +1086,7 @@ class TestIfit:
 
         # Use harder problem so NLL doesn't start near 0
         def nll(params, observation):
-            return (params["x"] - observation["target_x"]) ** 2 + (
-                params["y"] - observation["target_y"]
-            ) ** 2
+            return (params["x"] - observation["target_x"]) ** 2 + (params["y"] - observation["target_y"]) ** 2
 
         def record(step, y, state):
             history["steps"].append(step)
@@ -1292,9 +1227,7 @@ class TestArgumentForwarding:
         def nll(params, observation):
             return (params["x"] - observation["target"]) ** 2
 
-        with patch(
-            "everwillow._src.inference.fitting._make_progress_context"
-        ) as mock_context:
+        with patch("everwillow._src.inference.fitting._make_progress_context") as mock_context:
             mock_context.return_value.__enter__ = lambda self: None
             mock_context.return_value.__exit__ = lambda self, *args: False
 
@@ -1315,9 +1248,7 @@ class TestArgumentForwarding:
         def nll(params, observation):
             return (params["x"] - observation["target"]) ** 2
 
-        with patch(
-            "everwillow._src.inference.fitting._make_progress_context"
-        ) as mock_context:
+        with patch("everwillow._src.inference.fitting._make_progress_context") as mock_context:
             mock_context.return_value.__enter__ = lambda self: None
             mock_context.return_value.__exit__ = lambda self, *args: False
 

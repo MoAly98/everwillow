@@ -9,15 +9,17 @@ description = "Statistical inference steps for high-energy physics analyses with
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
@@ -29,14 +31,15 @@ authors = [
     { name = "pfackeldey", email = "peter.fackeldey@princeton.edu" },
     { name = "maxgalli", email = "mg2708@princeton.edu" },
 ]
+keywords = ["jax", "statistics", "inference", "hep", "physics", "fitting", "hypothesis-testing"]
 dependencies = [
     "jax>=0.7.2",
     "optimistix>=0.0.10",
-    "jaxtyping",
+    "jaxtyping>=0.2.34",
     "equinox>=0.10.11", # dep of optimistix but we make it explicit
-    "orbax-checkpoint",
-    "treescope",
-    "tqdm", # for interactive fitting progress bars
+    "orbax-checkpoint>=0.6.0",
+    "treescope>=0.1.0",
+    "tqdm>=4.60", # for interactive fitting progress bars
 ]
 
 
@@ -107,7 +110,7 @@ run.omit = [
     "src/everwillow/statelib/*.py",
     "src/everwillow/parameters/*.py",
 ]
-port.exclude_lines = ['pragma: no cover', '\.\.\.', 'if typing.TYPE_CHECKING:']
+report.exclude_lines = ['pragma: no cover', '\.\.\.', 'if typing.TYPE_CHECKING:']
 
 
 [tool.mypy]
@@ -122,21 +125,18 @@ strict = false
 ignore_missing_imports = true
 
 
+[tool.ruff]
+line-length = 120
+
 [tool.ruff.lint]
 preview = true
 ignore = [
-    "PLR",  # Design related pylint codes
-    "E501", # Line too long
-    # "B006",   # converts default args to 'None'
-    "I002",    # isort: "from __future__ import annotations"
-    "ISC001",  # flake8-implicit-str-concat: Implicit string concatenation"
-    "PLC0415", # `import` should be at the top-level of a file
-    "PLW3201", # Dunder method `...` has no special meaning in Python 3
-    "RUF052",  # Local dummy variable `...` is accessed
+    "PLR",     # Design related pylint codes
+    "ISC001",  # flake8-implicit-str-concat: Implicit string concatenation
+    "PLW3201", # Dunder method has no special meaning in Python 3 (treescope uses __treescope_repr__)
     "RUF002",  # Ambiguous Unicode characters in docstrings (Greek letters are standard in physics)
     "RUF003",  # Ambiguous Unicode characters in comments (Greek letters are standard in physics)
     "F722",    # jaxtyping: `Float32[Array, "b c"]` (https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error)
-    "EM101",   # flake8-errmsg: Error message should not end with a period
     "UP040",   # PEP 695 type alias syntax (https://peps.python.org/pep-0695/)
     "UP046",   # PEP 695 generic class syntax
     "UP047",   # PEP 695 generic function syntax
@@ -171,7 +171,10 @@ unfixable = [
 per-file-ignores."src/everwillow/*.py" = ["PLC0414", "RUF022"]
 per-file-ignores."src/everwillow/hypotest/*.py" = ["PLC0414", "RUF022"]
 per-file-ignores."src/everwillow/statelib/*.py" = ["PLC0414", "RUF022"]
+per-file-ignores."src/everwillow/_src/statelib/state.py" = ["PLC0415"]  # try/except IPython detection
 per-file-ignores."src/everwillow/parameters/*.py" = ["PLC0414", "RUF022"]
+per-file-ignores."examples/**/*.py" = ["PLC0415", "E501"]
+per-file-ignores."tests/**/*.py" = ["PLC0415", "EM101", "SIM108"]
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]
 

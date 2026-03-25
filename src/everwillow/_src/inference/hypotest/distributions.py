@@ -67,20 +67,13 @@ def _build_expected_bands(
     pnulls = []
     palts = []
     for n in _BAND_SIGMAS:
-        synthetic = TestStatResult(
-            value=expected_q_fn(n), test=result.test, q_asimov=result.q_asimov
-        )
+        synthetic = TestStatResult(value=expected_q_fn(n), test=result.test, q_asimov=result.q_asimov)
         pnulls.append(dist.null_pval(synthetic))
         palts.append(dist.alt_pval(synthetic))
 
     null_pvalue = BandValues(*pnulls)
     alt_pvalue = BandValues(*palts)
-    cls_values = BandValues(
-        **{
-            n: cl_s(pn, pa)
-            for (n, pn), (_, pa) in zip(null_pvalue, alt_pvalue, strict=False)
-        }
-    )
+    cls_values = BandValues(**{n: cl_s(pn, pa) for (n, pn), (_, pa) in zip(null_pvalue, alt_pvalue, strict=False)})
     null_sig = BandValues(**{n: significance(pn) for n, pn in null_pvalue})
     alt_sig = BandValues(**{n: significance(pa) for n, pa in alt_pvalue})
 
@@ -101,8 +94,7 @@ def _require_q_asimov(result: TestStatResult, cls_name: str, pval_type: str) -> 
     """
     if result.q_asimov is None:
         warnings.warn(
-            f"{pval_type} p-value computation in {cls_name} "
-            "cannot be performed without an Asimov test statistic.",
+            f"{pval_type} p-value computation in {cls_name} cannot be performed without an Asimov test statistic.",
             stacklevel=3,
         )
         return False
@@ -118,8 +110,10 @@ class Distribution(eqx.Module):
     """Abstract base for test statistic distributions.
 
     Subclasses must implement:
-        - ``null_pval``: p-value under null hypothesis (:math:`\\mu'= \\mu` where :math:`\\mu` is the hypothesis being tested).
-        - ``alt_pval``: p-value under an alternative hypothesis (:math:`\\mu'=0` for exclusion, :math:`\\mu'=1` for discovery).
+        - ``null_pval``: p-value under null hypothesis
+          (:math:`\\mu'= \\mu` where :math:`\\mu` is the hypothesis being tested).
+        - ``alt_pval``: p-value under an alternative hypothesis
+          (:math:`\\mu'=0` for exclusion, :math:`\\mu'=1` for discovery).
 
     """
 
@@ -204,7 +198,8 @@ class TMuAsymptotic(Distribution):
     """
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
-        r"""CDF: :math:`F(t_\mu \mid \mu') = \Phi(\sqrt{t} + \frac{\mu-\mu'}{\sigma}) + \Phi(\sqrt{t} - \frac{\mu-\mu'}{\sigma}) - 1`."""
+        r"""CDF: :math:`F(t_\mu \mid \mu') = \Phi(\sqrt{t} + \frac{\mu-\mu'}{\sigma})
+        + \Phi(\sqrt{t} - \frac{\mu-\mu'}{\sigma}) - 1`."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         delta = (mu - mu_prime) / sigma
         return _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
@@ -246,11 +241,7 @@ class TMuTildeAsymptotic(Distribution):
         f_standard = _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
 
         # Boundary region: Φ(√t̃ + δ) + Φ((t̃ + μ²/σ²)/(2μ/σ) - δ) - 1
-        f_boundary = (
-            _PHI(sqrt_q + delta)
-            + _PHI((q + threshold) / (2.0 * mu / sigma) - delta)
-            - 1.0
-        )
+        f_boundary = _PHI(sqrt_q + delta) + _PHI((q + threshold) / (2.0 * mu / sigma) - delta) - 1.0
 
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
@@ -301,9 +292,7 @@ class TMuTildeAsymptotic(Distribution):
         sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
         p_standard = 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI(sqrt_q - sqrt_qa)
-        p_boundary = (
-            2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI((q - q_asimov) / (2.0 * sqrt_qa))
-        )
+        p_boundary = 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI((q - q_asimov) / (2.0 * sqrt_qa))
 
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
@@ -440,9 +429,7 @@ class QTildeAsymptotic(Distribution):
         f_standard = _PHI(sqrt_q - (mu - mu_prime) / sigma)
 
         # Boundary region: Φ((q̃ - (μ²-2μμ')/σ²) / (2μ/σ))
-        f_boundary = _PHI(
-            (q - (mu**2 - 2 * mu * mu_prime) / sigma**2) / (2.0 * mu / sigma)
-        )
+        f_boundary = _PHI((q - (mu**2 - 2 * mu * mu_prime) / sigma**2) / (2.0 * mu / sigma))
 
         return jnp.where(q <= threshold, f_standard, f_boundary)
 
@@ -612,10 +599,8 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
             ValueError: If q_alt is None (no alternative toys generated).
         """
         if self.q_alt is None:
-            raise ValueError(
-                "expected_pvalues requires q_alt toys. "
-                "Generate toys with poi_alt to use this method."
-            )
+            msg = "expected_pvalues requires q_alt toys. Generate toys with poi_alt to use this method."
+            raise ValueError(msg)
 
         # Standard sigma percentiles: Φ(N) for N in (-2, -1, 0, 1, 2)
         percentiles = jnp.array([_PHI(n) for n in _BAND_SIGMAS])

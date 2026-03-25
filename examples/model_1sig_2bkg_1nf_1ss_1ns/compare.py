@@ -1,5 +1,7 @@
 """Compare fits across libraries for the 1sig_2bkg_1nf_1ss_1ns example."""
 
+from __future__ import annotations
+
 import time
 import warnings
 from collections.abc import Callable
@@ -65,9 +67,7 @@ class Benchmark(NamedTuple):
     runtime_cold: float
     runtime_hot: float
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         table = Table(title=self.name, show_header=True)
         table.add_column("Bestfit params", style="bold magenta")
         table.add_column("Postfit yields", style="bold magenta")
@@ -90,9 +90,7 @@ def benchmark_pyhs3_everwillow():
 
     @jax.jit
     def fun():
-        return fit_pyhs3_with_everwillow(
-            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
-        )
+        return fit_pyhs3_with_everwillow(inputs, jaxified, fixed_values, initial, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -116,9 +114,7 @@ def benchmark_pyhs3_everwillow_ifit():
 
     # ifit can't be jitted due to Python side effects in the loop
     def fun():
-        return fit_pyhs3_with_everwillow(
-            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS, interactive=True
-        )
+        return fit_pyhs3_with_everwillow(inputs, jaxified, fixed_values, initial, max_steps=N_STEPS, interactive=True)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -142,9 +138,7 @@ def benchmark_pyhs3_optimistix():
 
     @jax.jit
     def fun():
-        return fit_pyhs3_with_optimistix(
-            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
-        )
+        return fit_pyhs3_with_optimistix(inputs, jaxified, fixed_values, initial, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -169,9 +163,7 @@ def benchmark_pyhs3_iminuit():
     # can't be jitted due to iminuit
     # @jax.jit
     def fun():
-        return fit_pyhs3_with_iminuit(
-            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
-        )
+        return fit_pyhs3_with_iminuit(inputs, jaxified, fixed_values, initial, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -195,9 +187,7 @@ def benchmark_pyhs3_scipy():
 
     # @jax.jit
     def fun():
-        return fit_pyhs3_with_scipy(
-            inputs, jaxified, fixed_values, initial, max_steps=N_STEPS
-        )
+        return fit_pyhs3_with_scipy(inputs, jaxified, fixed_values, initial, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -261,9 +251,7 @@ def benchmark_evermore_everwillow_ifit():
 
     # ifit can't be jitted due to Python side effects in the loop
     def fun():
-        return fit_evermore_with_everwillow(
-            components, max_steps=N_STEPS, interactive=True
-        )
+        return fit_evermore_with_everwillow(components, max_steps=N_STEPS, interactive=True)
 
     # Cold run
     runtime_cold, (params, nll) = time_and_run(fun)
@@ -329,9 +317,7 @@ def benchmark_pyhf_native():
 
     # can't be jitted due to pyhf internals
     def fun():
-        return fit_pyhf_with_scipy(
-            pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS
-        )
+        return fit_pyhf_with_scipy(pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -355,9 +341,7 @@ def benchmark_pyhf_native_minuit():
 
     # can't be jitted due to pyhf internals
     def fun():
-        return fit_pythf_with_iminuit(
-            pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS
-        )
+        return fit_pythf_with_iminuit(pyhf_model, pyhf_data, pyhf_init, pyhf_slices, maxiter=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -381,9 +365,7 @@ def benchmark_pyhf_optimistix():
 
     @jax.jit
     def fun():
-        return fit_pyhf_with_optimistix(
-            pyhf_model, pyhf_data, pyhf_init, pyhf_slices, max_steps=N_STEPS
-        )
+        return fit_pyhf_with_optimistix(pyhf_model, pyhf_data, pyhf_init, pyhf_slices, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -405,9 +387,7 @@ def benchmark_pyhf_everwillow():
 
     @jax.jit
     def fun():
-        return fit_pyhf_with_everwillow(
-            pyhf_model, pyhf_data, pyhf_init, pyhf_slices, max_steps=N_STEPS
-        )
+        return fit_pyhf_with_everwillow(pyhf_model, pyhf_data, pyhf_init, pyhf_slices, max_steps=N_STEPS)
 
     # Cold run
     runtime_cold, (params, nll_value) = time_and_run(fun)
@@ -453,9 +433,7 @@ def benchmark_pyhf_everwillow_ifit():
     )
 
 
-def plot_benchmark_grid(
-    benchmarks: list[Benchmark], output_path: str = "benchmark_comparison.png"
-) -> None:
+def plot_benchmark_grid(benchmarks: list[Benchmark], output_path: str = "benchmark_comparison.png") -> None:
     """Create a 2D grid visualization of benchmark results.
 
     Args:
@@ -491,9 +469,7 @@ def plot_benchmark_grid(
     fig, ax = plt.subplots(figsize=(10, 8))
 
     # Compute log-scale sizes
-    all_times = [b.runtime_cold for _, _, b in parsed] + [
-        b.runtime_hot for _, _, b in parsed
-    ]
+    all_times = [b.runtime_cold for _, _, b in parsed] + [b.runtime_hot for _, _, b in parsed]
     min_time, max_time = min(all_times), max(all_times)
 
     def time_to_size(t):
@@ -612,9 +588,7 @@ def plot_benchmark_grid(
 
     ax.set_xlabel("Model Framework", fontsize=13, weight="bold")
     ax.set_ylabel("Optimizer", fontsize=13, weight="bold")
-    ax.set_title(
-        "Benchmark: Model vs Optimizer Runtime", fontsize=15, weight="bold", pad=20
-    )
+    ax.set_title("Benchmark: Model vs Optimizer Runtime", fontsize=15, weight="bold", pad=20)
 
     # Add grid
     ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.5)
@@ -690,9 +664,7 @@ def plot_parameter_deviations(
     # Sort by model first, then by optimizer order
     def sort_key(item):
         model, optimizer, _ = item
-        opt_idx = (
-            optimizer_order.index(optimizer) if optimizer in optimizer_order else 999
-        )
+        opt_idx = optimizer_order.index(optimizer) if optimizer in optimizer_order else 999
         return (model, opt_idx)
 
     parsed.sort(key=sort_key)
@@ -778,13 +750,9 @@ def plot_parameter_deviations(
     # Extend y-axis to make room for legend at top
     ax.set_ylim(-0.5, len(param_names) - 1 + 3.0)
 
-    ax.set_xlabel(
-        "Absolute Parameter Deviation from Reference", fontsize=13, weight="bold"
-    )
+    ax.set_xlabel("Absolute Parameter Deviation from Reference", fontsize=13, weight="bold")
     ax.set_ylabel("Parameter", fontsize=13, weight="bold")
-    ax.set_title(
-        "Parameter Deviations Across Methods", fontsize=15, weight="bold", pad=20
-    )
+    ax.set_title("Parameter Deviations Across Methods", fontsize=15, weight="bold", pad=20)
 
     # Format x-axis with scientific notation in LaTeX
     from matplotlib.ticker import ScalarFormatter
@@ -851,9 +819,7 @@ def main() -> None:
     console = Console()
     jax.config.update("jax_enable_x64", True)
 
-    console.print(
-        "[bold]Benchmarking fits for 1sig_2bkg_1nf_1ss_1ns model (64-bit precision)[/]"
-    )
+    console.print("[bold]Benchmarking fits for 1sig_2bkg_1nf_1ss_1ns model (64-bit precision)[/]")
 
     benchmarks = []
 

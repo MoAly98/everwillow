@@ -1,5 +1,7 @@
 """Minimal helpers for building the pyhs3 model used in the comparison."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping
 
 import iminuit
@@ -54,10 +56,7 @@ def build_pyhs3(
         parameter_points=[
             ParameterSet(
                 name="default_values",
-                parameters=[
-                    ParameterPoint(name=k, value=v)
-                    for k, v in default_initial_params().items()
-                ],
+                parameters=[ParameterPoint(name=k, value=v) for k, v in default_initial_params().items()],
             )
         ],
         data=_build_data_points(data),
@@ -66,10 +65,7 @@ def build_pyhs3(
     model = workspace.model()
     inputs, jaxified = jaxify_distribution(model, "model")
 
-    initial = {
-        point.name: float(point.value)
-        for point in workspace.parameter_points[0].parameters
-    }
+    initial = {point.name: float(point.value) for point in workspace.parameter_points[0].parameters}
     fixed_values = {point.name: float(point.value) for point in workspace.data}
 
     return inputs, jaxified, fixed_values, initial
@@ -152,9 +148,7 @@ def fit_with_iminuit(
 
     # Wrapper that converts array -> dict -> NLL
     def nll_array(params_array):
-        params_dict = {
-            name: float(params_array[i]) for i, name in enumerate(param_names)
-        }
+        params_dict = {name: float(params_array[i]) for i, name in enumerate(param_names)}
         return nll(params_dict)
 
     # Gradient function using JAX
@@ -205,9 +199,7 @@ def fit_with_scipy(
 
     # Wrapper that converts array -> dict -> NLL
     def nll_array(params_array):
-        params_dict = {
-            name: float(params_array[i]) for i, name in enumerate(param_names)
-        }
+        params_dict = {name: float(params_array[i]) for i, name in enumerate(param_names)}
         return nll(params_dict)
 
     # Gradient function using JAX

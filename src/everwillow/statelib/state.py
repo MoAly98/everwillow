@@ -1,5 +1,7 @@
 """Immutable mapping helpers for working with JAX pytrees."""
 
+from __future__ import annotations
+
 from everwillow._src.statelib.state import State as State
 from everwillow._src.statelib.state import canonicalize_key as canonicalize_key
 from everwillow._src.statelib.state import combine_partitions as combine_partitions

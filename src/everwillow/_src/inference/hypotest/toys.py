@@ -108,14 +108,13 @@ class ToyGenerator(eqx.Module):
         # Create default Poisson sampler if sample_fn not provided
         if sample_fn is None:
             if predict_fn is None:
-                raise ValueError("Either sample_fn or predict_fn must be provided")
+                msg = "Either sample_fn or predict_fn must be provided"
+                raise ValueError(msg)
             sample_fn = self._make_poisson_sampler(predict_fn)
 
         # Null hypothesis: POI = poi_null
         fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: poi_null})
-        null_result = constrained_fit(
-            nll_fn, params, observation, fixed_null, **fit_kwargs
-        )
+        null_result = constrained_fit(nll_fn, params, observation, fixed_null, **fit_kwargs)
         params_null: sl.State[ArrayLike] = null_result.params
 
         # Alternative hypothesis: POI = poi_alt (only if provided)
@@ -126,9 +125,7 @@ class ToyGenerator(eqx.Module):
             keys_alt = keys[self.ntoys :]
 
             fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_alt})
-            alt_result = constrained_fit(
-                nll_fn, params, observation, fixed_alt, **fit_kwargs
-            )
+            alt_result = constrained_fit(nll_fn, params, observation, fixed_alt, **fit_kwargs)
             params_alt: sl.State[ArrayLike] = alt_result.params
 
             q_alt = self._run_toys(
@@ -191,9 +188,7 @@ class ToyGenerator(eqx.Module):
             # Generate toy observation
             toy_observation = sample_fn(sample_params, key)
             # Compute test statistic using toy as observation
-            result = self.test_statistic.compute(
-                nll_fn, fit_params, toy_observation, poi_key, poi_null, **fit_kwargs
-            )
+            result = self.test_statistic.compute(nll_fn, fit_params, toy_observation, poi_key, poi_null, **fit_kwargs)
             return result.value
 
         return self.map_fn(single_toy)(keys)

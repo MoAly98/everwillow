@@ -47,9 +47,7 @@ class Model(nnx.Module):
         expectations["signal"] = sig_mod(hists["nominal"]["signal"])
 
         # bkg1 process
-        bkg1_lnN = self.norm1.scale_log_asymmetric(
-            up=jnp.array([1.1]), down=jnp.array([0.9])
-        )
+        bkg1_lnN = self.norm1.scale_log_asymmetric(up=jnp.array([1.1]), down=jnp.array([0.9]))
         bkg1_shape = self.shape.morphing(
             up_template=hists["shape_up"]["bkg1"],
             down_template=hists["shape_down"]["bkg1"],
@@ -59,9 +57,7 @@ class Model(nnx.Module):
         expectations["bkg1"] = bkg1_mod(hists["nominal"]["bkg1"])
 
         # bkg2 process
-        bkg2_lnN = self.norm2.scale_log_asymmetric(
-            up=jnp.array([1.05]), down=jnp.array([0.95])
-        )
+        bkg2_lnN = self.norm2.scale_log_asymmetric(up=jnp.array([1.05]), down=jnp.array([0.95]))
         bkg2_shape = self.shape.morphing(
             up_template=hists["shape_up"]["bkg2"],
             down_template=hists["shape_down"]["bkg2"],
@@ -112,11 +108,7 @@ def loss(dynamic: nnx.State, observation: Hist1D, args: Args) -> Float[Array, ""
     expectations = model(hists)
     # calculate constraints
     constraints = evm.loss.get_log_probs(model)
-    loss_val = (
-        evm.pdf.PoissonContinuous(evm.util.sum_over_leaves(expectations))
-        .log_prob(observation)
-        .sum()
-    )
+    loss_val = evm.pdf.PoissonContinuous(evm.util.sum_over_leaves(expectations)).log_prob(observation).sum()
     # sum all up
     loss_val += evm.util.sum_over_leaves(constraints)
     return -jnp.sum(loss_val)

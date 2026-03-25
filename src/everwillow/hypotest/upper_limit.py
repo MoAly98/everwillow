@@ -1,5 +1,7 @@
 """Upper limit finding via root search."""
 
+from __future__ import annotations
+
 from everwillow._src.inference.hypotest.upper_limit import (
     expected_upper_limit as expected_upper_limit,
 )

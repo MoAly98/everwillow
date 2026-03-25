@@ -147,9 +147,7 @@ class TestConstrainedFit:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = TestStatClass().compute(
-            poisson_nll, params, observed, "mu", poi_test=1.0
-        )
+        result = TestStatClass().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -177,9 +175,7 @@ class TestConstrainedFit:
         params = sl.State.from_pytree({"mu": 1.0, "theta": 1.0})
         observed = create_observation(n_obs)
 
-        result = TestStatClass().compute(
-            nll_with_nuisance, params, observed, "mu", poi_test=1.0
-        )
+        result = TestStatClass().compute(nll_with_nuisance, params, observed, "mu", poi_test=1.0)
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, rel=0.05)
         assert result.value == pytest.approx(expected_q, rel=0.05)

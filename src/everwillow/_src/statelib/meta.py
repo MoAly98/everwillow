@@ -51,6 +51,4 @@ class TreeDefMeta:
         del self_keys, mapping_keys  # unused after check
 
         # this order of keys is important here to preserve original pytree order
-        return jtu.tree_unflatten(
-            treedef=self.treedef, leaves=(mapping[k] for k in self.keys)
-        )
+        return jtu.tree_unflatten(treedef=self.treedef, leaves=(mapping[k] for k in self.keys))

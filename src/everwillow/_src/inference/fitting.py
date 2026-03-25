@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import optimistix as optx
 import orbax.checkpoint as ocp
 from jaxtyping import PyTree
+from tqdm import tqdm
 
 import everwillow._src.parameters as ewp
 import everwillow._src.statelib as sl
@@ -175,8 +176,6 @@ def _make_progress_context(
         yield None
         return
 
-    from tqdm import tqdm
-
     pbar = tqdm(total=max_steps, desc="Minimizing", unit="step")
 
     try:
@@ -234,14 +233,8 @@ def _iminimize(
     done, result = solver.terminate(fn_with_aux, y, args, options, state, tags)
 
     # JIT the hot path for performance
-    step = eqx.filter_jit(
-        eqx.Partial(solver.step, fn=fn_with_aux, args=args, options=options, tags=tags)
-    )
-    terminate = eqx.filter_jit(
-        eqx.Partial(
-            solver.terminate, fn=fn_with_aux, args=args, options=options, tags=tags
-        )
-    )
+    step = eqx.filter_jit(eqx.Partial(solver.step, fn=fn_with_aux, args=args, options=options, tags=tags))
+    terminate = eqx.filter_jit(eqx.Partial(solver.terminate, fn=fn_with_aux, args=args, options=options, tags=tags))
 
     with _make_progress_context(progress, max_steps) as updater:
         while not done and iteration < max_steps:
@@ -271,9 +264,7 @@ def _iminimize(
             updater.finalize(iteration, float(state.f_info.f))
 
     # Postprocess
-    y_final, aux_final, stats = solver.postprocess(
-        fn_with_aux, y, aux, args, options, state, tags, result
-    )
+    y_final, aux_final, stats = solver.postprocess(fn_with_aux, y, aux, args, options, state, tags, result)
 
     # Include iteration info in stats
     stats["num_steps"] = jnp.asarray(iteration)
@@ -311,18 +302,21 @@ def _fit(
     """
     # Validate inputs
     if not isinstance(params, sl.State):
-        raise TypeError("params must be a State")
+        msg = "params must be a State"  # type: ignore[unreachable]
+        raise TypeError(msg)
 
     # Normalize fixed and bounds inputs
     if fixed is None:
         fixed = sl.State.from_pytree({})
     if not isinstance(fixed, sl.State):
-        raise TypeError("fixed must be a State or None")
+        msg = "fixed must be a State or None"  # type: ignore[unreachable]
+        raise TypeError(msg)
 
     if bounds is None:
         bounds = sl.State.from_pytree({})
     if not isinstance(bounds, sl.State):
-        raise TypeError("bounds must be a State or None")
+        msg = "bounds must be a State or None"  # type: ignore[unreachable]
+        raise TypeError(msg)
 
     # Set fixed values
     updated_params = sl.update(params, updates=fixed)

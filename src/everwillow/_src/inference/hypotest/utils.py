@@ -76,7 +76,8 @@ def significance(p: Array) -> Array:
 def cl_s(pnull: Array, palt: Array) -> Array:
     r"""Compute :math:`\text{CL}_s = p_\text{null} / p_\text{alt}`.
 
-    :math:`\text{CL}_s = P(q \geq q_\text{obs} \mid \text{signal+background}) / P(q \geq q_\text{obs} \mid \text{background})`
+    :math:`\text{CL}_s = P(q \geq q_\text{obs} \mid \text{signal+background})
+    / P(q \geq q_\text{obs} \mid \text{background})`
 
     The CLs method protects against excluding signal
     hypotheses when there is no sensitivity: if palt is small

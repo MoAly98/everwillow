@@ -81,9 +81,7 @@ class TestCDF:
     def test_cdf_values(self, dist_cls, q, mu, mu_prime, sigma, expected):
         """CDF values match hand-computed Cowan et al. formulas."""
         dist = dist_cls()
-        result = dist.cdf(
-            jnp.array(q), jnp.array(mu), jnp.array(mu_prime), jnp.array(sigma)
-        )
+        result = dist.cdf(jnp.array(q), jnp.array(mu), jnp.array(mu_prime), jnp.array(sigma))
         assert float(result) == pytest.approx(expected, rel=1e-3)
 
 
@@ -132,9 +130,7 @@ class TestOneSidedAsymptoticPvalues:
             "q0-with-alt",
         ],
     )
-    def test_pvalues(
-        self, dist_cls, q, test_val, q_asimov, expected_pnull, expected_palt
-    ):
+    def test_pvalues(self, dist_cls, q, test_val, q_asimov, expected_pnull, expected_palt):
         """p-values match hand-computed Cowan et al. values."""
         result = TSResult(
             value=jnp.array(q),
@@ -358,9 +354,7 @@ class TestSignificance:
             "qmu-alt-Z1",
         ],
     )
-    def test_significance_values(
-        self, dist_cls, q, test_val, q_asimov, method, expected_z
-    ):
+    def test_significance_values(self, dist_cls, q, test_val, q_asimov, method, expected_z):
         """Significance Z matches hand-computed values."""
         q_a = jnp.array(q_asimov) if q_asimov is not None else None
         result = TSResult(value=jnp.array(q), test=jnp.array(test_val), q_asimov=q_a)
@@ -383,9 +377,7 @@ class TestSignificance:
         """null_significance doesn't need q_asimov for QMu/Q0/TMu."""
         result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
         dist = dist_cls()
-        assert float(dist.null_significance(result)) == pytest.approx(
-            expected_z, abs=0.01
-        )
+        assert float(dist.null_significance(result)) == pytest.approx(expected_z, abs=0.01)
 
     @pytest.mark.parametrize(
         ("dist_cls", "method"),
@@ -467,9 +459,7 @@ class TestExpectedPvalues:
         ("band_name", "expected_pnull", "expected_palt"),
         _EXCLUSION_BAND_DATA,
     )
-    def test_expected_pvalues_exclusion_bands(
-        self, asimov_result, dist_cls, band_name, expected_pnull, expected_palt
-    ):
+    def test_expected_pvalues_exclusion_bands(self, asimov_result, dist_cls, band_name, expected_pnull, expected_palt):
         """QMu and QTilde expected p-values at each band (μ=2, σ=1, q_A=4).
 
         Both distributions produce identical expected p-values because
@@ -478,12 +468,8 @@ class TestExpectedPvalues:
         """
         dist = dist_cls()
         bands = dist.expected_pvalues(asimov_result)
-        assert float(bands.null_pvalue[band_name]) == pytest.approx(
-            expected_pnull, rel=1e-2
-        )
-        assert float(bands.alt_pvalue[band_name]) == pytest.approx(
-            expected_palt, rel=1e-2
-        )
+        assert float(bands.null_pvalue[band_name]) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(bands.alt_pvalue[band_name]) == pytest.approx(expected_palt, rel=1e-2)
 
     @pytest.mark.parametrize(
         ("band_name", "expected_pnull", "expected_palt"),
@@ -500,9 +486,7 @@ class TestExpectedPvalues:
             ("plus_2sigma", 3.167e-5, 0.02275),
         ],
     )
-    def test_expected_pvalues_q0_all_bands(
-        self, band_name, expected_pnull, expected_palt
-    ):
+    def test_expected_pvalues_q0_all_bands(self, band_name, expected_pnull, expected_palt):
         """Q0 discovery expected p-values with q_asimov=4 (√q_A=2).
 
         q=max(0,√q_A+N)², pnull=1-Φ(√q), palt=1-Φ(√q-√q_A).
@@ -514,16 +498,10 @@ class TestExpectedPvalues:
         )
         dist = Q0Asymptotic()
         bands = dist.expected_pvalues(result)
-        assert float(bands.null_pvalue[band_name]) == pytest.approx(
-            expected_pnull, rel=1e-2
-        )
-        assert float(bands.alt_pvalue[band_name]) == pytest.approx(
-            expected_palt, rel=1e-2
-        )
+        assert float(bands.null_pvalue[band_name]) == pytest.approx(expected_pnull, rel=1e-2)
+        assert float(bands.alt_pvalue[band_name]) == pytest.approx(expected_palt, rel=1e-2)
 
-    @pytest.mark.parametrize(
-        "dist_cls", [QMuAsymptotic, QTildeAsymptotic, Q0Asymptotic]
-    )
+    @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic, Q0Asymptotic])
     def test_expected_pvalues_requires_q_asimov(self, dist_cls):
         """expected_pvalues returns None when q_asimov is missing."""
         test_val = 0.0 if dist_cls is Q0Asymptotic else 2.0
@@ -572,9 +550,7 @@ class TestExpectedPvalues:
             ("minus_1sigma", 0.00793, 0.1587),
         ],
     )
-    def test_cls_at_expected_upper_limit(
-        self, dist_cls, band_name, expected_pnull, expected_palt
-    ):
+    def test_cls_at_expected_upper_limit(self, dist_cls, band_name, expected_pnull, expected_palt):
         """CLs ≈ 0.05 at each band's expected upper limit (σ=1, α=0.05).
 
         Verifies the full pipeline: asymptotic p-values → cl_s = 0.05.

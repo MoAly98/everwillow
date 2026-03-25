@@ -32,30 +32,13 @@ BAND_NAMES = [
 def _make_bands(pnulls, palts):
     """Build ExpectedBands from parallel lists of pnull/palt values."""
     return ExpectedBands(
-        null_pvalue=BandValues(
-            **{n: jnp.array(p) for n, p in zip(BAND_NAMES, pnulls, strict=False)}
-        ),
-        alt_pvalue=BandValues(
-            **{n: jnp.array(p) for n, p in zip(BAND_NAMES, palts, strict=False)}
-        ),
+        null_pvalue=BandValues(**{n: jnp.array(p) for n, p in zip(BAND_NAMES, pnulls, strict=False)}),
+        alt_pvalue=BandValues(**{n: jnp.array(p) for n, p in zip(BAND_NAMES, palts, strict=False)}),
         cl_s=BandValues(
-            **{
-                n: cl_s(jnp.array(pn), jnp.array(pa))
-                for n, pn, pa in zip(BAND_NAMES, pnulls, palts, strict=False)
-            }
+            **{n: cl_s(jnp.array(pn), jnp.array(pa)) for n, pn, pa in zip(BAND_NAMES, pnulls, palts, strict=False)}
         ),
-        null_sig=BandValues(
-            **{
-                n: significance(jnp.array(p))
-                for n, p in zip(BAND_NAMES, pnulls, strict=False)
-            }
-        ),
-        alt_sig=BandValues(
-            **{
-                n: significance(jnp.array(p))
-                for n, p in zip(BAND_NAMES, palts, strict=False)
-            }
-        ),
+        null_sig=BandValues(**{n: significance(jnp.array(p)) for n, p in zip(BAND_NAMES, pnulls, strict=False)}),
+        alt_sig=BandValues(**{n: significance(jnp.array(p)) for n, p in zip(BAND_NAMES, palts, strict=False)}),
     )
 
 
@@ -111,13 +94,9 @@ class TestExpectedBands:
             ("plus_2sigma", 0.0),
         ],
     )
-    def test_null_significance_bands(
-        self, qmu_bands: ExpectedBands, band_name: str, expected_z: float
-    ):
+    def test_null_significance_bands(self, qmu_bands: ExpectedBands, band_name: str, expected_z: float):
         """Z_null at each band: 4.0, 3.0, 2.0, 1.0, 0.0."""
-        assert float(qmu_bands.null_sig[band_name]) == pytest.approx(
-            expected_z, abs=0.01
-        )
+        assert float(qmu_bands.null_sig[band_name]) == pytest.approx(expected_z, abs=0.01)
 
     @pytest.mark.parametrize(
         ("band_name", "expected_z"),
@@ -129,13 +108,9 @@ class TestExpectedBands:
             ("plus_2sigma", -2.0),
         ],
     )
-    def test_alt_significance_bands(
-        self, qmu_bands: ExpectedBands, band_name: str, expected_z: float
-    ):
+    def test_alt_significance_bands(self, qmu_bands: ExpectedBands, band_name: str, expected_z: float):
         """Z_alt at each band: 2.0, 1.0, 0.0, -1.0, -2.0."""
-        assert float(qmu_bands.alt_sig[band_name]) == pytest.approx(
-            expected_z, abs=0.01
-        )
+        assert float(qmu_bands.alt_sig[band_name]) == pytest.approx(expected_z, abs=0.01)
 
 
 # =============================================================================
@@ -166,9 +141,7 @@ class TestBandValues:
             "plus_2sigma",
         ]
         expected_values = [1.0, 2.0, 3.0, 4.0, 5.0]
-        for (name, value), exp_name, exp_val in zip(
-            bv, expected_names, expected_values, strict=True
-        ):
+        for (name, value), exp_name, exp_val in zip(bv, expected_names, expected_values, strict=True):
             assert name == exp_name
             assert float(value) == exp_val
 

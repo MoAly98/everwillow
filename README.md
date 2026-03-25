@@ -47,7 +47,7 @@ from everwillow.hypotest.distributions import (
 )
 from everwillow.hypotest.test_statistics import QTilde
 from everwillow.hypotest.toys import ToyGenerator
-from everwillow.hypotest.upper_limit import upper_limit
+from everwillow.hypotest.upper_limit import upper_limit, upper_limit_toys
 
 jax.config.update("jax_enable_x64", True)
 
@@ -100,38 +100,38 @@ limit = upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
 print(f"95% CL upper limit (asymptotic): {float(limit):.4f}")
 # 95% CL upper limit (asymptotic): 1.3673
 
-# --- Toy-based hypothesis test ---
+# --- Toy-based upper limit ---
 
 toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=5000)
-toys = toy_gen.generate(
-    nll,
-    params,
-    observed,
-    "mu",
-    poi_null=1.0,
-    poi_alt=0.0,
-    key=jax.random.key(42),
-    predict_fn=predict,
+
+
+def cls_from_toys(poi, key):
+    """Generate toys and compute CLs at a given POI value."""
+    toys = toy_gen.generate(
+        nll,
+        params,
+        observed,
+        "mu",
+        poi_null=poi,
+        poi_alt=0.0,
+        key=key,
+        predict_fn=predict,
+    )
+    dist = SimpleEmpiricalDistribution.from_toys(toys)
+    toy_calc = HypoTestCalculator(
+        nll_fn=nll,
+        params=params,
+        observation=observed,
+        poi_key="mu",
+        test_statistic=QTilde(),
+        distribution=dist,
+    )
+    return toy_calc.cls(toy_calc.test(poi))
+
+
+toy_limit = upper_limit_toys(
+    cls_from_toys, bounds=(0.0, 5.0), key=jax.random.key(0), tol=0.01
 )
-dist = SimpleEmpiricalDistribution.from_toys(toys)
-
-toy_calc = HypoTestCalculator(
-    nll_fn=nll,
-    params=params,
-    observation=observed,
-    poi_key="mu",
-    test_statistic=QTilde(),
-    distribution=dist,
-)
-toy_result = toy_calc.test(1.0)
-print(f"CLs (toys): {toy_calc.cls(toy_result):.4f}")
-
-
-def toy_cls_objective(poi):
-    return jnp.float64(toy_calc.cls(toy_calc.test(poi)))
-
-
-toy_limit = upper_limit(toy_cls_objective, bounds=(0.0, 5.0), level=0.05)
 print(f"95% CL upper limit (toys): {float(toy_limit):.4f}")
 ```
 

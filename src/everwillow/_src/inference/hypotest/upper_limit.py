@@ -300,7 +300,7 @@ def expected_upper_limit(
         def _band_fn(poi: float, _name: str = band_name) -> Array:
             bands = band_objective_fn(poi)
             if bands is None:
-                msg = (
+                msg = (  # type: ignore[unreachable]
                     f"expected_upper_limit: 'band_objective_fn' returned None "
                     f"for POI value {poi!r}; expected a BandValues instance."
                 )

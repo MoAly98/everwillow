@@ -381,3 +381,16 @@ def test_state_constructor_rejects_invalid_treedefmeta() -> None:
     """State constructor raises TypeError if treedefmeta is not TreeDefMeta."""
     with pytest.raises(TypeError, match="TreeDefMeta"):
         sl.State(mapping={"a": 1.0}, treedefmeta="not a TreeDefMeta")
+
+
+# -- Treescope rendering --
+
+
+def test_state_show(capsys) -> None:
+    """state.show() prints treescope-formatted output."""
+    state = sl.State.from_pytree({"a": 1.0, "b": {"c": 2.0}})
+    state.show()
+    captured = capsys.readouterr()
+    assert "State" in captured.out
+    assert "'a'" in captured.out
+    assert "'b.c'" in captured.out

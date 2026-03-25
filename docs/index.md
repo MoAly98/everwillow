@@ -16,6 +16,7 @@ extending-hypotest
 asimov-datasets
 tips
 interoperability
+features
 ```
 
 ```{toctree}

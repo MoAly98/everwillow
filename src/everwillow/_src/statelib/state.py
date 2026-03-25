@@ -10,6 +10,8 @@ import typing as tp
 from types import EllipsisType, MappingProxyType
 
 import jax.tree_util as jtu
+import treescope
+import treescope.repr_lib
 from jaxtyping import ArrayLike, PyTree
 
 from everwillow._src.statelib.meta import TreeDefMeta
@@ -25,6 +27,15 @@ __all__ = [
     "split",
     "update",
 ]
+
+
+def _in_ipython() -> bool:
+    try:
+        from IPython import get_ipython
+
+        return get_ipython() is not None
+    except ImportError:
+        return False
 
 
 K: tp.TypeAlias = str | tuple[str | int, ...]
@@ -281,6 +292,21 @@ class State(BaseMapping[V]):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.to_dict()!r})"
+
+    def __treescope_repr__(self, path, subtree_renderer):
+        return treescope.repr_lib.render_dictionary_wrapper(
+            object_type=type(self),
+            wrapped_dict=self.to_dict(),
+            path=path,
+            subtree_renderer=subtree_renderer,
+        )
+
+    def show(self) -> None:
+        """Pretty-print this State with rich array visualization."""
+        if _in_ipython():
+            treescope.display(self, ignore_exceptions=True)
+        else:
+            print(treescope.render_to_text(self))
 
     # jax.tree_util.register_pytree_with_keys_class methods
     def tree_flatten_with_keys(self):

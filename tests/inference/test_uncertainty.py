@@ -65,9 +65,9 @@ def simple_quadratic_nll(sigma_x: float = 1.0, sigma_y: float = 1.0):
     """
 
     def nll(params, observation):
-        return (params["x"] - observation["x"]) ** 2 / (2 * sigma_x**2) + (
-            params["y"] - observation["y"]
-        ) ** 2 / (2 * sigma_y**2)
+        return (params["x"] - observation["x"]) ** 2 / (2 * sigma_x**2) + (params["y"] - observation["y"]) ** 2 / (
+            2 * sigma_y**2
+        )
 
     return nll
 
@@ -401,9 +401,7 @@ class TestArgumentForwarding:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        with patch(
-            "everwillow._src.inference.uncertainty.hessian_matrix"
-        ) as mock_hessian:
+        with patch("everwillow._src.inference.uncertainty.hessian_matrix") as mock_hessian:
             # Return a valid 1x1 hessian (since y is fixed)
             mock_hessian.return_value = jnp.array([[1.0]])
 
@@ -419,9 +417,7 @@ class TestArgumentForwarding:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        with patch(
-            "everwillow._src.inference.uncertainty.covariance_matrix"
-        ) as mock_cov:
+        with patch("everwillow._src.inference.uncertainty.covariance_matrix") as mock_cov:
             # Return a valid 1x1 covariance (since y is fixed)
             mock_cov.return_value = jnp.array([[0.25]])
 
@@ -437,9 +433,7 @@ class TestArgumentForwarding:
         params: FState = sl.State.from_pytree({"x": 2.0, "y": 3.0})
         fixed: EState = sl.State.from_pytree({"y": ...})
 
-        with patch(
-            "everwillow._src.inference.uncertainty.covariance_matrix"
-        ) as mock_cov:
+        with patch("everwillow._src.inference.uncertainty.covariance_matrix") as mock_cov:
             # Return a valid 1x1 covariance (since y is fixed)
             mock_cov.return_value = jnp.array([[0.25]])
 

@@ -1,5 +1,7 @@
 """Immutable state management for JAX pytrees."""
 
+from __future__ import annotations
+
 from everwillow._src.statelib import State as State
 from everwillow._src.statelib import Transform as Transform
 from everwillow._src.statelib import apply_transformations as apply_transformations

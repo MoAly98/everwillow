@@ -1,5 +1,7 @@
 """Compact pyhf example helpers."""
 
+from __future__ import annotations
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -24,9 +26,7 @@ def _workspace(data: ModelData) -> pyhf.Workspace:
                         {
                             "name": "signal",
                             "data": [data.signal_nominal],
-                            "modifiers": [
-                                {"name": "mu", "type": "normfactor", "data": None}
-                            ],
+                            "modifiers": [{"name": "mu", "type": "normfactor", "data": None}],
                         },
                         {
                             "name": "bkg1",
@@ -110,9 +110,7 @@ def vector_to_dict(theta: jnp.ndarray, slices: dict[str, slice]) -> dict[str, fl
     return {name: theta[slice_][0] for name, slice_ in slices.items()}
 
 
-def dict_to_vector(
-    params: dict[str, float], theta: jnp.ndarray, slices: dict[str, slice]
-):
+def dict_to_vector(params: dict[str, float], theta: jnp.ndarray, slices: dict[str, slice]):
     vector = theta.copy()
     for name, value in params.items():
         vector = vector.at[slices[name]].set(value)

@@ -23,9 +23,7 @@ class TestMinuitTransform:
         """unwrap matches the Minuit arcsin formula."""
         transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
         value = 0.25
-        expected = math.asin(
-            2.0 * (value - transform.lower) / (transform.upper - transform.lower) - 1.0
-        )
+        expected = math.asin(2.0 * (value - transform.lower) / (transform.upper - transform.lower) - 1.0)
         result = transform.unwrap(value)
         assert jnp.isclose(result, expected, atol=ATOL)
 
@@ -33,9 +31,7 @@ class TestMinuitTransform:
         """wrap matches the Minuit sine formula."""
         transform = transforms.MinuitTransform(lower=-2.0, upper=2.0)
         internal = 0.75
-        expected = transform.lower + (transform.upper - transform.lower) / 2.0 * (
-            math.sin(internal) + 1.0
-        )
+        expected = transform.lower + (transform.upper - transform.lower) / 2.0 * (math.sin(internal) + 1.0)
         result = transform.wrap(internal)
         assert jnp.isclose(result, expected, atol=ATOL)
 
@@ -50,24 +46,16 @@ class TestMinuitTransform:
     def test_raises_on_boundary(self, boundary):
         """unwrap rejects values at either boundary."""
         transform = transforms.MinuitTransform(lower=0.0, upper=1.0)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="MinuitTransform"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="MinuitTransform"):
             transform.unwrap(getattr(transform, boundary))
 
     def test_init_requires_finite_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"):
             transforms.MinuitTransform(lower=jnp.inf, upper=1.0)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"):
             transforms.MinuitTransform(lower=0.0, upper=jnp.inf)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"):
             transforms.MinuitTransform(lower=1.0, upper=0.5)
 
 
@@ -87,9 +75,7 @@ class TestSigmoidTransform:
         """wrap equals sigmoid of the affine-scaled value."""
         transform = transforms.SigmoidTransform(lower=-1.0, upper=4.0)
         internal = -0.3
-        expected = transform.lower + (
-            transform.upper - transform.lower
-        ) * jax.nn.sigmoid(internal)
+        expected = transform.lower + (transform.upper - transform.lower) * jax.nn.sigmoid(internal)
         result = transform.wrap(internal)
         assert jnp.isclose(result, expected, atol=ATOL)
 
@@ -104,24 +90,16 @@ class TestSigmoidTransform:
     def test_raises_on_boundary(self, boundary):
         """unwrap rejects values at either boundary."""
         transform = transforms.SigmoidTransform(lower=-1.0, upper=1.0)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="SigmoidTransform"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="SigmoidTransform"):
             transform.unwrap(getattr(transform, boundary))
 
     def test_init_requires_valid_bounds(self):
         """constructor enforces finite and ordered bounds."""
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="lower bound must be finite"):
             transforms.SigmoidTransform(lower=jnp.inf, upper=1.0)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="upper bound must be finite"):
             transforms.SigmoidTransform(lower=-1.0, upper=jnp.inf)
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="requires lower bound"):
             transforms.SigmoidTransform(lower=1.0, upper=1.0)
 
 
@@ -182,9 +160,7 @@ class TestOneSidedLogTransform:
 
     def test_raises_on_infinite_bound(self):
         """constructor rejects non-finite bounds."""
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="bound must be finite"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="bound must be finite"):
             transforms.OneSidedLogTransform(bound=jnp.inf, direction="lower")
 
     @pytest.mark.parametrize(
@@ -230,17 +206,13 @@ class TestSoftPlusTransform:
     def test_raises_on_negative_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"):
             transform.unwrap(-0.1)
 
     def test_raises_on_zero_input(self):
         """unwrap enforces non-negative inputs."""
         transform = transforms.SoftPlusTransform()
-        with pytest.raises(
-            (eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"
-        ):
+        with pytest.raises((eqx.EquinoxRuntimeError, ValueError), match="expected positive inputs"):
             transform.unwrap(0.0)
 
 

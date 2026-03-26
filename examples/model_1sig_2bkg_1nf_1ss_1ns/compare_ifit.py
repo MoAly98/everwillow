@@ -59,9 +59,7 @@ def fit_evermore_ifit(max_steps: int = 150) -> tuple[HistoryCallback, float]:
 
     history = HistoryCallback()
     init_state = sl.State.from_pytree(dynamic)
-    result = ew.ifit(
-        partial(loss, args=args), init_state, max_steps=max_steps, callbacks=[history]
-    )
+    result = ew.ifit(partial(loss, args=args), init_state, max_steps=max_steps, callbacks=[history])
     return history, float(result.nll)
 
 
@@ -139,15 +137,9 @@ def main() -> None:
     console.print("\n")
     console.rule("Results Summary")
 
-    console.print(
-        f"  pyhs3:    {len(pyhs3_history.steps):3d} steps, NLL = {pyhs3_nll:.6f}"
-    )
-    console.print(
-        f"  pyhf:     {len(pyhf_history.steps):3d} steps, NLL = {pyhf_nll:.6f}"
-    )
-    console.print(
-        f"  evermore: {len(evermore_history.steps):3d} steps, NLL = {evermore_nll:.6f}"
-    )
+    console.print(f"  pyhs3:    {len(pyhs3_history.steps):3d} steps, NLL = {pyhs3_nll:.6f}")
+    console.print(f"  pyhf:     {len(pyhf_history.steps):3d} steps, NLL = {pyhf_nll:.6f}")
+    console.print(f"  evermore: {len(evermore_history.steps):3d} steps, NLL = {evermore_nll:.6f}")
 
     histories = {
         "pyhs3": pyhs3_history,

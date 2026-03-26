@@ -60,9 +60,7 @@ def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str) -> str: ...
 
 
 @tp.overload
-def canonicalize_key(
-    path: tuple[tp.Any, ...], *, sep: None
-) -> tuple[str | int, ...]: ...
+def canonicalize_key(path: tuple[tp.Any, ...], *, sep: None) -> tuple[str | int, ...]: ...
 
 
 def canonicalize_key(path: tuple[tp.Any, ...], *, sep: str | None = ".") -> K:
@@ -354,9 +352,7 @@ def merge(*states: State[V]) -> State[V]:
 
     compound_treedef = jtu.treedef_tuple(child_treedefs)
     mapping = dict(zip(all_keys, all_vals, strict=False))
-    return State(
-        mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys), merged=True)
-    )
+    return State(mapping, treedefmeta=TreeDefMeta(compound_treedef, tuple(all_keys), merged=True))
 
 
 def split(state: State[V]) -> tuple[State[V], ...]:

@@ -59,9 +59,7 @@ def poisson_logpdf(observed: float, mean: float) -> jnp.ndarray:
     mean_array = jnp.asarray(mean)
     return jnp.where(
         mean_array > 0.0,
-        observed_array * jnp.log(jnp.maximum(mean_array, 1e-12))
-        - mean_array
-        - gammaln(observed_array + 1.0),
+        observed_array * jnp.log(jnp.maximum(mean_array, 1e-12)) - mean_array - gammaln(observed_array + 1.0),
         -jnp.inf,
     )
 

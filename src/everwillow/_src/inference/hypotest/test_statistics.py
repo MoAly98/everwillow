@@ -70,13 +70,9 @@ class TestStatistic(eqx.Module):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute(
-            nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
-        )
+        q_obs, extras = self._compute(nll_fn, params, observation, poi_key, poi_test, **fit_kwargs)
 
-        return TestStatResult(
-            value=q_obs, test=jnp.asarray(poi_test), q_asimov=None, extras=extras
-        )
+        return TestStatResult(value=q_obs, test=jnp.asarray(poi_test), q_asimov=None, extras=extras)
 
     @abc.abstractmethod
     def _compute(
@@ -165,29 +161,21 @@ class CowanTestStatistic(TestStatistic):
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute(
-            nll_fn, params, observation, poi_key, poi_test, **fit_kwargs
-        )
+        q_obs, extras = self._compute(nll_fn, params, observation, poi_key, poi_test, **fit_kwargs)
 
         if mu_asimov is None:
             mu_asimov = self.mu_asimov
 
-        asimov_obs = self._resolve_asimov(
-            asimov_observation, predict_fn, params, poi_key, mu_asimov
-        )
+        asimov_obs = self._resolve_asimov(asimov_observation, predict_fn, params, poi_key, mu_asimov)
 
         q_asimov = None
         if asimov_obs is not None:
-            q_asimov_val, asimov_extras = self._compute(
-                nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs
-            )
+            q_asimov_val, asimov_extras = self._compute(nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs)
             q_asimov = q_asimov_val
             extras["asimov_fit_constrained"] = asimov_extras.get("fit_constrained")
             extras["asimov_fit_free"] = asimov_extras.get("fit_free")
 
-        return TestStatResult(
-            value=q_obs, test=jnp.asarray(poi_test), q_asimov=q_asimov, extras=extras
-        )
+        return TestStatResult(value=q_obs, test=jnp.asarray(poi_test), q_asimov=q_asimov, extras=extras)
 
     @staticmethod
     def _resolve_asimov(
@@ -249,16 +237,12 @@ class QTilde(CowanTestStatistic):
 
         # Constrained fit at mu_test: L(μ, θ̂̂(μ))
         fixed_mu: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(
-            nll_fn, params, observation, fixed_mu, **fit_kwargs
-        )
+        fit_constrained = constrained_fit(nll_fn, params, observation, fixed_mu, **fit_kwargs)
 
         # Constrained fit at μ=0: L(0, θ̂̂(0)) — denominator when μ̂ < 0
         # Both branches are always evaluated (JAX tracing); jnp.where selects.
         fixed_zero: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_zero = constrained_fit(
-            nll_fn, params, observation, fixed_zero, **fit_kwargs
-        )
+        fit_zero = constrained_fit(nll_fn, params, observation, fixed_zero, **fit_kwargs)
 
         # Eq. 16: denominator is L(0, θ̂̂(0)) when μ̂ < 0, else L(μ̂, θ̂)
         nll_denom = jnp.where(mu_hat < 0.0, fit_zero.nll, fit_free.nll)
@@ -311,9 +295,7 @@ class QMu(CowanTestStatistic):
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(
-            nll_fn, params, observation, fixed, **fit_kwargs
-        )
+        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -400,9 +382,7 @@ class Q0(CowanTestStatistic):
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_constrained = constrained_fit(
-            nll_fn, params, observation, fixed, **fit_kwargs
-        )
+        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -448,9 +428,7 @@ class TMu(CowanTestStatistic):
         mu_hat = fitted_state[poi_key]
 
         fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(
-            nll_fn, params, observation, fixed, **fit_kwargs
-        )
+        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         t = 2.0 * delta_nll

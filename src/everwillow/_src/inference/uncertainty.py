@@ -44,17 +44,17 @@ def hessian_matrix(
         2D JAX array of shape (n_free, n_free).
     """
     if not isinstance(params, sl.State):
-        raise TypeError("params must be a State")
+        msg = "params must be a State"  # type: ignore[unreachable]
+        raise TypeError(msg)
 
     if fixed is None:
         fixed = sl.State.from_pytree({})
     if not isinstance(fixed, sl.State):
-        raise TypeError("fixed must be a State or None")
+        msg = "fixed must be a State or None"  # type: ignore[unreachable]
+        raise TypeError(msg)
 
     # Split into fixed and free
-    fixed_state, free_state = sl.partition(
-        params, predicate=lambda key, _: key in fixed
-    )
+    fixed_state, free_state = sl.partition(params, predicate=lambda key, _: key in fixed)
 
     # Get flat array of free values
     free_keys = tuple(free_state.notnone.keys())
@@ -166,9 +166,7 @@ def uncertainties(
     stderrs = jnp.sqrt(jnp.diag(cov))
 
     # Get free_state with same structure/ordering as used for Hessian
-    fixed_state, free_state = sl.partition(
-        params, predicate=lambda key, _: key in fixed
-    )
+    fixed_state, free_state = sl.partition(params, predicate=lambda key, _: key in fixed)
 
     # Unflatten stderrs back into the same pytree structure as free_state
     _, treedef = jax.tree_util.tree_flatten(free_state)

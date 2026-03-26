@@ -69,9 +69,7 @@ workspace = pyhs3.Workspace(
             interpolationCodes=[0],
             positiveDefinite=False,
         ),
-        GenericFunction(
-            name="bkg1_expected", expression="bkg1_lnN_factor * bkg1_shape_interp"
-        ),
+        GenericFunction(name="bkg1_expected", expression="bkg1_lnN_factor * bkg1_shape_interp"),
         InterpolationFunction(
             name="bkg2_lnN_factor",
             nom="lnN_nom",
@@ -90,9 +88,7 @@ workspace = pyhs3.Workspace(
             interpolationCodes=[0],
             positiveDefinite=False,
         ),
-        GenericFunction(
-            name="bkg2_expected", expression="bkg2_lnN_factor * bkg2_shape_interp"
-        ),
+        GenericFunction(name="bkg2_expected", expression="bkg2_lnN_factor * bkg2_shape_interp"),
         GenericFunction(
             name="n_expected",
             expression="signal_expected + bkg1_expected + bkg2_expected",
@@ -134,9 +130,7 @@ model = workspace.model()
 inputs, jaxified = jaxify_distribution(model, "model")
 
 # Build initial parameters and data
-initial = {
-    point.name: float(point.value) for point in workspace.parameter_points[0].parameters
-}
+initial = {point.name: float(point.value) for point in workspace.parameter_points[0].parameters}
 data_values = {point.name: float(point.value) for point in workspace.data}
 
 # Separate observation from templates

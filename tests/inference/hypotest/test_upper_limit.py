@@ -227,18 +227,9 @@ def _make_mock_bands(pnulls, palts):
     return ExpectedBands(
         null_pvalue=BandValues(**dict(zip(band_names, pnulls, strict=False))),
         alt_pvalue=BandValues(**dict(zip(band_names, palts, strict=False))),
-        cl_s=BandValues(
-            **{
-                n: cl_s(pn, pa)
-                for n, pn, pa in zip(band_names, pnulls, palts, strict=False)
-            }
-        ),
-        null_sig=BandValues(
-            **{n: significance(pn) for n, pn in zip(band_names, pnulls, strict=False)}
-        ),
-        alt_sig=BandValues(
-            **{n: significance(pa) for n, pa in zip(band_names, palts, strict=False)}
-        ),
+        cl_s=BandValues(**{n: cl_s(pn, pa) for n, pn, pa in zip(band_names, pnulls, palts, strict=False)}),
+        null_sig=BandValues(**{n: significance(pn) for n, pn in zip(band_names, pnulls, strict=False)}),
+        alt_sig=BandValues(**{n: significance(pa) for n, pa in zip(band_names, palts, strict=False)}),
     )
 
 
@@ -307,9 +298,7 @@ class TestExpectedUpperLimit:
             assert bands is not None
             return bands.cl_s
 
-        result = expected_upper_limit(
-            band_cls_objective, bounds=(0.0, 10.0), level=0.05
-        )
+        result = expected_upper_limit(band_cls_objective, bounds=(0.0, 10.0), level=0.05)
 
         assert float(result.minus_2sigma) == pytest.approx(expected_minus2, rel=1e-3)
         assert float(result.minus_1sigma) == pytest.approx(expected_minus1, rel=1e-3)
@@ -372,9 +361,7 @@ class TestExpectedUpperLimitAsymptotic:
             ("plus_2sigma", 2.0),
         ],
     )
-    def test_expected_band(
-        self, calc: HypoTestCalculator, band_name: str, n_sigma: float
-    ):
+    def test_expected_band(self, calc: HypoTestCalculator, band_name: str, n_sigma: float):
         """Each expected band matches the analytic formula.
 
         Hardcoded expected values (σ=1, α=0.05):
@@ -399,9 +386,7 @@ class TestExpectedUpperLimitAsymptotic:
             assert bands is not None
             return bands.cl_s
 
-        result = expected_upper_limit(
-            band_cls_objective, bounds=(0.01, 8.0), level=self.ALPHA
-        )
+        result = expected_upper_limit(band_cls_objective, bounds=(0.01, 8.0), level=self.ALPHA)
         actual = float(result[band_name])
 
         assert actual == pytest.approx(expected, rel=1e-2)
@@ -420,9 +405,7 @@ class TestExpectedUpperLimitAsymptotic:
             assert bands is not None
             return bands.cl_s
 
-        result = expected_upper_limit(
-            band_cls_objective, bounds=(0.0, 8.0), level=self.ALPHA
-        )
+        result = expected_upper_limit(band_cls_objective, bounds=(0.0, 8.0), level=self.ALPHA)
 
         for _, val in result:
             assert jnp.isfinite(val)

@@ -29,9 +29,7 @@ class TestTestStatisticBase:
 
         # Call the base TestStatistic.compute directly, bypassing
         # CowanTestStatistic's override (which adds Asimov handling).
-        result = TestStatistic.compute(
-            QTilde(), poisson_nll, params, observed, "mu", poi_test=1.0
-        )
+        result = TestStatistic.compute(QTilde(), poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.value == pytest.approx(0.0, abs=1e-4)
         assert result.test == pytest.approx(1.0)
@@ -233,9 +231,7 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass().compute(
-            poisson_nll, params, observed, "mu", poi_test=1.0
-        )
+        result = TestStatClass().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.test == pytest.approx(expected_test)
 
@@ -245,9 +241,7 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass().compute(
-            poisson_nll, params, observed, "mu", poi_test=1.0
-        )
+        result = TestStatClass().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
 
         assert result.q_asimov is None
 

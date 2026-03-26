@@ -138,9 +138,7 @@ def build_nll(
     signal_mu = (params.higgs_mass.get_value() + params.d_higgs_mass.get_value()) * (
         1.0 + 0.003 * params.nuisance_scale.get_value()
     )
-    signal_sigma = params.higgs_width.get_value() * (
-        1.0 + 0.045 * params.nuisance_smear.get_value()
-    )
+    signal_sigma = params.higgs_width.get_value() * (1.0 + 0.045 * params.nuisance_smear.get_value())
 
     # Signal PDF: Gaussian centered at Higgs mass
     signal_pdf = pm.Gaussian(
@@ -331,9 +329,7 @@ def main():
 
     @jax.jit
     def fun():
-        return ew.fit(
-            nll_fn, init_state, observation, bounds=bounds, max_steps=2000, throw=False
-        )
+        return ew.fit(nll_fn, init_state, observation, bounds=bounds, max_steps=2000, throw=False)
 
     result = fun()
 
@@ -409,9 +405,7 @@ def main():
     # Plot data vs Asimov
     bins = 40
     _fig, ax = plt.subplots()
-    ax.hist(
-        data, bins=bins, range=(mass_lower, mass_upper), histtype="step", label="Data"
-    )
+    ax.hist(data, bins=bins, range=(mass_lower, mass_upper), histtype="step", label="Data")
     ax.hist(
         asimov_masses,
         bins=bins,

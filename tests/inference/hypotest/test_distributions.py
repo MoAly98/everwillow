@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -325,6 +326,33 @@ class TestSimpleEmpiricalDistribution:
         result = TSResult(value=jnp.array(1.5), test=jnp.array(1.0))
         with pytest.raises(ValueError, match="expected_pvalues requires q_alt"):
             dist.expected_pvalues(result)
+
+    def test_pvalues_preserve_float32_dtype(self):
+        """P-values inherit the float32 dtype from the toy arrays."""
+        q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float32)
+        q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float32)
+        dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
+        result = TSResult(value=jnp.array(3.0, dtype=jnp.float32), test=jnp.array(1.0))
+
+        assert dist.null_pval(result).dtype == jnp.float32
+        assert dist.alt_pval(result).dtype == jnp.float32
+
+    def test_pvalues_preserve_float64_dtype(self):
+        """P-values inherit the float64 dtype from the toy arrays when x64 is enabled."""
+        prev = jax.config.read("jax_enable_x64")
+        jax.config.update("jax_enable_x64", True)
+        try:
+            q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float64)
+            q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float64)
+            dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
+            result = TSResult(
+                value=jnp.array(3.0, dtype=jnp.float64), test=jnp.array(1.0)
+            )
+
+            assert dist.null_pval(result).dtype == jnp.float64
+            assert dist.alt_pval(result).dtype == jnp.float64
+        finally:
+            jax.config.update("jax_enable_x64", prev)
 
 
 # =============================================================================

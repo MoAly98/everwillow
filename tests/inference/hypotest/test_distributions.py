@@ -345,9 +345,7 @@ class TestSimpleEmpiricalDistribution:
             q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float64)
             q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float64)
             dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
-            result = TSResult(
-                value=jnp.array(3.0, dtype=jnp.float64), test=jnp.array(1.0)
-            )
+            result = TSResult(value=jnp.array(3.0, dtype=jnp.float64), test=jnp.array(1.0))
 
             assert dist.null_pval(result).dtype == jnp.float64
             assert dist.alt_pval(result).dtype == jnp.float64

@@ -97,31 +97,36 @@ def constrained_fit(
     nll_fn: tp.Callable[[PyTree, PyTree], float],
     params: sl.State,
     observation: PyTree,
-    fixed: sl.State,
+    poi_fixed: sl.State,
     **fit_kwargs: tp.Any,
 ) -> FitResult:
-    """Perform constrained fit, handling the case where all params are fixed.
+    """Perform constrained fit, merging POI constraint with user-fixed params.
 
-    When the POI is the only parameter and it's being fixed, there are no
-    free parameters to optimize. In this case, we simply evaluate the NLL
-    at the fixed point rather than running the optimizer.
+    Merges ``poi_fixed`` (the POI constraint from the test statistic) with any
+    user-specified ``fixed`` params in ``fit_kwargs``. When all parameters end
+    up fixed, the NLL is evaluated directly without running the optimizer.
 
     Args:
         nll_fn: Negative log-likelihood function taking (params, observation).
         params: Initial parameter state.
         observation: Observed data passed to nll_fn.
-        fixed: State specifying which parameters to fix and their values.
-        **fit_kwargs: Additional arguments passed to fit().
+        poi_fixed: State specifying the POI value to constrain.
+        **fit_kwargs: Additional arguments passed to fit(). If ``fixed`` is
+            present, it is merged with ``poi_fixed`` (``poi_fixed`` wins on
+            overlapping keys).
 
     Returns:
         FitResult with fitted parameters and NLL value.
     """
+    user_fixed = fit_kwargs.pop("fixed", None)
+    merged_fixed = sl.merge(user_fixed, poi_fixed) if user_fixed else poi_fixed
+
     # Check if fixing these params leaves any free parameters
-    free_keys = set(params.mapping.keys()) - set(fixed.mapping.keys())
+    free_keys = set(params.mapping.keys()) - set(merged_fixed.mapping.keys())
 
     if len(free_keys) == 0:
         # All parameters are fixed - just evaluate NLL
-        updated_params = sl.update(params, updates=fixed)
+        updated_params = sl.update(params, updates=merged_fixed)
         nll_value = jnp.asarray(nll_fn(updated_params.to_pytree(), observation))
         return FitResult(
             params=updated_params,
@@ -130,4 +135,4 @@ def constrained_fit(
             solver_result=None,
         )
 
-    return fit(nll_fn, params, observation, fixed=fixed, **fit_kwargs)
+    return fit(nll_fn, params, observation, fixed=merged_fixed, **fit_kwargs)

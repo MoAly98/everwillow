@@ -44,7 +44,7 @@ def _reconstruct_full_state(
 
 
 class _WrappedNLL(eqx.Module):
-    """NLL evaluated on the free parameters, with observation as dynamic input."""
+    """NLL evaluated on the free parameters, holding a fixed observation."""
 
     nll_fn: tp.Callable = eqx.field(static=True)
     observation: PyTree

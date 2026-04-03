@@ -9,6 +9,7 @@ import everwillow.statelib as sl
 from everwillow.hypotest.test_statistics import QMu, QTilde
 from everwillow.hypotest.utils import (
     cl_s,
+    constrained_fit,
     make_asimov,
     sigma_from_asimov,
     significance,
@@ -17,6 +18,7 @@ from everwillow.hypotest.utils import (
 from ._counting_model import (
     create_observation,
     create_params,
+    nll_two_nuisance,
     nll_with_nuisance,
     poisson_nll,
     predict_fn,
@@ -179,3 +181,81 @@ class TestConstrainedFit:
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, rel=0.05)
         assert result.value == pytest.approx(expected_q, rel=0.05)
+
+    # -- user-fixed params merged with POI constraint --
+
+    def test_user_fixed_nuisance_stays_fixed(self):
+        """User-fixed alpha=1.0 stays fixed; theta is profiled.
+
+        Model: n_exp = mu * S * alpha + B * theta (nll_two_nuisance)
+        With mu=1 (POI), alpha=1 (user-fixed), n_obs=12:
+        n_exp = 10 + 5*theta. Optimizer should pull theta > 1.
+        """
+        params = sl.State.from_pytree({"mu": 1.0, "theta": 1.0, "alpha": 1.0})
+        observed = create_observation(12.0)
+        poi_fixed = sl.State.from_pytree({"mu": 1.0})
+        user_fixed = sl.State.from_pytree({"alpha": 1.0})
+
+        result = constrained_fit(
+            nll_two_nuisance,
+            params,
+            observed,
+            poi_fixed,
+            fixed=user_fixed,
+        )
+
+        fitted = result.params
+        assert float(fitted["mu"]) == pytest.approx(1.0, abs=1e-6)
+        assert float(fitted["alpha"]) == pytest.approx(1.0, abs=1e-6)
+        # theta should be profiled away from its initial value of 1.0
+        assert float(fitted["theta"]) != pytest.approx(1.0, abs=1e-3)
+
+    def test_all_params_fixed_shortcut_with_user_fixed(self):
+        """POI + user-fixed covers all params → direct NLL evaluation.
+
+        With mu=1, theta=1, alpha=1, n_obs=15:
+        n_exp = 1*10*1 + 5*1 = 15
+        NLL = 15 - 15*ln(15) = -25.6208 (constraints are zero at nominal)
+        """
+        params = sl.State.from_pytree({"mu": 1.0, "theta": 1.0, "alpha": 1.0})
+        observed = create_observation(15.0)
+        poi_fixed = sl.State.from_pytree({"mu": 1.0})
+        user_fixed = sl.State.from_pytree({"theta": 1.0, "alpha": 1.0})
+
+        result = constrained_fit(
+            nll_two_nuisance,
+            params,
+            observed,
+            poi_fixed,
+            fixed=user_fixed,
+        )
+
+        assert result.solver_result is None
+        assert result.success
+        assert float(result.nll) == pytest.approx(-25.62075, rel=1e-4)
+
+    def test_via_qtilde_with_user_fixed_nuisance(self):
+        """End-to-end: QTilde.compute with fixed={"alpha": 1.0}.
+
+        Passing fixed=... through QTilde.compute should keep alpha fixed
+        during both the free and constrained fits. With alpha=1, the model
+        reduces to n_exp = mu*10 + 5*theta, so mu_hat ≈ (12-5)/10 = 0.7.
+        """
+        params = sl.State.from_pytree({"mu": 1.0, "theta": 1.0, "alpha": 1.0})
+        observed = create_observation(12.0)
+        user_fixed = sl.State.from_pytree({"alpha": 1.0})
+
+        result = QTilde().compute(
+            nll_two_nuisance,
+            params,
+            observed,
+            "mu",
+            poi_test=1.0,
+            fixed=user_fixed,
+        )
+
+        assert float(result.value) >= 0.0
+        assert result.extras["mu_hat"] == pytest.approx(0.7, rel=0.1)
+        # alpha must be 1.0 in both the free and constrained fits
+        assert float(result.extras["fit_free"].params["alpha"]) == pytest.approx(1.0, abs=1e-6)
+        assert float(result.extras["fit_constrained"].params["alpha"]) == pytest.approx(1.0, abs=1e-6)

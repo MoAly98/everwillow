@@ -42,6 +42,24 @@ def nll_with_nuisance(params, observation):
     return poisson_term + constraint
 
 
+def nll_two_nuisance(params, observation):
+    """Poisson NLL with two nuisance parameters.
+
+    Model: n_expected = mu * S * alpha + B * theta
+    - theta: background normalization (10% Gaussian constraint)
+    - alpha: signal efficiency (5% Gaussian constraint)
+    """
+    mu = params["mu"]
+    theta = params["theta"]
+    alpha = params["alpha"]
+    n_expected = mu * S * alpha + B * theta
+    n_observed = observation["n"]
+    poisson_term = n_expected - n_observed * jnp.log(n_expected)
+    constraint_theta = 0.5 * (theta - 1.0) ** 2 / 0.1**2  # 10% uncertainty
+    constraint_alpha = 0.5 * (alpha - 1.0) ** 2 / 0.05**2  # 5% uncertainty
+    return poisson_term + constraint_theta + constraint_alpha
+
+
 def create_params(mu_init: float = 1.0) -> sl.State:
     """Create initial parameter state."""
     return sl.State.from_pytree({"mu": mu_init})

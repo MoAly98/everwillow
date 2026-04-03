@@ -147,6 +147,30 @@ class TestAsymptoticCalculator:
         assert float(result.pnull) == pytest.approx(0.08456, rel=1e-3)
         assert float(result.palt) == pytest.approx(0.94816, rel=1e-3)
 
+    def test_asimov_observation_field_takes_precedence_over_predict_fn(self):
+        """AsymptoticCalculator(asimov_observation=...) is used over predict_fn.
+
+        predict_fn at mu_asimov=0 gives Asimov n=5 → q_asimov=9.0139.
+        Explicit asimov_observation at mu=1 gives n=15 → q_asimov=0.
+        If asimov_observation takes precedence, q_asimov should be 0.
+        """
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
+        asimov_at_mu1 = create_observation(15.0)
+
+        calc = AsymptoticCalculator(
+            nll_fn=poisson_nll,
+            params=params,
+            observation=observed,
+            poi_key="mu",
+            predict_fn=predict_fn,
+            asimov_observation=asimov_at_mu1,
+        )
+        result = calc.test(poi_test=1.0)
+
+        # asimov_observation (n=15 at mu=1) wins → q_asimov=0
+        assert result.test_stat_result.q_asimov == pytest.approx(0.0, abs=1e-4)
+
     def test_without_predict_fn(self):
         """Without predict_fn, q_asimov is None and p-values are None.
 

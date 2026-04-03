@@ -6,8 +6,9 @@ Distribution objects.
 
 - ``HypoTestCalculator``: Generic base — forwards all kwargs to the
   test statistic.
-- ``AsymptoticCalculator``: Extends the base with explicit Asimov args
-  (``predict_fn``, ``mu_asimov``) for Cowan et al. asymptotic workflows.
+- ``AsymptoticCalculator``: Extends the base with Asimov dataset config
+  (``predict_fn``/``mu_asimov`` or ``asimov_observation``) for Cowan et al.
+  asymptotic workflows.
 """
 
 from __future__ import annotations
@@ -126,9 +127,22 @@ class HypoTestCalculator(eqx.Module):
 class AsymptoticCalculator(HypoTestCalculator):
     """Calculator for Cowan et al. asymptotic hypothesis tests.
 
-    Extends ``HypoTestCalculator`` with ``predict_fn`` and ``mu_asimov``
-    fields for Asimov dataset generation. These are injected into the
-    test statistic call automatically by ``test()``.
+    Extends ``HypoTestCalculator`` with Asimov dataset configuration.
+    These fields are injected into the test statistic call automatically
+    by ``test()``.
+
+    The Asimov dataset can be provided in two ways:
+
+    1. **Pre-computed**: pass ``asimov_observation`` directly. This is
+       useful when the Asimov dataset is expensive to generate or when
+       the model prediction function is not available (e.g. combined
+       models with multiple observation channels).
+    2. **On-the-fly**: pass ``predict_fn`` and ``mu_asimov``. The Asimov
+       dataset is generated at each ``test()`` call by setting the POI
+       to ``mu_asimov`` and calling ``predict_fn``.
+
+    When both are provided, ``asimov_observation`` takes precedence and
+    ``predict_fn`` / ``mu_asimov`` are ignored.
 
     Example:
         >>> calc = AsymptoticCalculator(
@@ -138,11 +152,14 @@ class AsymptoticCalculator(HypoTestCalculator):
         >>> result = calc.test(poi_test=1.0)
 
     Attributes:
-        predict_fn: Function to generate expected observation from parameters.
+        predict_fn: Function mapping parameter state to expected observation.
             Used to create the Asimov dataset at ``mu_asimov``.
         mu_asimov: POI value for Asimov dataset generation.
             Defaults to 0.0 (background-only, for exclusion tests).
             Use 1.0 for discovery tests.
+        asimov_observation: Pre-computed Asimov dataset. When provided,
+            this is used directly instead of generating one via
+            ``predict_fn`` / ``mu_asimov``.
     """
 
     predict_fn: tp.Callable[[sl.State], PyTree] | None = None
@@ -156,14 +173,14 @@ class AsymptoticCalculator(HypoTestCalculator):
     ) -> HypoTestResult:
         """Run asymptotic hypothesis test.
 
-        Injects ``predict_fn`` and ``mu_asimov`` from init fields,
-        unless overridden in kwargs.
+        Injects ``predict_fn``, ``mu_asimov``, and ``asimov_observation``
+        from init fields, unless overridden in kwargs.
 
         Args:
             poi_test: Test value for the POI.
             **kwargs: Additional arguments forwarded to the test statistic
-                (e.g. fit options). Can override ``predict_fn`` and
-                ``mu_asimov`` for one-off use.
+                (e.g. fit options). Can override ``predict_fn``,
+                ``mu_asimov``, or ``asimov_observation`` for one-off use.
 
         Returns:
             HypoTestResult with observed p-values.

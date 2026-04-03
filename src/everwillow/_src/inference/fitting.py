@@ -43,6 +43,17 @@ def _reconstruct_full_state(
     return ewp.wrap(full_state_transformed, bounds.mapping)
 
 
+class _WrappedNLL(eqx.Module):
+    """NLL evaluated on the free parameters, with observation as dynamic input."""
+
+    nll_fn: tp.Callable = eqx.field(static=True)
+    observation: PyTree
+
+    def __call__(self, new_state, fn_args):
+        full_state = _reconstruct_full_state(new_state, args=fn_args)
+        return self.nll_fn(full_state.to_pytree(), self.observation)
+
+
 class FitResult(eqx.Module, tp.Generic[V]):
     """Result of a fit operation."""
 
@@ -334,13 +345,14 @@ def _fit(
         predicate=predicate,
     )
 
+    # Convert to JAX arrays so eqx.filter_jit treats them as dynamic inputs.
+    fixed_state = jax.tree.map(jnp.asarray, fixed_state)
+
     # Prepare args for reconstructing full state
     args: Args = (fixed_state, bounds)
 
     # Wrap nll to only take free parameters
-    def wrapped_nll(new_state, fn_args):
-        full_state = _reconstruct_full_state(new_state, args=fn_args)
-        return nll_fn(full_state.to_pytree(), observation)
+    wrapped_nll = _WrappedNLL(nll_fn=nll_fn, observation=observation)
 
     # Set up solver
     if solver is None:

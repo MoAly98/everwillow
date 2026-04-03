@@ -147,6 +147,7 @@ class AsymptoticCalculator(HypoTestCalculator):
 
     predict_fn: tp.Callable[[sl.State], PyTree] | None = None
     mu_asimov: float = 0.0
+    asimov_observation: PyTree | None = None
 
     def test(
         self,
@@ -169,4 +170,5 @@ class AsymptoticCalculator(HypoTestCalculator):
         """
         kwargs.setdefault("predict_fn", self.predict_fn)
         kwargs.setdefault("mu_asimov", self.mu_asimov)
+        kwargs.setdefault("asimov_observation", self.asimov_observation)
         return super().test(poi_test, **kwargs)

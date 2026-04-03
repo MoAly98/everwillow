@@ -236,13 +236,13 @@ class QTilde(CowanTestStatistic):
         mu_hat = fitted_state[poi_key]
 
         # Constrained fit at mu_test: L(μ, θ̂̂(μ))
-        fixed_mu: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, fixed_mu, **fit_kwargs)
+        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
 
         # Constrained fit at μ=0: L(0, θ̂̂(0)) — denominator when μ̂ < 0
         # Both branches are always evaluated (JAX tracing); jnp.where selects.
-        fixed_zero: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_zero = constrained_fit(nll_fn, params, observation, fixed_zero, **fit_kwargs)
+        zero_fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
+        fit_zero = constrained_fit(nll_fn, params, observation, zero_fixed, **fit_kwargs)
 
         # Eq. 16: denominator is L(0, θ̂̂(0)) when μ̂ < 0, else L(μ̂, θ̂)
         nll_denom = jnp.where(mu_hat < 0.0, fit_zero.nll, fit_free.nll)
@@ -294,8 +294,8 @@ class QMu(CowanTestStatistic):
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
+        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -381,8 +381,8 @@ class Q0(CowanTestStatistic):
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
+        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -427,8 +427,8 @@ class TMu(CowanTestStatistic):
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, fixed, **fit_kwargs)
+        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         t = 2.0 * delta_nll

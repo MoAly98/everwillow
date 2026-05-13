@@ -8,10 +8,12 @@ __version__ = "0.1.2"
 
 # Core API
 from everwillow._src.inference.fitting import FitResult, fit, ifit, prepare
+from everwillow._src.inference.uncertainty import uncertainties
 
 __all__ = [
     "FitResult",
     "fit",
     "ifit",
     "prepare",
+    "uncertainties",
 ]

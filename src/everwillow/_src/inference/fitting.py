@@ -28,6 +28,40 @@ if tp.TYPE_CHECKING:
     from everwillow._src.inference.callback import Callback
 
 
+def _ensure_array_leaves(state: sl.State, name: str) -> sl.State:
+    """Enforce the fit input contract on a state's leaves.
+
+    Leaves must be ``jax.Array`` or ``float``; floats are converted with
+    ``jnp.asarray`` so that downstream JIT boundaries treat them as dynamic
+    inputs rather than static constants (avoiding retraces when values change
+    between calls). Ellipsis sentinels used by ``fixed`` pass through unchanged.
+
+    Args:
+        state: State whose leaves are checked.
+        name: Argument name used in error messages.
+
+    Returns:
+        State with all numeric leaves as JAX arrays.
+
+    Raises:
+        TypeError: If a leaf is neither a ``jax.Array``, a ``float``, nor Ellipsis.
+    """
+
+    def ensure(path, value):
+        if value is Ellipsis:
+            return value
+        if isinstance(value, (float, jax.Array)):
+            return jnp.asarray(value)
+        # path[0] is the State's internal GetAttrKey("_mapping"); the rest is the leaf key
+        msg = (
+            f"{name}{jax.tree_util.keystr(path[1:])} has type {type(value).__name__}; "
+            "leaves must be jax.Array or float (convert with jnp.asarray)"
+        )
+        raise TypeError(msg)
+
+    return jax.tree_util.tree_map_with_path(ensure, state)
+
+
 def _reconstruct_full_state(
     free_state: sl.State[V],
     *,
@@ -329,6 +363,12 @@ def _fit(
         msg = "bounds must be a State or None"  # type: ignore[unreachable]
         raise TypeError(msg)
 
+    # Enforce the input contract at the public boundary: leaves must be
+    # jax.Arrays or floats, converted once here so every downstream JIT
+    # boundary sees dynamic array inputs (no retrace when values change).
+    params = _ensure_array_leaves(params, "params")
+    fixed = _ensure_array_leaves(fixed, "fixed")
+
     # Set fixed values
     updated_params = sl.update(params, updates=fixed)
 
@@ -344,9 +384,6 @@ def _fit(
         param_state_transformed,
         predicate=predicate,
     )
-
-    # Convert to JAX arrays so eqx.filter_jit treats them as dynamic inputs.
-    fixed_state = jax.tree.map(jnp.asarray, fixed_state)
 
     # Prepare args for reconstructing full state
     args: Args = (fixed_state, bounds)
@@ -418,11 +455,16 @@ def fit(
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument and observation data as its second.
         params: Initial parameter values organised as a state (e.g. mapping or
-            nested containers).
+            nested containers). Leaves must be ``jax.Array`` or ``float``;
+            floats are converted to JAX arrays at the call boundary.
         observation: Observed data passed to ``nll_fn``. Can be any pytree structure
-            (dict, array, nested containers, etc.).
+            (dict, array, nested containers, etc.). Array leaves are treated as
+            dynamic JIT inputs; non-array leaves are static, and changing them
+            between calls triggers recompilation.
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
+            Values must be ``jax.Array``, ``float``, or ``...`` to fix a
+            parameter at its current value in *params*.
         bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances. When provided, parameters are unwrapped via the transform's
             ``unwrap`` method prior to optimisation and wrapped back afterwards.
@@ -506,11 +548,17 @@ def ifit(
     Args:
         nll_fn: Callable returning the scalar NLL. It must accept the parameter
             pytree as its first argument and observation data as its second.
-        params: Initial parameter values organised as a state.
+        params: Initial parameter values organised as a state. Leaves must be
+            ``jax.Array`` or ``float``; floats are converted to JAX arrays at
+            the call boundary.
         observation: Observed data passed to ``nll_fn``. Can be any pytree structure
-            (dict, array, nested containers, etc.).
+            (dict, array, nested containers, etc.). Array leaves are treated as
+            dynamic JIT inputs; non-array leaves are static, and changing them
+            between calls triggers recompilation.
         fixed: Optional state of canonicalized keys to fixed values for
             identifying parameters that should remain unchanged during the fit.
+            Values must be ``jax.Array``, ``float``, or ``...`` to fix a
+            parameter at its current value in *params*.
         bounds: Optional state of :class:`~everwillow._src.parameters.transforms.TransformBase`
             instances for parameter bounds.
         solver: :class:`optimistix.AbstractMinimiser` instance to use. Defaults to

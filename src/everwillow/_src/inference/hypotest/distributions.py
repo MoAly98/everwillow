@@ -86,19 +86,19 @@ def _build_expected_bands(
     )
 
 
-def _require_q_asimov(result: TestStatResult, cls_name: str, pval_type: str) -> bool:
-    """Check that q_asimov is available, warn if not.
+def _require_q_asimov(result: TestStatResult, cls_name: str, pval_type: str) -> Array | None:
+    """Return the Asimov test statistic, warning if it is missing.
 
     Returns:
-        True if q_asimov is present, False otherwise.
+        ``result.q_asimov`` if present, None otherwise.
     """
     if result.q_asimov is None:
         warnings.warn(
             f"{pval_type} p-value computation in {cls_name} cannot be performed without an Asimov test statistic.",
             stacklevel=3,
         )
-        return False
-    return True
+        return None
+    return result.q_asimov
 
 
 # =============================================================================
@@ -215,10 +215,11 @@ class TMuAsymptotic(Distribution):
         :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
         so :math:`\sqrt{q_A} = \mu/\sigma = (\mu-\mu')/\sigma`.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Alternative")
+        if q_asimov is None:
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
-        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
         return 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI(sqrt_q - sqrt_qa)
 
 
@@ -258,10 +259,10 @@ class TMuTildeAsymptotic(Distribution):
                     & \text{if } \tilde{t} > q_A
             \end{cases}
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Null"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Null")
+        if q_asimov is None:
             return None
         q = result.value
-        q_asimov = result.q_asimov
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
@@ -284,10 +285,10 @@ class TMuTildeAsymptotic(Distribution):
                     & \text{if } \tilde{t} > q_A
             \end{cases}
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Alternative")
+        if q_asimov is None:
             return None
         q = result.value
-        q_asimov = result.q_asimov
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
@@ -319,10 +320,11 @@ class Q0Asymptotic(Distribution):
         :math:`q_A = \mu_\text{asimov}^2/\sigma^2` (Asimov under signal),
         so :math:`\sqrt{q_A} = \mu_\text{asimov}/\sigma`.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Alternative")
+        if q_asimov is None:
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
-        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
@@ -340,10 +342,11 @@ class Q0Asymptotic(Distribution):
             ExpectedBands with (pnull, palt) at each sigma level,
             or None if q_asimov is missing.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Expected")
+        if q_asimov is None:
             return None
 
-        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
         def expected_q_fn(n: float) -> Array:
             return jnp.maximum(sqrt_qa + n, 0.0) ** 2
@@ -374,10 +377,11 @@ class QMuAsymptotic(Distribution):
         :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
         so :math:`\sqrt{q_A} = \mu/\sigma`.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Alternative")
+        if q_asimov is None:
             return None
         sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
-        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
+        sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
     def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
@@ -397,10 +401,11 @@ class QMuAsymptotic(Distribution):
             ExpectedBands with (pnull, palt) at each sigma level,
             or None if q_asimov is missing.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Expected")
+        if q_asimov is None:
             return None
 
-        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        sigma = sigma_from_asimov(result.test, q_asimov)
         # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
         # Use 0 instead: all expected q become 0, giving CLs=1.0.
         mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)
@@ -445,10 +450,10 @@ class QTildeAsymptotic(Distribution):
                     & \text{if } \tilde{q} > q_A
             \end{cases}
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Null"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Null")
+        if q_asimov is None:
             return None
         q = result.value
-        q_asimov = result.q_asimov
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
@@ -469,10 +474,10 @@ class QTildeAsymptotic(Distribution):
                     & \text{if } \tilde{q} > q_A
             \end{cases}
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Alternative")
+        if q_asimov is None:
             return None
         q = result.value
-        q_asimov = result.q_asimov
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         sqrt_qa = jnp.sqrt(jnp.maximum(q_asimov, 0.0))
 
@@ -503,10 +508,11 @@ class QTildeAsymptotic(Distribution):
             ExpectedBands with (pnull, palt) at each sigma level,
             or None if q_asimov is missing.
         """
-        if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
+        q_asimov = _require_q_asimov(result, self.__class__.__name__, "Expected")
+        if q_asimov is None:
             return None
 
-        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        sigma = sigma_from_asimov(result.test, q_asimov)
         # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
         # Use 0 instead: all expected q become 0, giving CLs=1.0.
         mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)

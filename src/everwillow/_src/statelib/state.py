@@ -378,7 +378,7 @@ def split(state: State[V]) -> tuple[State[V], ...]:
     child_treedefs = jtu.treedef_children(state.treedefmeta.treedef)
     offset, states = 0, []
     for child_td in child_treedefs:
-        n = child_td.num_leaves
+        n = child_td.num_leaves  # type: ignore[attr-defined]
         child_keys = state.treedefmeta.keys[offset : offset + n]
         child_map = {k: state[k] for k in child_keys}
         states.append(State(child_map, treedefmeta=TreeDefMeta(child_td, child_keys)))

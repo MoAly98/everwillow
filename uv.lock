@@ -686,12 +686,16 @@ wheels = [
 [[package]]
 name = "evermore"
 version = "0.4.1"
-source = { git = "https://github.com/pfackeldey/evermore?rev=v0.4.1#b78d7658557c853c474b6dc286c60b249fe87878" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "flax" },
     { name = "jax" },
     { name = "jaxlib" },
     { name = "jaxtyping" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/af/40/9aead8ce4e8837a9e781ac3e57538bca9c613c4f5e278c5c83a9ca5462fb/evermore-0.4.1.tar.gz", hash = "sha256:a7a3f37a67bc27468f336ffba043e3264afac3d2772557e037838a978cdc8813", size = 150970, upload-time = "2026-01-08T11:35:36.8Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/13/5b3c0e1610beb3aa395261d737211cb4d8993999b19e45b6adbce5c1d2d7/evermore-0.4.1-py3-none-any.whl", hash = "sha256:c906ccac7d73de175ef875e086ceab56d430f34c22e861a4165c091ebad99ec4", size = 25302, upload-time = "2026-01-08T11:35:35.293Z" },
 ]
 
 [[package]]
@@ -802,7 +806,7 @@ examples = [
     { name = "evermore", specifier = ">=0.4.1" },
     { name = "iminuit", specifier = ">=2.32.0" },
     { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "paramore", git = "https://github.com/maxgalli/paramore?branch=master" },
+    { name = "paramore", git = "https://github.com/maxgalli/paramore?branch=feat%2Fbernstein-analytical-integrate" },
     { name = "pyhf", git = "https://github.com/scikit-hep/pyhf?branch=main" },
     { name = "pyhs3", git = "https://github.com/MoAly98/pyhs3?branch=fix%2Ffuncs_ref_funcs" },
     { name = "rich" },
@@ -2314,11 +2318,12 @@ wheels = [
 [[package]]
 name = "paramore"
 version = "0.1.0"
-source = { git = "https://github.com/maxgalli/paramore?branch=master#e54c64107bddc6d1ed374924f36b216cec93bd01" }
+source = { git = "https://github.com/maxgalli/paramore?branch=feat%2Fbernstein-analytical-integrate#88dfeec0ad7427cc1e62f32ec10f40ed4fdee160" }
 dependencies = [
     { name = "dask" },
     { name = "distributed" },
     { name = "evermore" },
+    { name = "everwillow" },
     { name = "iminuit" },
     { name = "ipython" },
     { name = "jax" },
@@ -2371,7 +2376,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

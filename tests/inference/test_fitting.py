@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optimistix as optx
 import pytest
 from jaxtyping import PyTree
@@ -755,6 +756,118 @@ class TestFitInternal:
 
         with pytest.raises(TypeError, match="params must be a State"):
             ew.ifit(nll, {"x": 0.0}, {}, progress=False)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "leaf",
+        [
+            pytest.param(2.5, id="python-float"),
+            pytest.param(np.float64(2.5), id="numpy-scalar"),
+            pytest.param(jnp.asarray(2.5), id="jax-array"),
+        ],
+    )
+    def test_params_scalar_and_array_leaves_accepted(self, leaf):
+        """params leaves may be jax.Arrays or Python/NumPy scalars."""
+
+        def nll(params, observation):
+            return (params["x"] - 2.0) ** 2
+
+        result = ew.fit(nll, sl.State.from_pytree({"x": leaf}), {})
+
+        assert jnp.isclose(result.params["x"], 2.0, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "leaf",
+        [
+            pytest.param(np.array([1.0, 2.0]), id="numpy-array"),
+            pytest.param(np.float32(1.0), id="numpy-float32-is-not-a-float-subclass"),
+            pytest.param(1, id="python-int"),
+            pytest.param("1.0", id="string"),
+        ],
+    )
+    def test_params_non_float_leaf_raises_typeerror(self, leaf):
+        """params leaves that are neither jax.Arrays nor floats should be rejected."""
+
+        def nll(params, observation):
+            return params["x"] ** 2
+
+        with pytest.raises(TypeError, match=r"params\['x'\]"):
+            ew.fit(nll, sl.State.from_pytree({"x": leaf}), {})
+
+    def test_fixed_python_scalar_converted_to_jax_array(self):
+        """Python-scalar fixed values are converted once at the fit() boundary."""
+
+        def nll(params, observation):
+            return (params["x"] - 2.0) ** 2 + (params["y"] - 3.0) ** 2
+
+        params = sl.State.from_pytree({"x": 0.0, "y": 0.0})
+
+        result = ew.fit(nll, params, {}, fixed=sl.State.from_pytree({"y": 1.5}))
+
+        assert isinstance(result.params["y"], jax.Array)
+        assert result.params["y"] == 1.5
+
+    def test_fixed_non_scalar_leaf_raises_typeerror(self):
+        """fixed leaves that are neither jax.Arrays, scalars, nor Ellipsis should be rejected."""
+
+        def nll(params, observation):
+            return params["x"] ** 2 + params["y"] ** 2
+
+        params = sl.State.from_pytree({"x": 0.0, "y": 0.0})
+
+        with pytest.raises(TypeError, match=r"fixed\['y'\]"):
+            ew.fit(nll, params, {}, fixed=sl.State.from_pytree({"y": np.array([1.0])}))
+
+    def test_fixed_ellipsis_sentinel_fixes_at_initial_value(self):
+        """Ellipsis in fixed passes validation and fixes the parameter at its initial value."""
+
+        def nll(params, observation):
+            return (params["x"] - 2.0) ** 2 + (params["y"] - 3.0) ** 2
+
+        params = sl.State.from_pytree({"x": 0.0, "y": 0.5})
+
+        result = ew.fit(nll, params, {}, fixed=sl.State.from_pytree({"y": ...}))
+
+        assert jnp.isclose(result.params["x"], 2.0, atol=1e-2)
+        assert result.params["y"] == 0.5
+
+    def test_ifit_params_non_scalar_leaf_raises_typeerror(self):
+        """ifit shares the leaf validation with fit."""
+
+        def nll(params, observation):
+            return params["x"] ** 2
+
+        with pytest.raises(TypeError, match=r"params\['x'\]"):
+            ew.ifit(nll, sl.State.from_pytree({"x": np.array([1.0])}), {}, progress=False)
+
+
+# ============================================================================
+# JIT retrace regression tests
+# ============================================================================
+
+
+class TestFitRetrace:
+    """Repeated fit() calls must reuse already-compiled code."""
+
+    def test_repeated_fit_with_different_fixed_values_does_not_retrace(self):
+        """Changing a fixed parameter's float value between fits must not retrigger tracing."""
+        trace_count = [0]
+
+        def nll(params, observation):
+            if isinstance(params["x"], jax.core.Tracer):
+                trace_count[0] += 1
+            return (params["x"] - observation["target"]) ** 2 + (params["y"] - 1.0) ** 2
+
+        params = sl.State.from_pytree({"x": 0.0, "y": 0.0})
+        observation = {"target": 2.0}
+
+        ew.fit(nll, params, observation, fixed=sl.State.from_pytree({"y": 0.5}))
+        traces_after_first = trace_count[0]
+
+        result = ew.fit(nll, params, observation, fixed=sl.State.from_pytree({"y": 1.5}))
+
+        assert trace_count[0] == traces_after_first
+        assert result.params["y"] == 1.5
+        assert jnp.isclose(result.params["x"], 2.0, atol=1e-2)
 
 
 # ============================================================================

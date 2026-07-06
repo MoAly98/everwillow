@@ -181,4 +181,4 @@ isort.required-imports = ["from __future__ import annotations"]
 [tool.uv.sources]
 pyhs3 = { git = "https://github.com/MoAly98/pyhs3", branch = "fix/funcs_ref_funcs" }
 pyhf = { git = "https://github.com/scikit-hep/pyhf", branch = "main" }
-paramore = { git = "https://github.com/maxgalli/paramore", branch = "master" }
+paramore = { git = "https://github.com/maxgalli/paramore", branch = "feat/bernstein-analytical-integrate" }

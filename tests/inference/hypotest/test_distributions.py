@@ -295,8 +295,8 @@ class TestSimpleEmpiricalDistribution:
         with pytest.warns(UserWarning, match="cannot be performed without q_alt"):
             assert dist.alt_pval(result) is None
 
-    def test_expected_pvalues_median_cls(self):
-        """Empirical expected_pvalues median CLs from known arrays.
+    def test_pvalue_bands_median_cls(self):
+        """Empirical pvalue_bands median CLs from known arrays.
 
         q_null = linspace(0, 10, 10001) — uniform, so fraction >= q is (10-q)/10.
         q_alt  = linspace(0, 20, 10001) — uniform, so fraction >= q is (20-q)/20.
@@ -314,18 +314,18 @@ class TestSimpleEmpiricalDistribution:
         dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
         result = TSResult(value=jnp.array(5.0), test=jnp.array(1.0))
 
-        bands = dist.expected_pvalues(result)
+        bands = dist.pvalue_bands(result)
 
         assert float(bands.cl_s.median) == pytest.approx(0.0, abs=0.01)
         assert float(bands.cl_s.minus_1sigma) == pytest.approx(0.8114, rel=0.05)
 
-    def test_expected_pvalues_raises_without_q_alt(self):
-        """expected_pvalues raises ValueError when q_alt is None."""
+    def test_pvalue_bands_raises_without_q_alt(self):
+        """pvalue_bands raises ValueError when q_alt is None."""
         q_null = jnp.array([1.0, 2.0, 3.0])
         dist = SimpleEmpiricalDistribution(q_null=q_null)
         result = TSResult(value=jnp.array(1.5), test=jnp.array(1.0))
-        with pytest.raises(ValueError, match="expected_pvalues requires q_alt"):
-            dist.expected_pvalues(result)
+        with pytest.raises(ValueError, match="pvalue_bands requires q_alt"):
+            dist.pvalue_bands(result)
 
     def test_pvalues_preserve_float32_dtype(self):
         """P-values inherit the float32 dtype from the toy arrays."""
@@ -449,7 +449,7 @@ _EXCLUSION_BAND_DATA = [
 
 
 class TestExpectedPvalues:
-    """Tests for expected_pvalues (Brazil band computation).
+    """Tests for pvalue_bands (Brazil band computation).
 
     Setup: μ=2, σ=1 → q_asimov = μ²/σ² = 4.
     Expected √q at band N = max(0, μ/σ - N) = max(0, 2 - N).
@@ -467,7 +467,7 @@ class TestExpectedPvalues:
     def test_median_clb_equals_half(self, asimov_result):
         """At median (N=0), CL_b = Φ(0) = 0.5."""
         dist = QMuAsymptotic()
-        bands = dist.expected_pvalues(asimov_result)
+        bands = dist.pvalue_bands(asimov_result)
         assert float(bands.alt_pvalue.median) == pytest.approx(0.5, abs=1e-5)
 
     def test_median_cls_equals_double_pnull(self, asimov_result):
@@ -476,7 +476,7 @@ class TestExpectedPvalues:
         pnull = 1-Φ(2) = 0.02275, CLs = 0.02275/0.5 = 0.04550.
         """
         dist = QMuAsymptotic()
-        bands = dist.expected_pvalues(asimov_result)
+        bands = dist.pvalue_bands(asimov_result)
         assert float(bands.null_pvalue.median) == pytest.approx(0.02275, rel=1e-3)
         assert float(bands.cl_s.median) == pytest.approx(0.04550, rel=1e-3)
 
@@ -485,7 +485,7 @@ class TestExpectedPvalues:
         ("band_name", "expected_pnull", "expected_palt"),
         _EXCLUSION_BAND_DATA,
     )
-    def test_expected_pvalues_exclusion_bands(self, asimov_result, dist_cls, band_name, expected_pnull, expected_palt):
+    def test_pvalue_bands_exclusion_bands(self, asimov_result, dist_cls, band_name, expected_pnull, expected_palt):
         """QMu and QTilde expected p-values at each band (μ=2, σ=1, q_A=4).
 
         Both distributions produce identical expected p-values because
@@ -493,7 +493,7 @@ class TestExpectedPvalues:
         at these band values.
         """
         dist = dist_cls()
-        bands = dist.expected_pvalues(asimov_result)
+        bands = dist.pvalue_bands(asimov_result)
         assert float(bands.null_pvalue[band_name]) == pytest.approx(expected_pnull, rel=1e-2)
         assert float(bands.alt_pvalue[band_name]) == pytest.approx(expected_palt, rel=1e-2)
 
@@ -512,7 +512,7 @@ class TestExpectedPvalues:
             ("plus_2sigma", 3.167e-5, 0.02275),
         ],
     )
-    def test_expected_pvalues_q0_all_bands(self, band_name, expected_pnull, expected_palt):
+    def test_pvalue_bands_q0_all_bands(self, band_name, expected_pnull, expected_palt):
         """Q0 discovery expected p-values with q_asimov=4 (√q_A=2).
 
         q=max(0,√q_A+N)², pnull=1-Φ(√q), palt=1-Φ(√q-√q_A).
@@ -523,22 +523,22 @@ class TestExpectedPvalues:
             q_asimov=jnp.array(4.0),
         )
         dist = Q0Asymptotic()
-        bands = dist.expected_pvalues(result)
+        bands = dist.pvalue_bands(result)
         assert float(bands.null_pvalue[band_name]) == pytest.approx(expected_pnull, rel=1e-2)
         assert float(bands.alt_pvalue[band_name]) == pytest.approx(expected_palt, rel=1e-2)
 
     @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic, Q0Asymptotic])
-    def test_expected_pvalues_requires_q_asimov(self, dist_cls):
-        """expected_pvalues returns None when q_asimov is missing."""
+    def test_pvalue_bands_requires_q_asimov(self, dist_cls):
+        """pvalue_bands returns None when q_asimov is missing."""
         test_val = 0.0 if dist_cls is Q0Asymptotic else 2.0
         result = TSResult(value=jnp.array(4.0), test=jnp.array(test_val))
         dist = dist_cls()
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
-            assert dist.expected_pvalues(result) is None
+            assert dist.pvalue_bands(result) is None
 
     @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic])
-    def test_expected_pvalues_at_zero_poi(self, dist_cls):
-        """expected_pvalues at poi=0 must not produce NaN.
+    def test_pvalue_bands_at_zero_poi(self, dist_cls):
+        """pvalue_bands at poi=0 must not produce NaN.
 
         At poi=0, q_asimov=0 → sigma=0 → mu/sigma = 0/0.
         All expected q values should be 0, giving CLs=1.0 (no exclusion power).
@@ -549,17 +549,17 @@ class TestExpectedPvalues:
             q_asimov=jnp.array(0.0),
         )
         dist = dist_cls()
-        bands = dist.expected_pvalues(result)
+        bands = dist.pvalue_bands(result)
 
         for name, val in bands.cl_s:
             assert jnp.isfinite(val), f"CLs NaN at {name}"
             assert float(val) == pytest.approx(1.0, abs=1e-5)
 
-    def test_expected_pvalues_not_implemented_for_tmu(self, asimov_result):
-        """TMuAsymptotic does not support expected_pvalues."""
+    def test_pvalue_bands_not_implemented_for_tmu(self, asimov_result):
+        """TMuAsymptotic does not support pvalue_bands."""
         dist = TMuAsymptotic()
         with pytest.raises(NotImplementedError):
-            dist.expected_pvalues(asimov_result)
+            dist.pvalue_bands(asimov_result)
 
     @pytest.mark.parametrize("dist_cls", [QMuAsymptotic, QTildeAsymptotic])
     @pytest.mark.parametrize(
@@ -596,7 +596,7 @@ class TestExpectedPvalues:
         # Φ⁻¹(0.975) = 1.95996
         expected_mu_up = 1.95996
 
-        # Build expected_pvalues at various mu values and check CLs = 0.05
+        # Build pvalue_bands at various mu values and check CLs = 0.05
         dist = QMuAsymptotic()
         sigma = 1.0
 
@@ -607,7 +607,7 @@ class TestExpectedPvalues:
             test=jnp.array(expected_mu_up),
             q_asimov=jnp.array(q_asimov),
         )
-        bands = dist.expected_pvalues(result)
+        bands = dist.pvalue_bands(result)
         cls_median = float(bands.cl_s.median)
 
         assert cls_median == pytest.approx(0.05, rel=1e-3)

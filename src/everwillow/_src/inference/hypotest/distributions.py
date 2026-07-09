@@ -169,7 +169,7 @@ class Distribution(eqx.Module):
             return None
         return -_PPF(palt)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
+    def pvalue_bands(self, result: TestStatResult) -> ExpectedBands | None:
         """Compute expected p-values at standard sigma bands.
 
         Args:
@@ -325,7 +325,7 @@ class Q0Asymptotic(Distribution):
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
+    def pvalue_bands(self, result: TestStatResult) -> ExpectedBands | None:
         r"""Expected p-values at :math:`\pm N\sigma` fluctuations under signal hypothesis.
 
         :math:`q_A = \mu_\text{asimov}^2/\sigma^2` (Asimov under signal),
@@ -380,7 +380,7 @@ class QMuAsymptotic(Distribution):
         sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
         return 1.0 - _PHI(sqrt_q - sqrt_qa)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
+    def pvalue_bands(self, result: TestStatResult) -> ExpectedBands | None:
         r"""Expected p-values at :math:`\pm N\sigma` fluctuations under background-only.
 
         :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
@@ -481,7 +481,7 @@ class QTildeAsymptotic(Distribution):
 
         return jnp.where(q <= q_asimov, p_standard, p_boundary)
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands | None:
+    def pvalue_bands(self, result: TestStatResult) -> ExpectedBands | None:
         r"""Expected p-values at :math:`\pm N\sigma` fluctuations under background-only.
 
         At band :math:`N`, :math:`\hat{\mu} = N\sigma`, so the expected test
@@ -582,7 +582,7 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
             return None
         return jnp.mean((self.q_alt >= result.value).astype(self.q_alt.dtype))
 
-    def expected_pvalues(self, result: TestStatResult) -> ExpectedBands:
+    def pvalue_bands(self, result: TestStatResult) -> ExpectedBands:
         """Compute expected p-values at standard sigma bands using toy quantiles.
 
         Uses quantiles of q_alt at standard sigma percentiles as synthetic
@@ -599,7 +599,7 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
             ValueError: If q_alt is None (no alternative toys generated).
         """
         if self.q_alt is None:
-            msg = "expected_pvalues requires q_alt toys. Generate toys with poi_alt to use this method."
+            msg = "pvalue_bands requires q_alt toys. Generate toys with poi_alt to use this method."
             raise ValueError(msg)
 
         # Standard sigma percentiles: Φ(N) for N in (-2, -1, 0, 1, 2)

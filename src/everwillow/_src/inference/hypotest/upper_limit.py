@@ -288,7 +288,7 @@ def expected_upper_limit(
     Example:
         >>> def band_cls_objective(poi):
         ...     result = calc.test(poi)
-        ...     bands = calc.expected(result)
+        ...     bands = calc.pvalue_bands(result)
         ...     return bands.cl_s
         >>> brazil = expected_upper_limit(band_cls_objective, bounds=(0, 5))
         >>> for name, val in brazil:

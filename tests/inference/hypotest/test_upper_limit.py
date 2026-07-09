@@ -249,7 +249,7 @@ class _VaryingBandDist(Distribution):
     def alt_pval(self, result):
         return jnp.array(0.5)
 
-    def expected_pvalues(self, result):
+    def pvalue_bands(self, result):
         poi = result.test
         palt = jnp.array(0.5)
         rates = [0.5, 0.6, 0.8, 1.0, 1.2]
@@ -294,7 +294,7 @@ class TestExpectedUpperLimit:
 
         def band_cls_objective(poi):
             result = calc.test(poi)
-            bands = calc.expected(result)
+            bands = calc.pvalue_bands(result)
             assert bands is not None
             return bands.cl_s
 
@@ -382,7 +382,7 @@ class TestExpectedUpperLimitAsymptotic:
 
         def band_cls_objective(poi):
             result = calc.test(poi)
-            bands = calc.expected(result)
+            bands = calc.pvalue_bands(result)
             assert bands is not None
             return bands.cl_s
 
@@ -395,13 +395,13 @@ class TestExpectedUpperLimitAsymptotic:
         """bounds=(0.0, ...) must not produce NaN from poi=0 singularity.
 
         Asymptotic formulas have σ = μ/√q_A, which is 0/0 at poi=0.
-        expected_pvalues must handle this gracefully.
+        pvalue_bands must handle this gracefully.
         Expected median limit = 1.960 (same as with bounds=(0.01, 8.0)).
         """
 
         def band_cls_objective(poi):
             result = calc.test(poi)
-            bands = calc.expected(result)
+            bands = calc.pvalue_bands(result)
             assert bands is not None
             return bands.cl_s
 

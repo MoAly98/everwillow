@@ -37,8 +37,12 @@ def pytree_objective(poi, key=None):
 
 
 def noisy_objective(poi, key=None):
-    """exp(-poi) plus key-dependent noise (for reproducibility contracts)."""
-    noise = 0.0 if key is None else 0.05 * jax.random.normal(key)
+    """exp(-poi) plus key-dependent noise (for reproducibility contracts).
+
+    The amplitude is small so the noisy curve stays effectively monotone:
+    these tests assert key sensitivity, not solver behavior under violent
+    noise (and GridScan's interpolation assumes a decreasing curve)."""
+    noise = 0.0 if key is None else 0.002 * jax.random.normal(key)
     return jnp.exp(-poi) + noise
 
 

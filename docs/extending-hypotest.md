@@ -51,7 +51,7 @@ generation via `predict_fn` and populates `q_asimov` on the result.
 ## Custom distribution
 
 Subclass `Distribution` and implement `null_pval` and `alt_pval`. You get
-`null_significance`, `alt_significance`, and `expected_pvalues` for free:
+`null_significance`, `alt_significance`, and `pvalue_bands` for free:
 
 ```python
 import jax
@@ -105,16 +105,20 @@ from those arrays.
 
 ## Custom calculator
 
-`HypoTestCalculator` binds the model (NLL, parameters, data) and wires a test
-statistic to a distribution. It exposes `test(poi)`, `cls(result)`, and
-`expected(result)`. For most use cases it can be used directly — subclassing is
-only needed to inject extra state into `test()`:
+`HypoTestCalculator` is the abstract core: it binds the model (NLL,
+parameters, data) and provides `cls(result)`, `pvalue_bands(result)`, and the
+upper limit methods. Subclasses implement `test(poi)`, which decides where
+the p-values come from, and must record the distribution that produced them
+on the returned result (`distribution=...`).
+
+For a fixed distribution there is no need to subclass; `AsymptoticCalculator`
+accepts any `Distribution`:
 
 ```python
-from everwillow.hypotest.calculators import HypoTestCalculator
+from everwillow.hypotest.calculators import AsymptoticCalculator
 from everwillow.hypotest.test_statistics import QTilde
 
-calc = HypoTestCalculator(
+calc = AsymptoticCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
@@ -127,11 +131,11 @@ result = calc.test(1.0)
 print(calc.cls(result))
 ```
 
-`AsymptoticCalculator` is one such subclass: it adds `predict_fn` and
-`mu_asimov` fields and injects them into each `test()` call so that
-`CowanTestStatistic` subclasses can generate the Asimov dataset automatically.
-The same pattern works for any calculator that needs to forward extra context
-to the test statistic.
+The two concrete calculators show the subclassing pattern:
+`AsymptoticCalculator` computes p-values from its fixed `distribution` field
+and injects the Asimov configuration into each `test()` call;
+`ToyCalculator` regenerates toy ensembles per call and builds the
+distribution through its `distribution_factory`.
 
 ## Custom toy generation
 
@@ -157,19 +161,21 @@ def sample_fn(params_state, key):
     """Gaussian pseudo-experiments instead of Poisson."""
     mu = params_state.to_pytree()["mu"]
     expected = mu * signal + background
-    return {"n": expected + jax.random.normal(key) * jnp.sqrt(expected)}
+    n = expected + jax.random.normal(key) * jnp.sqrt(expected)
+    # keep yields positive: a negative count makes the Poisson NLL unbounded
+    return {"n": jnp.maximum(n, 0.1)}
 
 
-toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10_000)
+toy_gen = ToyGenerator(sample_fn=sample_fn, ntoys=10_000)
 toys = toy_gen.generate(
     nll,
     params,
     observed,
     "mu",
     poi_null=1.0,
+    test_statistic=QTilde(),
     poi_alt=0.0,
     key=jax.random.key(0),
-    sample_fn=sample_fn,
 )
 ```
 
@@ -193,13 +199,25 @@ from everwillow.hypotest.toys import ToyGenerator
 
 # Batched mapping (processes toys in groups of 8 instead of all at once)
 ToyGenerator(
-    test_statistic=QTilde(),
+    predict_fn=predict,
     map_fn=lambda fn: partial(jax.lax.map, fn, batch_size=8),
 )
 
 # Python loop (no JIT, useful for step-through debugging)
 ToyGenerator(
-    test_statistic=QTilde(),
+    predict_fn=predict,
     map_fn=lambda fn: lambda keys: jnp.stack([fn(k) for k in keys]),
 )
 ```
+
+## Custom limit solver
+
+Subclass `LimitSolver` and implement `solve(objective, level, *, key=None)`.
+The objective is always called as `objective(poi, key)` and may return any
+pytree of criterion values (a single CLs, a `BandValues`, a custom
+container); `solve` returns the level crossing per leaf. Subclass
+`StochasticLimitSolver` instead when the algorithm stays valid for noisy
+criteria, where every evaluation throws fresh toys; the toy calculator only
+accepts solvers under that base. See `RootFindingLimitSolver`,
+`GridScanLimitSolver`, and `BisectionLimitSolver` for the built-in examples
+of both kinds.

@@ -9,7 +9,7 @@ repeated evaluations (e.g. scanning over POI values for limits):
 ```python
 import jax
 
-from everwillow.hypotest.upper_limit import upper_limit
+from everwillow.hypotest.limit_solvers import RootFindingLimitSolver
 
 
 @jax.jit
@@ -21,12 +21,9 @@ def compute_limit(observed_n):
         observation=observed,
         poi_key="mu",
         predict_fn=predict,
+        limit_solver=RootFindingLimitSolver(bounds=(0.0, 5.0)),
     )
-
-    def cls_objective(poi):
-        return calc.cls(calc.test(poi))
-
-    return upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
+    return calc.upper_limit(level=0.05)
 
 
 # First call traces and compiles; subsequent calls are fast

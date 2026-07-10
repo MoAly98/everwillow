@@ -7,5 +7,8 @@ from everwillow._src.inference.hypotest.calculators import (
 from everwillow._src.inference.hypotest.calculators import (
     AsymptoticCalculator as AsymptoticCalculator,
 )
+from everwillow._src.inference.hypotest.calculators import (
+    ToyCalculator as ToyCalculator,
+)
 
-__all__ = ["HypoTestCalculator", "AsymptoticCalculator"]
+__all__ = ["AsymptoticCalculator", "HypoTestCalculator", "ToyCalculator"]

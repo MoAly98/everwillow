@@ -296,18 +296,26 @@ class TestSimpleEmpiricalDistribution:
             assert dist.alt_pval(result) is None
 
     def test_pvalue_bands_median_cls(self):
-        """Empirical pvalue_bands median CLs from known arrays.
+        """Empirical pvalue_bands CLs from known arrays.
 
         q_null = linspace(0, 10, 10001) — uniform, so fraction >= q is (10-q)/10.
         q_alt  = linspace(0, 20, 10001) — uniform, so fraction >= q is (20-q)/20.
+
+        Band +N is an upward background fluctuation: the data looks more
+        signal-like, so the test statistic is LOW. Band +N therefore sits at
+        the Φ(-N) quantile of q_alt, matching the asymptotic convention
+        sqrt(q) = max(0, mu/sigma - N).
 
         Median q_alt = quantile at Φ(0) = 0.5 → q_alt[5000] = 10.0.
         At q=10: pnull = (10-10)/10 = 0.0, palt = (20-10)/20 = 0.5.
         CLs_median = 0.0/0.5 = 0.0.
 
-        -1σ q_alt = quantile at Φ(-1) ≈ 0.1587 → q ≈ 3.174.
+        +1σ = quantile at Φ(-1) ≈ 0.1587 → q ≈ 3.174.
         At q=3.174: pnull ≈ (10-3.174)/10 = 0.6826, palt ≈ (20-3.174)/20 = 0.8413.
-        CLs_-1σ ≈ 0.6826/0.8413 ≈ 0.8114.
+        CLs_+1σ ≈ 0.6826/0.8413 ≈ 0.8114.
+
+        -1σ = quantile at Φ(+1) ≈ 0.8413 → q ≈ 16.827, beyond every q_null
+        toy: pnull = 0, so CLs_-1σ = 0.
         """
         q_null = jnp.linspace(0.0, 10.0, 10001)
         q_alt = jnp.linspace(0.0, 20.0, 10001)
@@ -317,7 +325,8 @@ class TestSimpleEmpiricalDistribution:
         bands = dist.pvalue_bands(result)
 
         assert float(bands.cl_s.median) == pytest.approx(0.0, abs=0.01)
-        assert float(bands.cl_s.minus_1sigma) == pytest.approx(0.8114, rel=0.05)
+        assert float(bands.cl_s.plus_1sigma) == pytest.approx(0.8114, rel=0.05)
+        assert float(bands.cl_s.minus_1sigma) == pytest.approx(0.0, abs=0.01)
 
     def test_pvalue_bands_raises_without_q_alt(self):
         """pvalue_bands raises ValueError when q_alt is None."""

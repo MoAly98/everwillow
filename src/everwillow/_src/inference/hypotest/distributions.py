@@ -585,9 +585,12 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
     def pvalue_bands(self, result: TestStatResult) -> ExpectedBands:
         """Compute expected p-values at standard sigma bands using toy quantiles.
 
-        Uses quantiles of q_alt at standard sigma percentiles as synthetic
-        test statistic values, then evaluates empirical p-values at each
-        via ``_build_expected_bands``.
+        Uses quantiles of q_alt as synthetic test statistic values, then
+        evaluates empirical p-values at each via ``_build_expected_bands``.
+        Band +N is an upward background fluctuation, where the data looks
+        more signal-like and the test statistic is low, so band +N maps to
+        the Φ(-N) quantile of q_alt. This matches the asymptotic band
+        convention sqrt(q) = max(0, mu/sigma - N).
 
         Args:
             result: Test statistic result (used as template for synthetic results).
@@ -602,8 +605,8 @@ class SimpleEmpiricalDistribution(EmpiricalDistribution):
             msg = "pvalue_bands requires q_alt toys. Generate toys with poi_alt to use this method."
             raise ValueError(msg)
 
-        # Standard sigma percentiles: Φ(N) for N in (-2, -1, 0, 1, 2)
-        percentiles = jnp.array([_PHI(n) for n in _BAND_SIGMAS])
+        # Band +N ↔ low test statistic: quantile at Φ(-N) for N in (-2, -1, 0, 1, 2)
+        percentiles = jnp.array([_PHI(-n) for n in _BAND_SIGMAS])
         q_quantiles = jnp.quantile(self.q_alt, percentiles)
 
         # Map band index (position in _BAND_SIGMAS) to the quantile value

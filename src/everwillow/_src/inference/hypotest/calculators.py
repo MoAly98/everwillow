@@ -17,6 +17,7 @@ Distribution objects.
 
 from __future__ import annotations
 
+import abc
 import typing as tp
 
 import equinox as eqx
@@ -55,15 +56,14 @@ def _require_criterion_value(value):
 
 
 class HypoTestCalculator(eqx.Module):
-    """Generic hypothesis test calculator.
+    """Abstract core of the hypothesis test calculators.
 
-    Orchestrates hypothesis testing by:
-    1. Computing the test statistic on observed data
-    2. Delegating p-value computation to a Distribution object
-
-    The calculator stores all model-specific arguments at construction time,
-    so ``test(poi_test)`` only takes the varying parameter. Additional
-    keyword arguments to ``test()`` are forwarded to the test statistic.
+    Holds everything shared by the concrete calculators: the statistical
+    model, the test statistic, the limit solver, and all machinery downstream
+    of ``test()`` (CLs, p-value bands, upper limits). Subclasses implement
+    ``test()``, which is the single point where they differ: where the
+    p-values come from. ``AsymptoticCalculator`` computes them from a fixed
+    distribution; ``ToyCalculator`` regenerates toy ensembles per call.
 
     Attributes:
         nll_fn: Negative log-likelihood function taking (params, observation).
@@ -71,10 +71,9 @@ class HypoTestCalculator(eqx.Module):
         observation: Observed data passed to nll_fn.
         poi_key: Canonical key for the parameter of interest, e.g. "mu".
         test_statistic: Test statistic to use. Defaults to QTilde.
-        distribution: Distribution for p-value computation.
-            Defaults to QTildeAsymptotic.
         limit_solver: Solver for computing upper limits. Defaults to None.
-                    Limits cannot be computed if limit_solver is None.
+            Limits cannot be computed if limit_solver is None and no solver
+            is passed per call.
     """
 
     nll_fn: tp.Callable[[PyTree, PyTree], float]
@@ -82,44 +81,28 @@ class HypoTestCalculator(eqx.Module):
     observation: PyTree
     poi_key: sl.K
     test_statistic: TestStatistic = eqx.field(default_factory=QTilde)
-    distribution: Distribution = eqx.field(default_factory=QTildeAsymptotic)
     limit_solver: LimitSolver | None = None
 
+    @abc.abstractmethod
     def test(
         self,
         poi_test: float,
         **kwargs: tp.Any,
     ) -> HypoTestResult:
-        """Run hypothesis test.
+        """Run a hypothesis test at ``poi_test`` and return a HypoTestResult.
+
+        Implementations must record the distribution that produced the
+        p-values on the result (``distribution=...``); everything downstream
+        (``pvalue_bands``, the limit methods) relies on it.
 
         Args:
             poi_test: Test value for the POI.
-            **kwargs: Forwarded to the test statistic. Includes both
-                test-statistic-specific args (e.g. ``predict_fn``,
-                ``mu_asimov`` for Cowan test statistics) and fit options.
+            **kwargs: Forwarded to the test statistic computation and the
+                fits underneath.
 
         Returns:
             HypoTestResult with observed p-values.
         """
-        ts_result = self.test_statistic.compute(
-            self.nll_fn,
-            self.params,
-            self.observation,
-            self.poi_key,
-            poi_test,
-            **kwargs,
-        )
-
-        pnull = self.distribution.null_pval(ts_result)
-        palt = self.distribution.alt_pval(ts_result)
-
-        return HypoTestResult(
-            q_obs=ts_result.value,
-            pnull=pnull,
-            palt=palt,
-            test_stat_result=ts_result,
-            distribution=self.distribution,
-        )
 
     def cls(self, result: HypoTestResult) -> Array | None:
         """Compute CLs = pnull / palt from a hypothesis test result.
@@ -137,7 +120,9 @@ class HypoTestCalculator(eqx.Module):
     def pvalue_bands(self, result: HypoTestResult) -> ExpectedBands | None:
         """Compute expected p-values at standard sigma bands.
 
-        Delegates to the distribution's ``pvalue_bands`` method.
+        Delegates to the ``pvalue_bands`` method of the distribution the
+        result carries, so bands always come from the same distribution
+        that produced the result's p-values.
 
         Args:
             result: HypoTestResult from ``test()``.
@@ -146,11 +131,15 @@ class HypoTestCalculator(eqx.Module):
             ExpectedBands with p-values at each sigma level.
 
         Raises:
+            ValueError: If the result does not carry a distribution
+                (e.g. it was built by hand rather than by ``test()``).
             NotImplementedError: If the distribution does not support
                 expected p-value computation.
         """
-        distribution = result.distribution if result.distribution is not None else self.distribution
-        return distribution.pvalue_bands(result.test_stat_result)
+        if result.distribution is None:
+            msg = "this result carries no distribution; produce results with test()"
+            raise ValueError(msg)
+        return result.distribution.pvalue_bands(result.test_stat_result)
 
     def _band_criterion(
         self,
@@ -270,13 +259,16 @@ class HypoTestCalculator(eqx.Module):
 
 
 class AsymptoticCalculator(HypoTestCalculator):
-    """Calculator for Cowan et al. asymptotic hypothesis tests.
+    """Calculator with p-values from a fixed distribution.
 
-    Extends ``HypoTestCalculator`` with Asimov dataset configuration.
-    These fields are injected into the test statistic call automatically
-    by ``test()``.
+    Named for its default (the Cowan et al. asymptotic formulas), but the
+    ``distribution`` field accepts any fixed Distribution, including a
+    frozen empirical ensemble built once from externally generated toys
+    (``SimpleEmpiricalDistribution.from_toys``). For distributions that must
+    be regenerated per tested POI, use ``ToyCalculator``.
 
-    The Asimov dataset can be provided in two ways:
+    The asymptotic formulas need an Asimov dataset for the alternative
+    p-value and the expected bands. It can be provided in two ways:
 
     1. **Pre-computed**: pass ``asimov_observation`` directly. This is
        useful when the Asimov dataset is expensive to generate or when
@@ -297,6 +289,8 @@ class AsymptoticCalculator(HypoTestCalculator):
         >>> result = calc.test(poi_test=1.0)
 
     Attributes:
+        distribution: Distribution for p-value computation.
+            Defaults to QTildeAsymptotic.
         predict_fn: Function mapping parameter state to expected observation.
             Used to create the Asimov dataset at ``mu_asimov``.
         mu_asimov: POI value for Asimov dataset generation.
@@ -307,6 +301,7 @@ class AsymptoticCalculator(HypoTestCalculator):
             ``predict_fn`` / ``mu_asimov``.
     """
 
+    distribution: Distribution = eqx.field(default_factory=QTildeAsymptotic)
     predict_fn: tp.Callable[[sl.State], PyTree] | None = None
     mu_asimov: float = 0.0
     asimov_observation: PyTree | None = None
@@ -316,7 +311,7 @@ class AsymptoticCalculator(HypoTestCalculator):
         poi_test: float,
         **kwargs: tp.Any,
     ) -> HypoTestResult:
-        """Run asymptotic hypothesis test.
+        """Run a hypothesis test against the fixed distribution.
 
         Injects ``predict_fn``, ``mu_asimov``, and ``asimov_observation``
         from init fields, unless overridden in kwargs.
@@ -333,28 +328,49 @@ class AsymptoticCalculator(HypoTestCalculator):
         kwargs.setdefault("predict_fn", self.predict_fn)
         kwargs.setdefault("mu_asimov", self.mu_asimov)
         kwargs.setdefault("asimov_observation", self.asimov_observation)
-        return super().test(poi_test, **kwargs)
+
+        ts_result = self.test_statistic.compute(
+            self.nll_fn,
+            self.params,
+            self.observation,
+            self.poi_key,
+            poi_test,
+            **kwargs,
+        )
+
+        return HypoTestResult(
+            q_obs=ts_result.value,
+            pnull=self.distribution.null_pval(ts_result),
+            palt=self.distribution.alt_pval(ts_result),
+            test_stat_result=ts_result,
+            distribution=self.distribution,
+        )
 
 
 class ToyCalculator(HypoTestCalculator):
     """Calculator with toy-based (Monte Carlo) p-values.
 
-    Extends ``HypoTestCalculator`` with a composable toy pipeline. Whether
-    toys are used is decided per call by the ``key`` argument::
+    Every test regenerates the toy ensembles at the tested POI::
 
-        test(poi)           # no key: p-values from the fixed `distribution`
-                            # field, exactly like HypoTestCalculator
-
-        test(poi, key=key)  # regenerate toys AT this POI:
-                            #   toys = toy_generator.generate(..., poi, key)
-                            #   dist = distribution_factory(toys)
-                            #   p-values from dist
+        test(poi)             # toys thrown with the calculator's key:
+        test(poi, key=key)    # ... or with a per-call key override
+                              #   toys = toy_generator.generate(..., poi, key)
+                              #   dist = distribution_factory(toys)
+                              #   p-values from dist
 
     Regenerating per tested POI matters for limits: the distribution of the
     test statistic depends on the hypothesis being tested, so a limit scan
-    with a single fixed toy ensemble would use the wrong distribution away
+    against a single fixed toy ensemble would use the wrong distribution away
     from the POI it was generated at. The limit methods here thread a fresh
-    key into every solver step.
+    key into every solver step. For a fixed distribution (asymptotic
+    formulas, or a frozen ensemble built once from external toys) use
+    ``AsymptoticCalculator`` instead.
+
+    The calculator is a pure function of its inputs: the same key gives
+    identical ensembles on every call, and one key for a whole analysis is
+    statistically sound (reuse correlates outputs, it does not bias them).
+    Pass a per-call key for an independent replica, e.g. to estimate the
+    Monte Carlo spread of a limit.
 
     Each pipeline stage is swappable: the sampling scheme lives on the
     ``toy_generator``, and ``distribution_factory`` chooses how raw toy
@@ -366,17 +382,13 @@ class ToyCalculator(HypoTestCalculator):
         >>> calc = ToyCalculator(
         ...     nll_fn=nll_fn, params=params, observation=observed,
         ...     poi_key="mu", test_statistic=QTilde(), toy_generator=gen,
+        ...     key=jax.random.key(42),
         ... )
-        >>> result = calc.test(1.0, key=jax.random.key(0))
-        >>> limit = calc.upper_limit(
-        ...     BisectionLimitSolver(bounds=(0.0, 5.0), tol=0.01),
-        ...     key=jax.random.key(1),
-        ... )
+        >>> result = calc.test(1.0)
+        >>> limit = calc.upper_limit(BisectionLimitSolver(bounds=(0.0, 5.0), tol=0.01))
 
     Attributes:
-        toy_generator: Sampling engine drawing the toy ensembles. Required
-            for the toy path (``key=...``); without it only the fixed
-            ``distribution`` path is available.
+        toy_generator: Sampling engine drawing the toy ensembles. Required.
         distribution_factory: Turns a ToyResult into a Distribution.
             Defaults to ``SimpleEmpiricalDistribution.from_toys``
             (plain tail counting).
@@ -384,6 +396,8 @@ class ToyCalculator(HypoTestCalculator):
             second toy ensemble (needed for palt and hence CLs).
             Defaults to 0.0 (background-only, for exclusion tests);
             set to None to generate null-hypothesis toys only.
+        key: PRNG key for toy generation. Required; every stochastic method
+            uses it unless a per-call key overrides it.
     """
 
     toy_generator: ToyGenerator | None = None
@@ -391,6 +405,18 @@ class ToyCalculator(HypoTestCalculator):
         default=SimpleEmpiricalDistribution.from_toys, static=True
     )
     poi_alt: float | None = 0.0
+    key: PRNGKeyArray | None = None
+
+    def __check_init__(self):
+        # Dataclass field ordering forces defaults here, so required-ness is
+        # enforced after construction instead of by the signature.
+        if self.toy_generator is None or self.key is None:
+            msg = (
+                "ToyCalculator requires a toy_generator and a key; "
+                "for a fixed distribution use HypoTestCalculator subclasses "
+                "such as AsymptoticCalculator"
+            )
+            raise ValueError(msg)
 
     def test(
         self,
@@ -399,31 +425,23 @@ class ToyCalculator(HypoTestCalculator):
         key: PRNGKeyArray | None = None,
         **kwargs: tp.Any,
     ) -> HypoTestResult:
-        """Run a hypothesis test, from toys when a key is provided.
+        """Run a hypothesis test from toys regenerated at ``poi_test``.
 
         Args:
             poi_test: Test value for the POI.
-            key: PRNG key for toy generation. When None, the fixed
-                ``distribution`` field is used instead of toys.
-            **kwargs: Forwarded to the test statistic computation and, on
-                the toy path, to the fits performed for each toy.
+            key: PRNG key for toy generation. Defaults to the calculator's
+                ``key`` field.
+            **kwargs: Forwarded to the test statistic computation and to the
+                fits performed for each toy.
 
         Returns:
             HypoTestResult with observed p-values.
-
-        Raises:
-            ValueError: If ``key`` is given but ``toy_generator`` is None.
         """
-        if key is None:
-            return super().test(poi_test, **kwargs)
-        if self.toy_generator is None:
-            msg = (
-                "a PRNG key was provided but 'toy_generator' is None; "
-                "construct the ToyCalculator with a ToyGenerator to enable toy-based p-values"
-            )
-            raise ValueError(msg)
+        key = key if key is not None else self.key
+        # __check_init__ guarantees the generator (and key) are set
+        generator = tp.cast(ToyGenerator, self.toy_generator)
 
-        toys = self.toy_generator.generate(
+        toys = generator.generate(
             self.nll_fn,
             self.params,
             self.observation,
@@ -462,9 +480,8 @@ class ToyCalculator(HypoTestCalculator):
         *,
         key: PRNGKeyArray | None = None,
     ) -> PyTree:
-        """Keyed variant: thread a fresh key into every test() evaluation."""
-        if key is None:
-            return super()._solve_limit(solver, level, criterion, fit_kwargs)
+        """Stochastic variant: thread a fresh key into every test() evaluation."""
+        key = key if key is not None else self.key
 
         solver = self._resolve_solver(solver)
         if not isinstance(solver, StochasticLimitSolver):
@@ -476,10 +493,7 @@ class ToyCalculator(HypoTestCalculator):
             raise TypeError(msg)
 
         def objective(poi: float, eval_key: PRNGKeyArray | None) -> PyTree:
-            # Without a generator there are no toys to regenerate, so the
-            # objective stays deterministic and the key drives only the solver.
-            test_key = eval_key if self.toy_generator is not None else None
-            return _require_criterion_value(criterion(self.test(poi, key=test_key, **(fit_kwargs or {}))))
+            return _require_criterion_value(criterion(self.test(poi, key=eval_key, **(fit_kwargs or {}))))
 
         return solver.solve(objective, level, key=key)
 
@@ -492,16 +506,11 @@ class ToyCalculator(HypoTestCalculator):
         key: PRNGKeyArray | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> Array:
-        """Find the upper limit, from toys when a key is provided.
+        """Find the upper limit from toys regenerated at every solver step.
 
-        With a ``key`` the solver must be a `StochasticLimitSolver`, and every
-        solver evaluation regenerates toys at the tested POI (when a
-        ``toy_generator`` is configured). Without a key this is the
-        deterministic method from ``HypoTestCalculator``: the limit is
-        computed against the fixed ``distribution`` field. If that field is a
-        frozen toy ensemble, its p-values are only exact at the POI the toys
-        were generated for, so a limit scanned across POI values carries a
-        bias; pass a key to regenerate the ensembles per tested POI instead.
+        The solver must be a `StochasticLimitSolver`, and every solver
+        evaluation regenerates the toy ensembles at the tested POI. For a
+        limit against a fixed distribution use ``AsymptoticCalculator``.
 
         Args:
             solver: Limit solver for this call. Defaults to the
@@ -510,14 +519,14 @@ class ToyCalculator(HypoTestCalculator):
             criterion: Maps a HypoTestResult to the quantity the limit is
                 defined on. Defaults to CLs.
             key: PRNG key driving the solver and the per-evaluation toys.
+                Defaults to the calculator's ``key`` field.
             fit_kwargs: Fit options forwarded to every ``test()`` evaluation.
 
         Returns:
             The POI value where the criterion equals ``level``.
 
         Raises:
-            TypeError: If a key is given with a solver that is not a
-                `StochasticLimitSolver`.
+            TypeError: If the solver is not a `StochasticLimitSolver`.
             ValueError: If no solver is configured, or the criterion returns
                 None (the default criterion needs palt, e.g. from
                 alternative-hypothesis toys via ``poi_alt``).
@@ -534,14 +543,11 @@ class ToyCalculator(HypoTestCalculator):
         key: PRNGKeyArray | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> BandValues:
-        """Find the expected (Brazil-band) upper limits, from toys when a key is provided.
+        """Find the expected (Brazil-band) upper limits from regenerated toys.
 
-        With a ``key`` the solver must be a `StochasticLimitSolver`; with a
+        The solver must be a `StochasticLimitSolver`; with a
         ``GridScanLimitSolver`` all bands come from a single keyed grid pass.
-        Without a key this is the deterministic method from
-        ``HypoTestCalculator``, computed against the fixed ``distribution``
-        field; if that field is a frozen toy ensemble, its p-values are only
-        exact at the POI the toys were generated for.
+        For bands against a fixed distribution use ``AsymptoticCalculator``.
 
         Args:
             solver: Limit solver for this call. Defaults to the

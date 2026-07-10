@@ -125,60 +125,49 @@ class _ExponentialCLsDist(Distribution):
 
 @pytest.fixture(
     params=[
-        pytest.param("hypo_test", id="HypoTestCalculator"),
-        pytest.param("asymptotic", id="AsymptoticCalculator"),
-        pytest.param("toy", id="ToyCalculator"),
+        pytest.param("asimov_arg", id="asimov-observation-per-call"),
+        pytest.param("predict_fn", id="predict-fn-field"),
     ]
 )
 def counting_calc(request):
     """Counting model calc (S=10, B=5, n_obs=10) producing full p-values.
 
     Returns (calc, test_kwargs) where test_kwargs are extra args for test()
-    to ensure q_asimov is computed (each type handles this differently).
+    to ensure q_asimov is computed. Both flavors are AsymptoticCalculator
+    (the fixed-distribution calculator); they differ in how the Asimov
+    dataset is supplied: per test() call, or generated via the predict_fn
+    field.
     """
     params = create_params(mu_init=1.0)
     observed = create_observation(10.0)
     asimov = create_observation(5.0)  # Asimov at mu=0: n = 0*10 + 5 = 5
 
-    if request.param == "hypo_test":
-        calc = HypoTestCalculator(
+    if request.param == "asimov_arg":
+        calc = AsymptoticCalculator(
             nll_fn=poisson_nll,
             params=params,
             observation=observed,
             poi_key="mu",
         )
         return calc, {"asimov_observation": asimov}
-    if request.param == "asymptotic":
-        calc = AsymptoticCalculator(
-            nll_fn=poisson_nll,
-            params=params,
-            observation=observed,
-            poi_key="mu",
-            predict_fn=predict_fn,
-        )
-        return calc, {}
-    # "toy"
-    calc = ToyCalculator(
+    # "predict_fn"
+    calc = AsymptoticCalculator(
         nll_fn=poisson_nll,
         params=params,
         observation=observed,
         poi_key="mu",
+        predict_fn=predict_fn,
     )
-    return calc, {"asimov_observation": asimov}
+    return calc, {}
 
 
-@pytest.fixture(
-    params=[
-        pytest.param(HypoTestCalculator, id="HypoTestCalculator"),
-        pytest.param(AsymptoticCalculator, id="AsymptoticCalculator"),
-        pytest.param(ToyCalculator, id="ToyCalculator"),
-    ]
-)
-def calc_factory(request):
-    """Factory building any calculator type on the synthetic limit model.
+@pytest.fixture
+def calc_factory():
+    """Factory building a fixed-distribution calculator on the synthetic limit model.
 
-    Tests for behavior shared by all calculator types use this fixture to stay
-    parameterized; keyword overrides replace parts of the default setup.
+    Keyword overrides replace parts of the default setup. ToyCalculator is
+    not included: it is inherently stochastic and its differing contract is
+    tested in its own sections.
     """
 
     def make(**overrides):
@@ -191,7 +180,7 @@ def calc_factory(request):
             "distribution": _ExponentialCLsDist(),
         }
         calc_kwargs.update(overrides)
-        return request.param(**calc_kwargs)
+        return AsymptoticCalculator(**calc_kwargs)
 
     return make
 
@@ -202,11 +191,22 @@ def calc_factory(request):
 
 
 class TestCalculatorBase:
-    """HypoTestCalculator base behavior."""
+    """HypoTestCalculator is the abstract core; AsymptoticCalculator is the
+    fixed-distribution concrete calculator."""
+
+    def test_abc_cannot_instantiate(self):
+        """HypoTestCalculator has an abstract test() and cannot be instantiated."""
+        with pytest.raises(TypeError):
+            HypoTestCalculator(
+                nll_fn=poisson_nll,
+                params=create_params(),
+                observation=create_observation(1.0),
+                poi_key="mu",
+            )
 
     def test_default_test_statistic(self):
         """Default test statistic is QTilde."""
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
@@ -221,7 +221,7 @@ class TestCalculatorBase:
         n_obs=10, mu_test=1: q_mu = 1.8907.
         pnull = 1 - Φ(√1.8907) = 1 - Φ(1.375) = 0.08456.
         """
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             nll_fn=poisson_nll,
             params=create_params(mu_init=1.0),
             observation=create_observation(10.0),
@@ -294,7 +294,7 @@ class TestCalculatorCls:
         """cls() returns None when palt is None."""
         dist = SimpleEmpiricalDistribution(q_null=jnp.array([1.0, 2.0, 3.0]))
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             nll_fn=poisson_nll,
             params=create_params(),
             observation=create_observation(1.0),
@@ -309,6 +309,7 @@ class TestCalculatorCls:
             pnull=dist.null_pval(ts),
             palt=palt,
             test_stat_result=ts,
+            distribution=dist,
         )
 
         assert calc.cls(result) is None
@@ -675,6 +676,7 @@ class _ConstantDist(Distribution):
 
 def _counting_toy_calc(gen, **extra):
     """ToyCalculator on the counting model with n_obs=10."""
+    extra.setdefault("key", jax.random.key(99))
     return ToyCalculator(
         nll_fn=poisson_nll,
         params=create_params(mu_init=1.0),
@@ -685,8 +687,10 @@ def _counting_toy_calc(gen, **extra):
     )
 
 
-def _synthetic_toy_calc(gen):
+def _synthetic_toy_calc(gen, **extra):
     """ToyCalculator on the dummy model with the exponential CLs distribution."""
+    extra.setdefault("key", jax.random.key(99))
+    extra.setdefault("distribution_factory", lambda toys: _ExponentialCLsDist())
     return ToyCalculator(
         nll_fn=_dummy_nll,
         params=_DUMMY_PARAMS,
@@ -694,8 +698,38 @@ def _synthetic_toy_calc(gen):
         poi_key="mu",
         test_statistic=_IdentityTestStat(),
         toy_generator=gen,
-        distribution_factory=lambda toys: _ExponentialCLsDist(),
+        **extra,
     )
+
+
+class TestToyCalculatorConstruction:
+    """ToyCalculator is inherently stochastic: generator and key are required.
+
+    Fixed distributions (asymptotic formulas or frozen external toy
+    ensembles) belong on HypoTestCalculator; ToyCalculator exists for the
+    regeneration machinery, so configurations without it are rejected at
+    construction.
+    """
+
+    def test_missing_generator_raises(self):
+        with pytest.raises(ValueError, match="toy_generator"):
+            ToyCalculator(
+                nll_fn=poisson_nll,
+                params=create_params(mu_init=1.0),
+                observation=create_observation(10.0),
+                poi_key="mu",
+                key=jax.random.key(0),
+            )
+
+    def test_missing_key_raises(self):
+        with pytest.raises(ValueError, match="key"):
+            ToyCalculator(
+                nll_fn=poisson_nll,
+                params=create_params(mu_init=1.0),
+                observation=create_observation(10.0),
+                poi_key="mu",
+                toy_generator=ToyGenerator(ntoys=4, predict_fn=predict_fn),
+            )
 
 
 class TestToyCalculatorTestWithKey:
@@ -766,34 +800,26 @@ class TestToyCalculatorTestWithKey:
 
         assert not jnp.array_equal(captured[0].q_null, captured[1].q_null)
 
-    def test_key_without_generator_raises(self):
-        """Passing a key without a toy_generator is an error."""
-        calc = ToyCalculator(
-            nll_fn=poisson_nll,
-            params=create_params(mu_init=1.0),
-            observation=create_observation(10.0),
-            poi_key="mu",
-        )
+    def test_field_key_used_when_no_argument(self):
+        """test(poi) without a key argument draws with the field key: the
+        ensembles are identical to an explicit test(poi, key=<field key>)
+        call, and differ under a per-call override."""
+        captured = []
 
-        with pytest.raises(ValueError, match="toy_generator"):
-            calc.test(1.0, key=jax.random.key(0))
+        def capturing_factory(toys):
+            captured.append(toys)
+            return SimpleEmpiricalDistribution.from_toys(toys)
 
-    def test_key_none_matches_hypotest_calculator(self):
-        """Without a key, ToyCalculator.test is exactly HypoTestCalculator.test."""
-        base_kwargs = {
-            "nll_fn": poisson_nll,
-            "params": create_params(mu_init=1.0),
-            "observation": create_observation(10.0),
-            "poi_key": "mu",
-        }
-        asimov = create_observation(5.0)
+        field_key = jax.random.key(99)
+        gen = ToyGenerator(ntoys=20, predict_fn=predict_fn)
+        calc = _counting_toy_calc(gen, distribution_factory=capturing_factory, key=field_key)
 
-        r_hypo = HypoTestCalculator(**base_kwargs).test(1.0, asimov_observation=asimov)
-        r_toy = ToyCalculator(**base_kwargs).test(1.0, asimov_observation=asimov)
+        calc.test(1.0)
+        calc.test(1.0, key=field_key)
+        calc.test(1.0, key=jax.random.key(1))
 
-        assert float(r_toy.q_obs) == float(r_hypo.q_obs)
-        assert float(r_toy.pnull) == float(r_hypo.pnull)
-        assert float(r_toy.palt) == float(r_hypo.palt)
+        assert jnp.array_equal(captured[0].q_null, captured[1].q_null)
+        assert not jnp.array_equal(captured[0].q_null, captured[2].q_null)
 
     def test_distribution_factory_swap(self):
         """Any Callable[[ToyResult], Distribution] can replace the default factory."""
@@ -831,14 +857,15 @@ class TestToyCalculatorKeyedLimits:
     """Keyed toy limits: type-based dispatch and key flow (glue), plus ONE
     end-to-end integration anchor for the otherwise-untested keyed pipeline."""
 
-    def test_rootfind_with_key_raises_typeerror(self):
+    def test_rootfind_raises_typeerror(self):
         """RootFind is not a StochasticLimitSolver: adaptive root finding
-        assumes a deterministic criterion."""
+        assumes a deterministic criterion, and every ToyCalculator limit is
+        stochastic (no key argument needed to trigger the guard)."""
         gen = ToyGenerator(ntoys=4, sample_fn=lambda state, key: {})
         calc = _synthetic_toy_calc(gen)
 
         with pytest.raises(TypeError, match="Stochastic"):
-            calc.upper_limit(RootFindingLimitSolver(bounds=(0.01, 8.0)), level=0.05, key=jax.random.key(0))
+            calc.upper_limit(RootFindingLimitSolver(bounds=(0.01, 8.0)), level=0.05)
 
     def test_stochastic_solver_receives_key(self):
         """The per-call key reaches solver.solve unchanged."""
@@ -852,11 +879,9 @@ class TestToyCalculatorKeyedLimits:
         assert record[0]["key"] is not None
         assert jnp.array_equal(jax.random.key_data(record[0]["key"]), jax.random.key_data(key))
 
-    def test_objective_threads_key_into_test_when_generator_present(self):
-        """The composed objective calls test(poi, key=...) per evaluation when
-        a generator is configured (capturing factory sees one ToyResult per
-        objective evaluation); without a generator it threads key=None
-        (existing spec fixture behavior) and the factory is never invoked."""
+    def test_objective_threads_key_into_test(self):
+        """The composed objective calls test(poi, key=...) per evaluation:
+        the capturing factory sees one ToyResult per objective evaluation."""
         captured = []
 
         def capturing_factory(toys):
@@ -864,30 +889,27 @@ class TestToyCalculatorKeyedLimits:
             return _ExponentialCLsDist()
 
         gen = ToyGenerator(ntoys=4, sample_fn=lambda state, key: {})
-        calc_with = ToyCalculator(
-            nll_fn=_dummy_nll,
-            params=_DUMMY_PARAMS,
-            observation=_DUMMY_OBS,
-            poi_key="mu",
-            test_statistic=_IdentityTestStat(),
-            toy_generator=gen,
-            distribution_factory=capturing_factory,
-        )
-        recording_solver = _RecordingStochasticSolver(record=[])
-        calc_with.upper_limit(recording_solver, level=0.05, key=jax.random.key(1))
+        calc = _synthetic_toy_calc(gen, distribution_factory=capturing_factory)
+
+        calc.upper_limit(_RecordingStochasticSolver(record=[]), level=0.05, key=jax.random.key(1))
+
         assert len(captured) == 1  # recording solver evaluates the objective once
 
-        calc_without = ToyCalculator(
-            nll_fn=_dummy_nll,
-            params=_DUMMY_PARAMS,
-            observation=_DUMMY_OBS,
-            poi_key="mu",
-            test_statistic=_IdentityTestStat(),
-            distribution=_ExponentialCLsDist(),
-            distribution_factory=capturing_factory,
-        )
-        calc_without.upper_limit(recording_solver, level=0.05, key=jax.random.key(1))
-        assert len(captured) == 1  # unchanged: no generator -> no toy regeneration
+    def test_field_key_used_when_no_argument(self):
+        """Without a key argument the field key drives the solver; a per-call
+        key argument overrides it."""
+        gen = ToyGenerator(ntoys=4, sample_fn=lambda state, key: {})
+        field_key = jax.random.key(7)
+        calc = _synthetic_toy_calc(gen, key=field_key)
+        record = []
+        override = jax.random.key(11)
+
+        recording_solver = _RecordingStochasticSolver(record=record)
+        calc.upper_limit(recording_solver, level=0.05)
+        calc.upper_limit(recording_solver, level=0.05, key=override)
+
+        assert jnp.array_equal(jax.random.key_data(record[0]["key"]), jax.random.key_data(field_key))
+        assert jnp.array_equal(jax.random.key_data(record[1]["key"]), jax.random.key_data(override))
 
     def test_keyed_pipeline_integration_anchor(self):
         """End-to-end keyed path with an analytic anchor: the synthetic CLs
@@ -913,10 +935,11 @@ class TestToyCalculatorKeyedLimits:
             test_statistic=_IdentityTestStat(),
             toy_generator=gen,
             poi_alt=None,
+            key=jax.random.key(3),
         )
 
         with pytest.warns(UserWarning, match="without q_alt"), pytest.raises(ValueError, match="criterion"):
-            calc.upper_limit(BisectionLimitSolver(bounds=(0.01, 8.0), tol=0.0), level=0.05, key=jax.random.key(3))
+            calc.upper_limit(BisectionLimitSolver(bounds=(0.01, 8.0), tol=0.0), level=0.05)
 
 
 # =============================================================================
@@ -941,42 +964,54 @@ class _MarkerDist(Distribution):
 
 
 class TestResultCarriesDistribution:
-    """expected(result) must consult the distribution that produced the
-    result's p-values — on the toy path the factory-built one, not the
-    construction-time field (marker glue, no physics)."""
+    """pvalue_bands(result) must consult the distribution that produced the
+    result's p-values, which the result carries (marker glue, no physics)."""
 
-    def _marker_calc(self):
-        gen = ToyGenerator(ntoys=4, sample_fn=lambda state, key: {"n": 10.0})
-        return ToyCalculator(
+    def test_asymptotic_result_records_field_distribution(self):
+        calc = AsymptoticCalculator(
             nll_fn=poisson_nll,
             params=create_params(mu_init=1.0),
             observation=create_observation(10.0),
             poi_key="mu",
-            toy_generator=gen,
             distribution=_MarkerDist(marker=0.1111),
-            distribution_factory=lambda toys: _MarkerDist(marker=0.2222),
         )
-
-    def test_result_records_its_distribution(self):
-        calc = self._marker_calc()
 
         result = calc.test(1.0)
 
         assert isinstance(result.distribution, _MarkerDist)
         assert result.distribution.marker == 0.1111
+        assert float(calc.pvalue_bands(result).null_pvalue.median) == pytest.approx(0.1111)
 
-    def test_toy_path_expected_uses_factory_distribution(self):
-        calc = self._marker_calc()
-
-        result = calc.test(1.0, key=jax.random.key(0))
-
-        assert float(result.pnull) == pytest.approx(0.2222)
-        assert float(calc.pvalue_bands(result).null_pvalue.median) == pytest.approx(0.2222)
-
-    def test_no_key_path_expected_uses_field_distribution(self):
-        calc = self._marker_calc()
+    def test_toy_result_records_factory_distribution(self):
+        gen = ToyGenerator(ntoys=4, sample_fn=lambda state, key: {"n": 10.0})
+        calc = ToyCalculator(
+            nll_fn=poisson_nll,
+            params=create_params(mu_init=1.0),
+            observation=create_observation(10.0),
+            poi_key="mu",
+            toy_generator=gen,
+            key=jax.random.key(0),
+            distribution_factory=lambda toys: _MarkerDist(marker=0.2222),
+        )
 
         result = calc.test(1.0)
 
-        assert float(result.pnull) == pytest.approx(0.1111)
-        assert float(calc.pvalue_bands(result).null_pvalue.median) == pytest.approx(0.1111)
+        assert isinstance(result.distribution, _MarkerDist)
+        assert result.distribution.marker == 0.2222
+        assert float(result.pnull) == pytest.approx(0.2222)
+        assert float(calc.pvalue_bands(result).null_pvalue.median) == pytest.approx(0.2222)
+
+    def test_hand_built_result_without_distribution_raises(self):
+        """pvalue_bands has no field to fall back on: a result that does not
+        carry its distribution is rejected with a clear error."""
+        calc = AsymptoticCalculator(
+            nll_fn=poisson_nll,
+            params=create_params(mu_init=1.0),
+            observation=create_observation(10.0),
+            poi_key="mu",
+        )
+        ts = TSResult(value=jnp.array(1.0), test=jnp.array(1.0))
+        result = HypoTestResult(q_obs=ts.value, pnull=None, palt=None, test_stat_result=ts)
+
+        with pytest.raises(ValueError, match="distribution"):
+            calc.pvalue_bands(result)

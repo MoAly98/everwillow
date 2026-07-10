@@ -10,7 +10,7 @@ import optimistix as optx
 import pytest
 
 import everwillow.statelib as sl
-from everwillow.hypotest.calculators import HypoTestCalculator
+from everwillow.hypotest.calculators import AsymptoticCalculator
 from everwillow.hypotest.distributions import Distribution, QMuAsymptotic
 from everwillow.hypotest.results import BandValues, ExpectedBands
 from everwillow.hypotest.results import (
@@ -283,7 +283,7 @@ class TestExpectedUpperLimit:
         expected_plus1 = 2.99573  # -ln(0.05) / 1.0
         expected_plus2 = 2.49644  # -ln(0.05) / 1.2
 
-        calc = HypoTestCalculator(
+        calc = AsymptoticCalculator(
             nll_fn=_dummy_nll,
             params=_DUMMY_PARAMS,
             observation=_DUMMY_OBS,
@@ -340,9 +340,9 @@ class TestExpectedUpperLimitAsymptotic:
         return sigma * (_normal_ppf(1.0 - alpha * phi_n) + n_sigma)
 
     @pytest.fixture
-    def calc(self) -> HypoTestCalculator:
+    def calc(self) -> AsymptoticCalculator:
         """Calculator with constant-σ test stat and QMuAsymptotic distribution."""
-        return HypoTestCalculator(
+        return AsymptoticCalculator(
             nll_fn=_dummy_nll,
             params=_DUMMY_PARAMS,
             observation=_DUMMY_OBS,
@@ -361,7 +361,7 @@ class TestExpectedUpperLimitAsymptotic:
             ("plus_2sigma", 2.0),
         ],
     )
-    def test_expected_band(self, calc: HypoTestCalculator, band_name: str, n_sigma: float):
+    def test_expected_band(self, calc: AsymptoticCalculator, band_name: str, n_sigma: float):
         """Each expected band matches the analytic formula.
 
         Hardcoded expected values (σ=1, α=0.05):
@@ -391,7 +391,7 @@ class TestExpectedUpperLimitAsymptotic:
 
         assert actual == pytest.approx(expected, rel=1e-2)
 
-    def test_zero_lower_bound_handled(self, calc: HypoTestCalculator):
+    def test_zero_lower_bound_handled(self, calc: AsymptoticCalculator):
         """bounds=(0.0, ...) must not produce NaN from poi=0 singularity.
 
         Asymptotic formulas have σ = μ/√q_A, which is 0/0 at poi=0.

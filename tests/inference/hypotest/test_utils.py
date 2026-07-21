@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import pytest
 
 import everwillow.statelib as sl
+from everwillow._src.inference.hypotest.utils import ncx2_sf
 from everwillow.hypotest.test_statistics import QMu, QTilde
 from everwillow.hypotest.utils import (
     cl_s,
@@ -23,6 +24,30 @@ from ._counting_model import (
     poisson_nll,
     predict_fn,
 )
+
+
+class TestNcx2Sf:
+    """Non-central chi-square survival function against hardcoded reference values.
+
+    Reference values are scipy.stats.ncx2.sf computed offline.
+    """
+
+    @pytest.mark.parametrize(
+        ("x", "dof", "nc", "expected"),
+        [
+            (4.0, 1, 4.0, 0.50003167),  # dof=1 closed form 2 - Phi(4) - Phi(0)
+            (0.0, 2, 5.0, 1.0),  # x=0 -> survival 1
+            (6.0, 2, 3.0, 0.32086206),
+            (10.0, 2, 4.0, 0.16856891),
+            (8.0, 3, 6.0, 0.50395115),
+            (5.99146, 2, 0.0, 0.05000011),  # nc=0 reduces to central chi2_2
+        ],
+        ids=["dof1", "at-zero", "dof2-a", "dof2-b", "dof3", "nc0-central"],
+    )
+    def test_reference_values(self, x, dof, nc, expected):
+        """Matches the scipy non-central chi-square survival function."""
+        got = float(ncx2_sf(jnp.asarray(x), dof, jnp.asarray(nc)))
+        assert got == pytest.approx(expected, rel=1e-4)
 
 
 class TestClS:

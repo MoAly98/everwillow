@@ -15,10 +15,44 @@ __all__ = [
     "cl_s",
     "constrained_fit",
     "make_asimov",
+    "ncx2_sf",
     "sigma_from_asimov",
     "significance",
     "single_poi_key",
 ]
+
+
+def ncx2_sf(x: Array, dof: int, nc: Array, *, n_terms: int = 64) -> Array:
+    r"""Survival function of the non-central chi-square distribution.
+
+    Evaluated as a Poisson-weighted mixture of central chi-square tails:
+
+    .. math::
+
+        P(X \geq x) = \sum_{j\geq 0} \frac{e^{-nc/2}(nc/2)^j}{j!}\,
+                      P(\chi^2_{dof + 2j} \geq x)
+
+    truncated at ``n_terms`` terms, which is fully vectorised and jittable. The
+    series reduces to the central chi-square survival at ``nc=0``. The default
+    term count is accurate to better than 1e-10 for non-centralities up to ~50,
+    which covers asymptotic multi-POI p-values; raise it for larger ``nc``.
+
+    Args:
+        x: Point at which to evaluate the survival function.
+        dof: Degrees of freedom (the number of POIs).
+        nc: Non-centrality parameter.
+        n_terms: Number of series terms.
+
+    Returns:
+        Survival probability :math:`P(X \geq x)`.
+    """
+    x = jnp.maximum(x, 0.0)
+    half = nc / 2.0
+    j = jnp.arange(n_terms)
+    # Poisson(j; nc/2) weights in log space; xlogy(0, 0) = 0 keeps nc=0 well-defined.
+    log_weights = -half + jax.scipy.special.xlogy(j, half) - jax.scipy.special.gammaln(j + 1.0)
+    tails = jax.scipy.stats.chi2.sf(x, dof + 2.0 * j)
+    return jnp.sum(jnp.exp(log_weights) * tails)
 
 
 def single_poi_key(point: tp.Mapping[sl.K, ArrayLike]) -> sl.K:

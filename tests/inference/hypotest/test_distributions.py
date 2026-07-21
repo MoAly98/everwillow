@@ -197,6 +197,48 @@ class TestTwoSidedAsymptoticPvalues:
             assert dist.alt_pval(result) is None
 
 
+class TestTMuAsymptoticDof:
+    """TMuAsymptotic generalises to k POIs via the chi-square dof (Cowan Eq. 21)."""
+
+    def test_dof1_reduces_to_two_sided_normal(self):
+        """dof=1 null p-value equals 2(1-Φ(√t)); at t=4 that is 0.04550."""
+        result = TSResult(value=jnp.array(4.0), test={"mu": jnp.array(1.0)})
+        assert float(TMuAsymptotic(dof=1).null_pval(result)) == pytest.approx(0.04550, rel=1e-3)
+
+    @pytest.mark.parametrize(
+        ("q", "expected_pnull"),
+        [
+            # chi-square with 2 dof has survival function exp(-q/2)
+            (5.99146, 0.05),
+            (2.29957, 0.31663),
+            (0.0, 1.0),
+        ],
+        ids=["95pct", "68pct", "zero"],
+    )
+    def test_dof2_chi_square_two(self, q, expected_pnull):
+        """dof=2 null p-value is the chi-square_2 tail exp(-q/2)."""
+        result = TSResult(value=jnp.array(q), test={"mu_a": jnp.array(1.0), "mu_b": jnp.array(0.5)})
+        assert float(TMuAsymptotic(dof=2).null_pval(result)) == pytest.approx(expected_pnull, rel=1e-3)
+
+    def test_dof2_alt_pval_noncentral(self):
+        """dof=2 alt p-value is the non-central chi-square_2 tail (nc = q_asimov).
+
+        Reference: ncx2.sf(x=10, k=2, nc=4) = 0.16857.
+        """
+        result = TSResult(
+            value=jnp.array(10.0),
+            test={"mu_a": jnp.array(1.0), "mu_b": jnp.array(0.5)},
+            q_asimov=jnp.array(4.0),
+        )
+        assert float(TMuAsymptotic(dof=2).alt_pval(result)) == pytest.approx(0.16857, rel=1e-3)
+
+    def test_dof2_alt_pval_requires_q_asimov(self):
+        """Without q_asimov the non-central alt p-value cannot be formed."""
+        result = TSResult(value=jnp.array(10.0), test={"mu_a": jnp.array(1.0), "mu_b": jnp.array(0.5)})
+        with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
+            assert TMuAsymptotic(dof=2).alt_pval(result) is None
+
+
 # =============================================================================
 # SimpleEmpiricalDistribution Tests
 # =============================================================================

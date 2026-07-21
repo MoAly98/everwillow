@@ -24,6 +24,7 @@ from everwillow._src.inference.hypotest.results import (
 )
 from everwillow._src.inference.hypotest.utils import (
     cl_s,
+    ncx2_sf,
     sigma_from_asimov,
     significance,
     single_poi_key,
@@ -42,6 +43,7 @@ __all__ = [
 
 _PHI = jax.scipy.stats.norm.cdf
 _PPF = jax.scipy.stats.norm.ppf
+_CHI2_SF = jax.scipy.stats.chi2.sf
 
 _BAND_SIGMAS = (-2.0, -1.0, 0.0, 1.0, 2.0)
 
@@ -194,33 +196,45 @@ class Distribution(eqx.Module):
 class TMuAsymptotic(Distribution):
     r"""Asymptotic distribution for :math:`t_\mu` (two-sided, Eq. 38).
 
-    Used with the :math:`t_\mu` test statistic for two-sided confidence intervals.
+    Used with the :math:`t_\mu` test statistic for two-sided confidence intervals
+    and joint tests of several POIs. ``t_\mu`` follows a chi-square with ``dof``
+    degrees of freedom under the null and a non-central chi-square under the
+    alternative, where ``dof`` is the number of POIs (Cowan Eq. 21). The
+    single-POI case (``dof=1``) recovers the standard normal forms.
 
+    Attributes:
+        dof: Number of parameters of interest tested jointly. Defaults to 1.
     """
+
+    dof: int = eqx.field(static=True, default=1)
 
     def cdf(self, q: Array, mu: Array, mu_prime: Array, sigma: Array) -> Array:
         r"""CDF: :math:`F(t_\mu \mid \mu') = \Phi(\sqrt{t} + \frac{\mu-\mu'}{\sigma})
-        + \Phi(\sqrt{t} - \frac{\mu-\mu'}{\sigma}) - 1`."""
+        + \Phi(\sqrt{t} - \frac{\mu-\mu'}{\sigma}) - 1`. Single-POI form."""
         sqrt_q = jnp.sqrt(jnp.maximum(q, 0.0))
         delta = (mu - mu_prime) / sigma
         return _PHI(sqrt_q + delta) + _PHI(sqrt_q - delta) - 1.0
 
     def null_pval(self, result: TestStatResult) -> Array:
-        r"""Null p-value: :math:`p = 2(1 - \Phi(\sqrt{t_\mu}))`. No :math:`\sigma` needed."""
-        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
-        return 2.0 * (1.0 - _PHI(sqrt_q))
+        r"""Null p-value: the chi-square tail :math:`P(\chi^2_\text{dof} \geq t)`.
+
+        This is the multi-POI region criterion: the joint confidence region is
+        :math:`\{t \leq F^{-1}_{\chi^2_\text{dof}}(1-\alpha)\}`. At ``dof=1`` it
+        equals :math:`2(1 - \Phi(\sqrt{t}))`. No :math:`\sigma` needed.
+        """
+        return _CHI2_SF(jnp.maximum(result.value, 0.0), self.dof)
 
     def alt_pval(self, result: TestStatResult) -> Array | None:
-        r"""Alt p-value: :math:`p = 2 - \Phi(\sqrt{t} + \sqrt{q_A}) - \Phi(\sqrt{t} - \sqrt{q_A})`.
+        r"""Alt p-value: the non-central chi-square tail with non-centrality :math:`q_A`.
 
-        :math:`q_A = \mu^2/\sigma^2` (Asimov under :math:`\mu'=0`),
-        so :math:`\sqrt{q_A} = \mu/\sigma = (\mu-\mu')/\sigma`.
+        Under the alternative, :math:`t` follows a non-central
+        :math:`\chi^2_\text{dof}` whose non-centrality is the Asimov test
+        statistic :math:`q_A` (Cowan Eq. 21). At ``dof=1`` this reduces to
+        :math:`2 - \Phi(\sqrt{t} + \sqrt{q_A}) - \Phi(\sqrt{t} - \sqrt{q_A})`.
         """
         if not _require_q_asimov(result, self.__class__.__name__, "Alternative"):
             return None
-        sqrt_q = jnp.sqrt(jnp.maximum(result.value, 0.0))
-        sqrt_qa = jnp.sqrt(jnp.maximum(result.q_asimov, 0.0))
-        return 2.0 - _PHI(sqrt_q + sqrt_qa) - _PHI(sqrt_q - sqrt_qa)
+        return ncx2_sf(result.value, self.dof, jnp.maximum(result.q_asimov, 0.0))
 
 
 class TMuTildeAsymptotic(Distribution):

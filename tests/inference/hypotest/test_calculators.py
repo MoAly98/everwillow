@@ -69,10 +69,11 @@ _DUMMY_OBS = {}
 
 
 class _IdentityTestStat(TestStatistic):
-    """Returns poi_test as the test stat value (no fitting)."""
+    """Returns the tested POI value as the test stat value (no fitting)."""
 
-    def _compute(self, nll_fn, params, observation, poi_key, poi_test, **kwargs):
-        return jnp.asarray(poi_test), {}
+    def _compute(self, nll_fn, params, observation, poi_test, **kwargs):
+        (value,) = poi_test.values()
+        return jnp.asarray(value), {}
 
 
 def _make_expected_bands(pnulls, palts):
@@ -104,13 +105,13 @@ class _ExponentialCLsDist(Distribution):
     """
 
     def null_pval(self, result):
-        return jnp.exp(-result.test) * 0.5
+        return jnp.exp(-result.test["mu"]) * 0.5
 
     def alt_pval(self, result):
         return jnp.array(0.5)
 
     def pvalue_bands(self, result):
-        poi = result.test
+        poi = result.test["mu"]
         palt = jnp.array(0.5)
         rates = [0.5, 0.6, 0.8, 1.0, 1.2]
         pnulls = [jnp.exp(-r * poi) * palt for r in rates]
@@ -397,7 +398,7 @@ class TestAsymptoticCalculatorAsimov:
         assert result.test_stat_result.q_asimov == pytest.approx(9.0139, rel=1e-3)
 
     def test_q_asimov_with_predict_fn(self):
-        """predict_fn at mu_asimov=0 generates Asimov n=5.
+        """predict_fn at poi_asimov=0 generates Asimov n=5.
 
         q_asimov = 2*(15-5-5*ln(3)) = 9.0139.
         """
@@ -446,7 +447,7 @@ class TestAsymptoticCalculatorAsimov:
         assert result.palt is None
 
     def test_q_asimov_at_different_mu_test(self):
-        """Asimov is always at mu_asimov=0, regardless of mu_test.
+        """Asimov is always at poi_asimov=0, regardless of mu_test.
 
         At mu_test=0: Asimov at mu=0 (n=5), testing at 0 → q_asimov=0.
         At mu_test=2: Asimov at mu=0 (n=5), testing at 2:

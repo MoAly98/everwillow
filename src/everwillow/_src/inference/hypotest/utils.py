@@ -6,7 +6,7 @@ import typing as tp
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, ArrayLike, PyTree
 
 import everwillow._src.statelib as sl
 from everwillow._src.inference.fitting import FitResult, fit
@@ -17,30 +17,43 @@ __all__ = [
     "make_asimov",
     "sigma_from_asimov",
     "significance",
+    "single_poi_key",
 ]
+
+
+def single_poi_key(point: tp.Mapping[sl.K, ArrayLike]) -> sl.K:
+    """Return the sole POI key, rejecting points that name more than one.
+
+    Used where a scalar POI is required: the one-sided test statistics (which
+    order on a scalar :math:`\\hat\\mu`) and the sigma-based expected bands.
+    """
+    keys = tuple(point)
+    if len(keys) != 1:
+        msg = f"expected a single POI, but the point names {len(keys)}: {keys}"
+        raise ValueError(msg)
+    return keys[0]
 
 
 def make_asimov(
     predict_fn: tp.Callable[[sl.State], PyTree],
     params: sl.State,
-    poi_key: sl.K,
-    mu_asimov: float,
+    poi_asimov: tp.Mapping[sl.K, ArrayLike],
 ) -> PyTree:
-    """Generate an Asimov dataset at a given POI value.
+    """Generate an Asimov dataset at a given POI point.
 
-    Sets the POI to ``mu_asimov`` in the parameter state and calls
+    Sets each POI in ``poi_asimov`` on the parameter state and calls
     ``predict_fn`` to produce the expected observation.
 
     Args:
         predict_fn: Function mapping parameter state to expected observation.
         params: Parameter state (used as template).
-        poi_key: Canonical key for the parameter of interest, e.g. "mu".
-        mu_asimov: POI value at which to generate the Asimov dataset.
+        poi_asimov: POI point at which to generate the Asimov dataset, a mapping
+            from POI key to value, e.g. ``{"mu": 0.0}``.
 
     Returns:
         Expected observation (Asimov dataset).
     """
-    asimov_params = sl.update(params, updates={poi_key: mu_asimov})
+    asimov_params = sl.update(params, updates=poi_asimov)
     return predict_fn(asimov_params)
 
 
@@ -97,7 +110,7 @@ def constrained_fit(
     nll_fn: tp.Callable[[PyTree, PyTree], float],
     params: sl.State,
     observation: PyTree,
-    poi_fixed: sl.State,
+    poi_fixed: sl.State | tp.Mapping[sl.K, ArrayLike],
     **fit_kwargs: tp.Any,
 ) -> FitResult:
     """Perform constrained fit, merging POI constraint with user-fixed params.
@@ -110,7 +123,8 @@ def constrained_fit(
         nll_fn: Negative log-likelihood function taking (params, observation).
         params: Initial parameter state.
         observation: Observed data passed to nll_fn.
-        poi_fixed: State specifying the POI value to constrain.
+        poi_fixed: The POI point to constrain, either a mapping from POI key to
+            value (e.g. ``{"mu": 1.0}``) or an already-built State.
         **fit_kwargs: Additional arguments passed to fit(). If ``fixed`` is
             present, it is merged with ``poi_fixed`` (``poi_fixed`` wins on
             overlapping keys).
@@ -118,6 +132,9 @@ def constrained_fit(
     Returns:
         FitResult with fitted parameters and NLL value.
     """
+    if not isinstance(poi_fixed, sl.State):
+        poi_fixed = sl.State.from_pytree(poi_fixed)
+
     user_fixed = fit_kwargs.pop("fixed", None)
     merged_fixed = sl.merge(user_fixed, poi_fixed) if user_fixed else poi_fixed
 

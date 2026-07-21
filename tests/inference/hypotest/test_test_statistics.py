@@ -29,10 +29,10 @@ class TestTestStatisticBase:
 
         # Call the base TestStatistic.compute directly, bypassing
         # CowanTestStatistic's override (which adds Asimov handling).
-        result = TestStatistic.compute(QTilde(), poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = TestStatistic.compute(QTilde(), poisson_nll, params, observed, {"mu": 1.0})
 
         assert result.value == pytest.approx(0.0, abs=1e-4)
-        assert result.test == pytest.approx(1.0)
+        assert result.test["mu"] == pytest.approx(1.0)
         assert result.q_asimov is None
         assert result.extras["mu_hat"] == pytest.approx(1.0, abs=1e-3)
 
@@ -71,7 +71,7 @@ class TestQTilde:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = QTilde().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = QTilde().compute(poisson_nll, params, observed, {"mu": mu_test})
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -110,7 +110,7 @@ class TestQMu:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = QMu().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = QMu().compute(poisson_nll, params, observed, {"mu": mu_test})
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -149,7 +149,7 @@ class TestTMu:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = TMu().compute(poisson_nll, params, observed, "mu", poi_test=mu_test)
+        result = TMu().compute(poisson_nll, params, observed, {"mu": mu_test})
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_t, abs=1e-4)
@@ -188,7 +188,7 @@ class TestQ0:
         params = create_params(mu_init=1.0)
         observed = create_observation(n_obs)
 
-        result = Q0().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = Q0().compute(poisson_nll, params, observed, {"mu": 1.0})
 
         assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_q, abs=1e-4)
@@ -198,15 +198,15 @@ class TestQ0:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result0 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=0.0)
-        result1 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
-        result2 = Q0().compute(poisson_nll, params, observed, "mu", poi_test=2.0)
+        result0 = Q0().compute(poisson_nll, params, observed, {"mu": 0.0})
+        result1 = Q0().compute(poisson_nll, params, observed, {"mu": 1.0})
+        result2 = Q0().compute(poisson_nll, params, observed, {"mu": 2.0})
 
         assert result0.value == pytest.approx(result1.value, abs=1e-6)
         assert result1.value == pytest.approx(result2.value, abs=1e-6)
-        assert result0.test == pytest.approx(0.0)
-        assert result1.test == pytest.approx(0.0)
-        assert result2.test == pytest.approx(0.0)
+        assert result0.test["mu"] == pytest.approx(0.0)
+        assert result1.test["mu"] == pytest.approx(0.0)
+        assert result2.test["mu"] == pytest.approx(0.0)
 
 
 # =============================================================================
@@ -231,9 +231,9 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = TestStatClass().compute(poisson_nll, params, observed, {"mu": 1.0})
 
-        assert result.test == pytest.approx(expected_test)
+        assert result.test["mu"] == pytest.approx(expected_test)
 
     @pytest.mark.parametrize("TestStatClass", [QTilde, QMu, Q0, TMu])
     def test_q_asimov_none_without_asimov(self, TestStatClass):
@@ -241,7 +241,7 @@ class TestCowanTestStatisticGeneral:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        result = TestStatClass().compute(poisson_nll, params, observed, "mu", poi_test=1.0)
+        result = TestStatClass().compute(poisson_nll, params, observed, {"mu": 1.0})
 
         assert result.q_asimov is None
 
@@ -262,7 +262,7 @@ class TestCowanTestStatisticGeneral:
         @jax.jit
         def compute_q(obs_n):
             obs = {"n": obs_n}
-            return test_stat.compute(poisson_nll, params, obs, "mu", poi_test=1.0).value
+            return test_stat.compute(poisson_nll, params, obs, {"mu": 1.0}).value
 
         q = compute_q(15.0)
         assert q == pytest.approx(expected_q, abs=1e-4)
@@ -278,16 +278,15 @@ class TestCowanTestStatisticGeneral:
             poisson_nll,
             params,
             observed,
-            "mu",
-            poi_test=1.0,
+            {"mu": 1.0},
             asimov_observation=asimov,
         )
 
         assert result.q_asimov == pytest.approx(0.0, abs=1e-4)
 
     @pytest.mark.parametrize("TestStatClass", [QTilde, QMu, TMu])
-    def test_predict_fn_explicit_mu_asimov(self, TestStatClass):
-        """Test q_asimov=0 with predict_fn at mu_asimov=1.0.
+    def test_predict_fn_explicit_poi_asimov(self, TestStatClass):
+        """Test q_asimov=0 with predict_fn at poi_asimov=1.0.
 
         Asimov at mu=1 gives n=15. Testing at mu=1: q_asimov=0.
         """
@@ -298,10 +297,9 @@ class TestCowanTestStatisticGeneral:
             poisson_nll,
             params,
             observed,
-            "mu",
-            poi_test=1.0,
+            {"mu": 1.0},
             predict_fn=predict_fn,
-            mu_asimov=1.0,
+            poi_asimov=1.0,
         )
 
         assert result.q_asimov == pytest.approx(0.0, abs=1e-4)
@@ -318,8 +316,8 @@ class TestCowanTestStatisticGeneral:
             (TMu, 9.0139),
         ],
     )
-    def test_predict_fn_default_mu_asimov(self, TestStatClass, expected_q_asimov):
-        """Test q_asimov with predict_fn at default mu_asimov=0."""
+    def test_predict_fn_default_poi_asimov(self, TestStatClass, expected_q_asimov):
+        """Test q_asimov with predict_fn at default poi_asimov=0."""
         params = create_params(mu_init=1.0)
         observed = create_observation(10.0)
 
@@ -327,8 +325,7 @@ class TestCowanTestStatisticGeneral:
             poisson_nll,
             params,
             observed,
-            "mu",
-            poi_test=1.0,
+            {"mu": 1.0},
             predict_fn=predict_fn,
         )
 

@@ -27,13 +27,15 @@ class TestStatResult(eqx.Module):
 
     Attributes:
         value: Test statistic value.
-        test: POI value being tested (:math:`\mu`).
+        test: The tested POI point, a mapping from each POI key to its tested
+            value (:math:`\mu`). A single-POI test carries a one-entry mapping;
+            a joint test carries one entry per POI.
         q_asimov: Test statistic evaluated on Asimov data. None if not computed.
         extras: Arbitrary additional data (e.g., fits, mu_hat).
     """
 
     value: Array
-    test: Array
+    test: tp.Mapping[tp.Any, Array]
     q_asimov: Array | None = None
     extras: dict[str, tp.Any] = eqx.field(default_factory=dict)
 

@@ -135,7 +135,7 @@ class TestOneSidedAsymptoticPvalues:
         """p-values match hand-computed Cowan et al. values."""
         result = TSResult(
             value=jnp.array(q),
-            test=jnp.array(test_val),
+            test={"mu": jnp.array(test_val)},
             q_asimov=jnp.array(q_asimov),
         )
         dist = dist_cls()
@@ -180,7 +180,7 @@ class TestTwoSidedAsymptoticPvalues:
         """Two-sided p-values match hand-computed Cowan et al. values."""
         result = TSResult(
             value=jnp.array(q),
-            test=jnp.array(1.0),
+            test={"mu": jnp.array(1.0)},
             q_asimov=jnp.array(q_asimov),
         )
         dist = dist_cls()
@@ -189,7 +189,7 @@ class TestTwoSidedAsymptoticPvalues:
 
     def test_tmutilde_requires_q_asimov(self):
         """null_pval and alt_pval return None without q_asimov."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(4.0), test={"mu": jnp.array(1.0)})
         dist = TMuTildeAsymptotic()
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             assert dist.null_pval(result) is None
@@ -220,7 +220,7 @@ class TestSimpleEmpiricalDistribution:
         q_obs = 5.0
 
         dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
-        result = TSResult(value=jnp.array(q_obs), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(q_obs), test={"mu": jnp.array(1.0)})
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
@@ -234,7 +234,7 @@ class TestSimpleEmpiricalDistribution:
         q_obs = 0.5
 
         dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
-        result = TSResult(value=jnp.array(q_obs), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(q_obs), test={"mu": jnp.array(1.0)})
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
@@ -248,7 +248,7 @@ class TestSimpleEmpiricalDistribution:
         q_obs = 10.0
 
         dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
-        result = TSResult(value=jnp.array(q_obs), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(q_obs), test={"mu": jnp.array(1.0)})
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
@@ -268,7 +268,7 @@ class TestSimpleEmpiricalDistribution:
         q_obs = 5.0
 
         dist = SimpleEmpiricalDistribution(q_alt=q_alt, q_null=q_null)
-        result = TSResult(value=jnp.array(q_obs), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(q_obs), test={"mu": jnp.array(1.0)})
         pnull = dist.null_pval(result)
         palt = dist.alt_pval(result)
 
@@ -291,7 +291,7 @@ class TestSimpleEmpiricalDistribution:
         """alt_pval warns and returns None when q_alt is not provided."""
         q_null = jnp.array([1.0, 2.0, 3.0])
         dist = SimpleEmpiricalDistribution(q_null=q_null)
-        result = TSResult(value=jnp.array(1.5), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(1.5), test={"mu": jnp.array(1.0)})
         with pytest.warns(UserWarning, match="cannot be performed without q_alt"):
             assert dist.alt_pval(result) is None
 
@@ -320,7 +320,7 @@ class TestSimpleEmpiricalDistribution:
         q_null = jnp.linspace(0.0, 10.0, 10001)
         q_alt = jnp.linspace(0.0, 20.0, 10001)
         dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
-        result = TSResult(value=jnp.array(5.0), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(5.0), test={"mu": jnp.array(1.0)})
 
         bands = dist.pvalue_bands(result)
 
@@ -332,7 +332,7 @@ class TestSimpleEmpiricalDistribution:
         """pvalue_bands raises ValueError when q_alt is None."""
         q_null = jnp.array([1.0, 2.0, 3.0])
         dist = SimpleEmpiricalDistribution(q_null=q_null)
-        result = TSResult(value=jnp.array(1.5), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(1.5), test={"mu": jnp.array(1.0)})
         with pytest.raises(ValueError, match="pvalue_bands requires q_alt"):
             dist.pvalue_bands(result)
 
@@ -341,7 +341,7 @@ class TestSimpleEmpiricalDistribution:
         q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float32)
         q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float32)
         dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
-        result = TSResult(value=jnp.array(3.0, dtype=jnp.float32), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(3.0, dtype=jnp.float32), test={"mu": jnp.array(1.0)})
 
         assert dist.null_pval(result).dtype == jnp.float32
         assert dist.alt_pval(result).dtype == jnp.float32
@@ -354,7 +354,7 @@ class TestSimpleEmpiricalDistribution:
             q_null = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float64)
             q_alt = jnp.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float64)
             dist = SimpleEmpiricalDistribution(q_null=q_null, q_alt=q_alt)
-            result = TSResult(value=jnp.array(3.0, dtype=jnp.float64), test=jnp.array(1.0))
+            result = TSResult(value=jnp.array(3.0, dtype=jnp.float64), test={"mu": jnp.array(1.0)})
 
             assert dist.null_pval(result).dtype == jnp.float64
             assert dist.alt_pval(result).dtype == jnp.float64
@@ -392,7 +392,7 @@ class TestSignificance:
     def test_significance_values(self, dist_cls, q, test_val, q_asimov, method, expected_z):
         """Significance Z matches hand-computed values."""
         q_a = jnp.array(q_asimov) if q_asimov is not None else None
-        result = TSResult(value=jnp.array(q), test=jnp.array(test_val), q_asimov=q_a)
+        result = TSResult(value=jnp.array(q), test={"mu": jnp.array(test_val)}, q_asimov=q_a)
         dist = dist_cls()
         z = getattr(dist, method)(result)
         assert float(z) == pytest.approx(expected_z, abs=0.01)
@@ -410,7 +410,7 @@ class TestSignificance:
     )
     def test_null_significance_works_without_asimov(self, dist_cls, expected_z):
         """null_significance doesn't need q_asimov for QMu/Q0/TMu."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(4.0), test={"mu": jnp.array(1.0)})
         dist = dist_cls()
         assert float(dist.null_significance(result)) == pytest.approx(expected_z, abs=0.01)
 
@@ -430,7 +430,7 @@ class TestSignificance:
     )
     def test_significance_none_without_asimov(self, dist_cls, method):
         """Significance returns None when q_asimov is required but missing."""
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(1.0))
+        result = TSResult(value=jnp.array(4.0), test={"mu": jnp.array(1.0)})
         dist = dist_cls()
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             assert getattr(dist, method)(result) is None
@@ -469,7 +469,7 @@ class TestExpectedPvalues:
         """TestStatResult with μ=2, q_asimov=4 (σ=1)."""
         return TSResult(
             value=jnp.array(4.0),
-            test=jnp.array(2.0),
+            test={"mu": jnp.array(2.0)},
             q_asimov=jnp.array(4.0),
         )
 
@@ -528,7 +528,7 @@ class TestExpectedPvalues:
         """
         result = TSResult(
             value=jnp.array(4.0),
-            test=jnp.array(0.0),
+            test={"mu": jnp.array(0.0)},
             q_asimov=jnp.array(4.0),
         )
         dist = Q0Asymptotic()
@@ -540,7 +540,7 @@ class TestExpectedPvalues:
     def test_pvalue_bands_requires_q_asimov(self, dist_cls):
         """pvalue_bands returns None when q_asimov is missing."""
         test_val = 0.0 if dist_cls is Q0Asymptotic else 2.0
-        result = TSResult(value=jnp.array(4.0), test=jnp.array(test_val))
+        result = TSResult(value=jnp.array(4.0), test={"mu": jnp.array(test_val)})
         dist = dist_cls()
         with pytest.warns(UserWarning, match="cannot be performed without an Asimov"):
             assert dist.pvalue_bands(result) is None
@@ -554,7 +554,7 @@ class TestExpectedPvalues:
         """
         result = TSResult(
             value=jnp.array(0.0),
-            test=jnp.array(0.0),
+            test={"mu": jnp.array(0.0)},
             q_asimov=jnp.array(0.0),
         )
         dist = dist_cls()
@@ -613,7 +613,7 @@ class TestExpectedPvalues:
         q_asimov = (expected_mu_up / sigma) ** 2
         result = TSResult(
             value=jnp.array(q_asimov),
-            test=jnp.array(expected_mu_up),
+            test={"mu": jnp.array(expected_mu_up)},
             q_asimov=jnp.array(q_asimov),
         )
         bands = dist.pvalue_bands(result)

@@ -19,12 +19,14 @@ import typing as tp
 
 import equinox as eqx
 import jax.numpy as jnp
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, ArrayLike, PyTree
 
 import everwillow._src.statelib as sl
 from everwillow._src.inference.fitting import fit
 from everwillow._src.inference.hypotest.results import TestStatResult
-from everwillow._src.inference.hypotest.utils import constrained_fit, make_asimov
+from everwillow._src.inference.hypotest.utils import constrained_fit, make_asimov, single_poi_key
+
+PoiPoint: tp.TypeAlias = tp.Mapping[sl.K, ArrayLike]
 
 __all__ = [
     "Q0",
@@ -53,8 +55,7 @@ class TestStatistic(eqx.Module):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute the test statistic.
@@ -63,16 +64,17 @@ class TestStatistic(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. "mu".
-            poi_test: Test value for the POI.
+            poi_test: The tested POI point, a mapping from POI key to value,
+                e.g. ``{"mu": 1.0}`` or ``{"mu_ggF": 1.0, "mu_VBF": 0.5}``.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute(nll_fn, params, observation, poi_key, poi_test, **fit_kwargs)
+        q_obs, extras = self._compute(nll_fn, params, observation, poi_test, **fit_kwargs)
 
-        return TestStatResult(value=q_obs, test=jnp.asarray(poi_test), q_asimov=None, extras=extras)
+        point = {key: jnp.asarray(value) for key, value in poi_test.items()}
+        return TestStatResult(value=q_obs, test=point, q_asimov=None, extras=extras)
 
     @abc.abstractmethod
     def _compute(
@@ -80,8 +82,7 @@ class TestStatistic(eqx.Module):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute the core test statistic formula.
@@ -92,8 +93,7 @@ class TestStatistic(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest.
-            poi_test: Test value for the POI.
+            poi_test: The tested POI point, a mapping from POI key to value.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
@@ -119,29 +119,29 @@ class CowanTestStatistic(TestStatistic):
     Asimov data can be provided in two ways:
 
     1. ``asimov_observation``: pre-computed Asimov dataset.
-    2. ``predict_fn``: generate Asimov at ``mu_asimov`` (default depends on
-       the test statistic; override via the ``mu_asimov`` kwarg).
+    2. ``predict_fn``: generate Asimov at ``poi_asimov`` (default depends on
+       the test statistic; override via the ``poi_asimov`` kwarg).
 
     If neither is provided, ``q_asimov`` will be None. This can cause p-value computations for test statistics
     that require ``q_asimov`` to fail.
 
     Attributes:
-        mu_asimov: Default POI value for Asimov dataset generation.
+        poi_asimov: Default POI point for Asimov dataset generation. A scalar
+            sets every tested POI to that value.
     """
 
-    mu_asimov: float = 0.0
+    poi_asimov: float | PoiPoint = 0.0
 
     def compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         *,
         asimov_observation: PyTree | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
-        mu_asimov: float | None = None,
+        poi_asimov: float | PoiPoint | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute the test statistic.
@@ -150,50 +150,55 @@ class CowanTestStatistic(TestStatistic):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data passed to nll_fn.
-            poi_key: Canonical key for the parameter of interest, e.g. "mu".
-            poi_test: Test value for the POI.
+            poi_test: The tested POI point, a mapping from POI key to value,
+                e.g. ``{"mu": 1.0}``.
             asimov_observation: Pre-computed Asimov dataset.
             predict_fn: Function to generate expected observation from parameters.
-            mu_asimov: POI value at which to generate the Asimov dataset.
-                Defaults to ``self.mu_asimov``.
+            poi_asimov: POI point at which to generate the Asimov dataset. A scalar
+                sets every tested POI to that value (0.0 for background-only, 1.0
+                for nominal signal); a mapping sets each POI separately. Defaults
+                to ``self.poi_asimov``.
             **fit_kwargs: Additional arguments passed to fit().
 
         Returns:
             TestStatResult with value, test, q_asimov, and extras.
         """
-        q_obs, extras = self._compute(nll_fn, params, observation, poi_key, poi_test, **fit_kwargs)
+        q_obs, extras = self._compute(nll_fn, params, observation, poi_test, **fit_kwargs)
 
-        if mu_asimov is None:
-            mu_asimov = self.mu_asimov
+        if poi_asimov is None:
+            poi_asimov = self.poi_asimov
 
-        asimov_obs = self._resolve_asimov(asimov_observation, predict_fn, params, poi_key, mu_asimov)
+        asimov_obs = self._resolve_asimov(asimov_observation, predict_fn, params, poi_test, poi_asimov)
 
         q_asimov = None
         if asimov_obs is not None:
-            q_asimov_val, asimov_extras = self._compute(nll_fn, params, asimov_obs, poi_key, poi_test, **fit_kwargs)
+            q_asimov_val, asimov_extras = self._compute(nll_fn, params, asimov_obs, poi_test, **fit_kwargs)
             q_asimov = q_asimov_val
             extras["asimov_fit_constrained"] = asimov_extras.get("fit_constrained")
             extras["asimov_fit_free"] = asimov_extras.get("fit_free")
 
-        return TestStatResult(value=q_obs, test=jnp.asarray(poi_test), q_asimov=q_asimov, extras=extras)
+        point = {key: jnp.asarray(value) for key, value in poi_test.items()}
+        return TestStatResult(value=q_obs, test=point, q_asimov=q_asimov, extras=extras)
 
     @staticmethod
     def _resolve_asimov(
         asimov_observation: PyTree | None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None,
         params: sl.State,
-        poi_key: sl.K,
-        mu_asimov: float,
+        poi_test: PoiPoint,
+        poi_asimov: float | PoiPoint,
     ) -> PyTree | None:
         """Resolve Asimov observation from explicit data or predict_fn.
 
-        When ``predict_fn`` is used, the Asimov dataset is generated at
-        ``mu_asimov`` (not at ``poi_test``).
+        When ``predict_fn`` is used, the Asimov dataset is generated at the
+        Asimov POI point (not at ``poi_test``). A scalar ``poi_asimov`` is
+        broadcast to every tested POI; a mapping is used directly.
         """
         if asimov_observation is not None:
             return asimov_observation
         if predict_fn is not None:
-            return make_asimov(predict_fn, params, poi_key, mu_asimov)
+            point = dict.fromkeys(poi_test, poi_asimov) if isinstance(poi_asimov, (int, float)) else poi_asimov
+            return make_asimov(predict_fn, params, point)
         return None
 
 
@@ -225,24 +230,24 @@ class QTilde(CowanTestStatistic):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q̃ for a single observation."""
+        poi_key = single_poi_key(poi_test)
+        poi_value = poi_test[poi_key]
+
         # Free fit (unconditional MLE)
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
         # Constrained fit at mu_test: L(μ, θ̂̂(μ))
-        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_test, **fit_kwargs)
 
         # Constrained fit at μ=0: L(0, θ̂̂(0)) — denominator when μ̂ < 0
         # Both branches are always evaluated (JAX tracing); jnp.where selects.
-        zero_fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_zero = constrained_fit(nll_fn, params, observation, zero_fixed, **fit_kwargs)
+        fit_zero = constrained_fit(nll_fn, params, observation, {poi_key: 0.0}, **fit_kwargs)
 
         # Eq. 16: denominator is L(0, θ̂̂(0)) when μ̂ < 0, else L(μ̂, θ̂)
         nll_denom = jnp.where(mu_hat < 0.0, fit_zero.nll, fit_free.nll)
@@ -250,7 +255,7 @@ class QTilde(CowanTestStatistic):
         q_raw = 2.0 * delta_nll
 
         # Boundary: q = 0 if μ̂ > μ (upward fluctuation)
-        q = jnp.where(mu_hat <= poi_test, q_raw, 0.0)
+        q = jnp.where(mu_hat <= poi_value, q_raw, 0.0)
         q = jnp.maximum(q, 0.0)
 
         extras = {
@@ -285,23 +290,24 @@ class QMu(CowanTestStatistic):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_μ for a single observation."""
+        poi_key = single_poi_key(poi_test)
+        poi_value = poi_test[poi_key]
+
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_test, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
 
         # Boundary: q = 0 if mu_hat > poi_test (upward fluctuation)
-        q = jnp.where(mu_hat <= poi_test, q_raw, 0.0)
+        q = jnp.where(mu_hat <= poi_value, q_raw, 0.0)
         q = jnp.maximum(q, 0.0)
 
         extras = {
@@ -330,39 +336,39 @@ class Q0(CowanTestStatistic):
     The boundary at :math:`\hat{\mu} < 0` prevents "discovery" of negative signal.
 
     Attributes:
-        mu_asimov: Default POI value for Asimov generation. Defaults to 1.0
+        poi_asimov: Default POI point for Asimov generation. Defaults to 1.0
             (signal hypothesis).
     """
 
-    mu_asimov: float = 1.0
+    poi_asimov: float | PoiPoint = 1.0
 
     def compute(
         self,
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         *,
         asimov_observation: PyTree | None = None,
         predict_fn: tp.Callable[[sl.State], PyTree] | None = None,
-        mu_asimov: float | None = None,
+        poi_asimov: float | PoiPoint | None = None,
         **fit_kwargs: tp.Any,
     ) -> TestStatResult:
         """Compute q_0 discovery test statistic.
 
         Note:
-            The ``poi_test`` argument is ignored; Q0 always tests μ=0 by design.
+            The tested value is ignored; Q0 always tests μ=0 by design. The
+            tested point still names the POI, so it must name exactly one.
         """
+        poi_key = single_poi_key(poi_test)
         return super().compute(
             nll_fn,
             params,
             observation,
-            poi_key,
-            0.0,
+            {poi_key: 0.0},
             asimov_observation=asimov_observation,
             predict_fn=predict_fn,
-            mu_asimov=mu_asimov,
+            poi_asimov=poi_asimov,
             **fit_kwargs,
         )
 
@@ -371,18 +377,18 @@ class Q0(CowanTestStatistic):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute q_0 for a single observation."""
-        # poi_test will always be 0.0 due to compute() override
+        # poi_test is always {poi_key: 0.0} due to the compute() override
+        poi_key = single_poi_key(poi_test)
+
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: 0.0})
-        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_test, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         q_raw = 2.0 * delta_nll
@@ -418,17 +424,17 @@ class TMu(CowanTestStatistic):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_test: float,
+        poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
         """Compute t_μ for a single observation."""
+        poi_key = single_poi_key(poi_test)
+
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
         mu_hat = fitted_state[poi_key]
 
-        poi_fixed: sl.State[float] = sl.State.from_pytree({poi_key: poi_test})
-        fit_constrained = constrained_fit(nll_fn, params, observation, poi_fixed, **fit_kwargs)
+        fit_constrained = constrained_fit(nll_fn, params, observation, poi_test, **fit_kwargs)
 
         delta_nll = fit_constrained.nll - fit_free.nll
         t = 2.0 * delta_nll

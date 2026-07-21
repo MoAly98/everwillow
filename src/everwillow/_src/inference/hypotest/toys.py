@@ -14,7 +14,7 @@ from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
 import everwillow._src.statelib as sl
 from everwillow._src.inference.hypotest.results import ToyResult
-from everwillow._src.inference.hypotest.test_statistics import TestStatistic
+from everwillow._src.inference.hypotest.test_statistics import PoiPoint, TestStatistic
 from everwillow._src.inference.hypotest.utils import constrained_fit
 
 __all__ = ["ToyGenerator"]
@@ -65,9 +65,9 @@ class ToyGenerator(eqx.Module):
     Example:
         >>> toy_gen = ToyGenerator(predict_fn=my_predict_fn, ntoys=10000)
         >>> toys = toy_gen.generate(
-        ...     nll_fn, params, observed, "mu", 1.0,
+        ...     nll_fn, params, observed, {"mu": 1.0},
         ...     test_statistic=QTilde(),
-        ...     poi_alt=0.0,
+        ...     poi_alt={"mu": 0.0},
         ...     key=jax.random.key(42),
         ... )
         >>> # Choose how to interpret the toys (open-world)
@@ -94,11 +94,10 @@ class ToyGenerator(eqx.Module):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         params: sl.State,
         observation: PyTree,
-        poi_key: sl.K,
-        poi_null: float,
+        poi_null: PoiPoint,
         *,
         test_statistic: TestStatistic,
-        poi_alt: float | None = None,
+        poi_alt: PoiPoint | None = None,
         key: PRNGKeyArray,
         **fit_kwargs: tp.Any,
     ) -> ToyResult:
@@ -108,15 +107,15 @@ class ToyGenerator(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             params: Initial parameter state.
             observation: Observed data (used to profile nuisance parameters).
-            poi_key: Canonical key for the parameter of interest, e.g. "mu".
-            poi_null: Null hypothesis POI value. Toys generated under this
-                hypothesis populate q_null. The test statistic is evaluated
-                at this value for each toy.
+            poi_null: Null hypothesis POI point, a mapping from POI key to value
+                (e.g. ``{"mu": 1.0}``). Toys generated under this hypothesis
+                populate q_null, and the test statistic is evaluated at this
+                point for each toy.
             test_statistic: Test statistic to compute for each toy.
-            poi_alt: Alternative hypothesis POI value. If provided, toys are
+            poi_alt: Alternative hypothesis POI point. If provided, toys are
                 generated under both hypotheses. If None, only null toys are
-                generated and q_alt will be None in the result.
-                For exclusion tests, typically 0.0. For discovery, typically 1.0.
+                generated and q_alt will be None in the result. For exclusion
+                tests, typically ``{"mu": 0.0}``; for discovery, ``{"mu": 1.0}``.
             key: JAX PRNG key for reproducibility.
             **fit_kwargs: Additional arguments passed to fit().
 
@@ -135,8 +134,7 @@ class ToyGenerator(eqx.Module):
             sample_fn = self._make_poisson_sampler(self.predict_fn)
 
         # Null hypothesis: POI = poi_null
-        fixed_null: sl.State[float] = sl.State.from_pytree({poi_key: poi_null})
-        null_result = constrained_fit(nll_fn, params, observation, fixed_null, **fit_kwargs)
+        null_result = constrained_fit(nll_fn, params, observation, poi_null, **fit_kwargs)
         params_null: sl.State[ArrayLike] = null_result.params
 
         # Alternative hypothesis: POI = poi_alt (only if provided)
@@ -146,15 +144,13 @@ class ToyGenerator(eqx.Module):
             keys_null = keys[: self.ntoys]
             keys_alt = keys[self.ntoys :]
 
-            fixed_alt: sl.State[float] = sl.State.from_pytree({poi_key: poi_alt})
-            alt_result = constrained_fit(nll_fn, params, observation, fixed_alt, **fit_kwargs)
+            alt_result = constrained_fit(nll_fn, params, observation, poi_alt, **fit_kwargs)
             params_alt: sl.State[ArrayLike] = alt_result.params
 
             q_alt = self._run_toys(
                 nll_fn,
                 params_alt,
                 params,
-                poi_key,
                 poi_null,
                 test_statistic,
                 sample_fn,
@@ -169,7 +165,6 @@ class ToyGenerator(eqx.Module):
             nll_fn,
             params_null,
             params,
-            poi_key,
             poi_null,
             test_statistic,
             sample_fn,
@@ -184,8 +179,7 @@ class ToyGenerator(eqx.Module):
         nll_fn: tp.Callable[[PyTree, PyTree], float],
         sample_params: sl.State,
         fit_params: sl.State,
-        poi_key: sl.K,
-        poi_null: float,
+        poi_null: PoiPoint,
         test_statistic: TestStatistic,
         sample_fn: tp.Callable[[sl.State, PRNGKeyArray], PyTree],
         keys: PRNGKeyArray,
@@ -199,8 +193,7 @@ class ToyGenerator(eqx.Module):
             nll_fn: Negative log-likelihood function taking (params, observation).
             sample_params: Parameters to use for sampling (State).
             fit_params: Parameters to use for fitting (State).
-            poi_key: Canonical key for the POI.
-            poi_null: Null hypothesis POI value.
+            poi_null: Null hypothesis POI point (mapping from POI key to value).
             test_statistic: Test statistic to compute for each toy.
             sample_fn: Sampling function.
             keys: Array of PRNG keys, one per toy.
@@ -214,7 +207,7 @@ class ToyGenerator(eqx.Module):
             # Generate toy observation
             toy_observation = sample_fn(sample_params, key)
             # Compute test statistic using toy as observation
-            result = test_statistic.compute(nll_fn, fit_params, toy_observation, poi_key, poi_null, **fit_kwargs)
+            result = test_statistic.compute(nll_fn, fit_params, toy_observation, poi_null, **fit_kwargs)
             return result.value
 
         return self.map_fn(single_toy)(keys)

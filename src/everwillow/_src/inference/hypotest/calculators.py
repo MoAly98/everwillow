@@ -36,7 +36,7 @@ from everwillow._src.inference.hypotest.results import (
     HypoTestResult,
     ToyResult,
 )
-from everwillow._src.inference.hypotest.test_statistics import QTilde, TestStatistic
+from everwillow._src.inference.hypotest.test_statistics import PoiPoint, QTilde, TestStatistic
 from everwillow._src.inference.hypotest.toys import ToyGenerator
 from everwillow._src.inference.hypotest.utils import cl_s
 
@@ -83,10 +83,20 @@ class HypoTestCalculator(eqx.Module):
     test_statistic: TestStatistic = eqx.field(default_factory=QTilde)
     limit_solver: LimitSolver | None = None
 
+    def _as_point(self, poi_test: float | PoiPoint) -> PoiPoint:
+        """Normalise a tested POI into a point mapping.
+
+        A mapping is already a point and is used as-is (e.g. for joint
+        multi-POI tests); anything else names the value for this calculator's
+        ``poi_key``. The non-mapping branch must cover JAX arrays and tracers,
+        since the limit solvers evaluate ``test()`` at traced scalar POIs.
+        """
+        return poi_test if isinstance(poi_test, tp.Mapping) else {self.poi_key: poi_test}
+
     @abc.abstractmethod
     def test(
         self,
-        poi_test: float,
+        poi_test: float | PoiPoint,
         **kwargs: tp.Any,
     ) -> HypoTestResult:
         """Run a hypothesis test at ``poi_test`` and return a HypoTestResult.
@@ -96,7 +106,9 @@ class HypoTestCalculator(eqx.Module):
         (``pvalue_bands``, the limit methods) relies on it.
 
         Args:
-            poi_test: Test value for the POI.
+            poi_test: The tested POI, either a scalar value for this
+                calculator's ``poi_key`` or a full point mapping for a joint
+                (multi-POI) test.
             **kwargs: Forwarded to the test statistic computation and the
                 fits underneath.
 
@@ -274,12 +286,12 @@ class AsymptoticCalculator(HypoTestCalculator):
        useful when the Asimov dataset is expensive to generate or when
        the model prediction function is not available (e.g. combined
        models with multiple observation channels).
-    2. **On-the-fly**: pass ``predict_fn`` and ``mu_asimov``. The Asimov
+    2. **On-the-fly**: pass ``predict_fn`` and ``poi_asimov``. The Asimov
        dataset is generated at each ``test()`` call by setting the POI
-       to ``mu_asimov`` and calling ``predict_fn``.
+       to ``poi_asimov`` and calling ``predict_fn``.
 
     When both are provided, ``asimov_observation`` takes precedence and
-    ``predict_fn`` / ``mu_asimov`` are ignored.
+    ``predict_fn`` / ``poi_asimov`` are ignored.
 
     Example:
         >>> calc = AsymptoticCalculator(
@@ -292,49 +304,49 @@ class AsymptoticCalculator(HypoTestCalculator):
         distribution: Distribution for p-value computation.
             Defaults to QTildeAsymptotic.
         predict_fn: Function mapping parameter state to expected observation.
-            Used to create the Asimov dataset at ``mu_asimov``.
-        mu_asimov: POI value for Asimov dataset generation.
-            Defaults to 0.0 (background-only, for exclusion tests).
-            Use 1.0 for discovery tests.
+            Used to create the Asimov dataset at ``poi_asimov``.
+        poi_asimov: POI point for Asimov dataset generation. A scalar sets
+            every POI to that value; defaults to 0.0 (background-only, for
+            exclusion tests). Use 1.0 for discovery tests.
         asimov_observation: Pre-computed Asimov dataset. When provided,
             this is used directly instead of generating one via
-            ``predict_fn`` / ``mu_asimov``.
+            ``predict_fn`` / ``poi_asimov``.
     """
 
     distribution: Distribution = eqx.field(default_factory=QTildeAsymptotic)
     predict_fn: tp.Callable[[sl.State], PyTree] | None = None
-    mu_asimov: float = 0.0
+    poi_asimov: float | PoiPoint = 0.0
     asimov_observation: PyTree | None = None
 
     def test(
         self,
-        poi_test: float,
+        poi_test: float | PoiPoint,
         **kwargs: tp.Any,
     ) -> HypoTestResult:
         """Run a hypothesis test against the fixed distribution.
 
-        Injects ``predict_fn``, ``mu_asimov``, and ``asimov_observation``
+        Injects ``predict_fn``, ``poi_asimov``, and ``asimov_observation``
         from init fields, unless overridden in kwargs.
 
         Args:
-            poi_test: Test value for the POI.
+            poi_test: The tested POI, either a scalar value for ``poi_key`` or
+                a full point mapping for a joint test.
             **kwargs: Additional arguments forwarded to the test statistic
                 (e.g. fit options). Can override ``predict_fn``,
-                ``mu_asimov``, or ``asimov_observation`` for one-off use.
+                ``poi_asimov``, or ``asimov_observation`` for one-off use.
 
         Returns:
             HypoTestResult with observed p-values.
         """
         kwargs.setdefault("predict_fn", self.predict_fn)
-        kwargs.setdefault("mu_asimov", self.mu_asimov)
+        kwargs.setdefault("poi_asimov", self.poi_asimov)
         kwargs.setdefault("asimov_observation", self.asimov_observation)
 
         ts_result = self.test_statistic.compute(
             self.nll_fn,
             self.params,
             self.observation,
-            self.poi_key,
-            poi_test,
+            self._as_point(poi_test),
             **kwargs,
         )
 
@@ -392,10 +404,10 @@ class ToyCalculator(HypoTestCalculator):
         distribution_factory: Turns a ToyResult into a Distribution.
             Defaults to ``SimpleEmpiricalDistribution.from_toys``
             (plain tail counting).
-        poi_alt: POI value of the alternative hypothesis used for the
-            second toy ensemble (needed for palt and hence CLs).
-            Defaults to 0.0 (background-only, for exclusion tests);
-            set to None to generate null-hypothesis toys only.
+        poi_alt: POI point of the alternative hypothesis used for the
+            second toy ensemble (needed for palt and hence CLs). A scalar names
+            the value for ``poi_key``; defaults to 0.0 (background-only, for
+            exclusion tests). Set to None to generate null-hypothesis toys only.
         key: PRNG key for toy generation. Required; every stochastic method
             uses it unless a per-call key overrides it.
     """
@@ -404,7 +416,7 @@ class ToyCalculator(HypoTestCalculator):
     distribution_factory: tp.Callable[[ToyResult], Distribution] = eqx.field(
         default=SimpleEmpiricalDistribution.from_toys, static=True
     )
-    poi_alt: float | None = 0.0
+    poi_alt: float | PoiPoint | None = 0.0
     key: PRNGKeyArray | None = None
 
     def __check_init__(self):
@@ -420,7 +432,7 @@ class ToyCalculator(HypoTestCalculator):
 
     def test(
         self,
-        poi_test: float,
+        poi_test: float | PoiPoint,
         *,
         key: PRNGKeyArray | None = None,
         **kwargs: tp.Any,
@@ -428,7 +440,8 @@ class ToyCalculator(HypoTestCalculator):
         """Run a hypothesis test from toys regenerated at ``poi_test``.
 
         Args:
-            poi_test: Test value for the POI.
+            poi_test: The tested POI, either a scalar value for ``poi_key`` or
+                a full point mapping for a joint test.
             key: PRNG key for toy generation. Defaults to the calculator's
                 ``key`` field.
             **kwargs: Forwarded to the test statistic computation and to the
@@ -441,14 +454,16 @@ class ToyCalculator(HypoTestCalculator):
         # __check_init__ guarantees the generator (and key) are set
         generator = tp.cast(ToyGenerator, self.toy_generator)
 
+        point = self._as_point(poi_test)
+        poi_alt = self._as_point(self.poi_alt) if self.poi_alt is not None else None
+
         toys = generator.generate(
             self.nll_fn,
             self.params,
             self.observation,
-            self.poi_key,
-            poi_test,
+            point,
             test_statistic=self.test_statistic,
-            poi_alt=self.poi_alt,
+            poi_alt=poi_alt,
             key=key,
             **kwargs,
         )
@@ -458,8 +473,7 @@ class ToyCalculator(HypoTestCalculator):
             self.nll_fn,
             self.params,
             self.observation,
-            self.poi_key,
-            poi_test,
+            point,
             **kwargs,
         )
 

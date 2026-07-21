@@ -26,6 +26,7 @@ from everwillow._src.inference.hypotest.utils import (
     cl_s,
     sigma_from_asimov,
     significance,
+    single_poi_key,
 )
 
 __all__ = [
@@ -400,10 +401,11 @@ class QMuAsymptotic(Distribution):
         if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
             return None
 
-        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        mu = result.test[single_poi_key(result.test)]
+        sigma = sigma_from_asimov(mu, result.q_asimov)
         # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
         # Use 0 instead: all expected q become 0, giving CLs=1.0.
-        mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)
+        mu_over_sigma = jnp.where(sigma > 0, mu / sigma, 0.0)
 
         def expected_q_fn(n: float) -> Array:
             return jnp.maximum(mu_over_sigma - n, 0.0) ** 2
@@ -506,10 +508,11 @@ class QTildeAsymptotic(Distribution):
         if not _require_q_asimov(result, self.__class__.__name__, "Expected"):
             return None
 
-        sigma = sigma_from_asimov(result.test, result.q_asimov)
+        mu = result.test[single_poi_key(result.test)]
+        sigma = sigma_from_asimov(mu, result.q_asimov)
         # Guard: at poi=0, sigma=0 → mu/sigma = 0/0 = NaN.
         # Use 0 instead: all expected q become 0, giving CLs=1.0.
-        mu_over_sigma = jnp.where(sigma > 0, result.test / sigma, 0.0)
+        mu_over_sigma = jnp.where(sigma > 0, mu / sigma, 0.0)
 
         def expected_q_fn(n: float) -> Array:
             standard = jnp.maximum(mu_over_sigma - n, 0.0) ** 2

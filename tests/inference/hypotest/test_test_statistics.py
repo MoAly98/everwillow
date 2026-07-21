@@ -9,8 +9,11 @@ from everwillow.hypotest.test_statistics import Q0, QMu, QTilde, TestStatistic, 
 
 from ._counting_model import (
     create_observation,
+    create_observation_2poi,
     create_params,
+    create_params_2poi,
     poisson_nll,
+    poisson_nll_2poi,
     predict_fn,
 )
 
@@ -151,8 +154,39 @@ class TestTMu:
 
         result = TMu().compute(poisson_nll, params, observed, {"mu": mu_test})
 
-        assert result.extras["mu_hat"] == pytest.approx(expected_mu_hat, abs=1e-3)
+        assert result.extras["mu_hat"]["mu"] == pytest.approx(expected_mu_hat, abs=1e-3)
         assert result.value == pytest.approx(expected_t, abs=1e-4)
+
+    def test_joint_two_poi(self):
+        """TMu on a two-POI point sums the per-channel t values (Cowan Eq. 21).
+
+        Channel A: n_a=10, mu_a_hat=0.5, test mu_a=1 -> t_a=1.8907.
+        Channel B: n_b=25, mu_b_hat=2.0, test mu_b=1 -> t_b=5.5413.
+        Joint t = 1.8907 + 5.5413 = 7.4320.
+        """
+        params = create_params_2poi()
+        observed = create_observation_2poi(10.0, 25.0)
+
+        result = TMu().compute(poisson_nll_2poi, params, observed, {"mu_a": 1.0, "mu_b": 1.0})
+
+        assert result.value == pytest.approx(7.4320, abs=1e-3)
+        assert result.extras["mu_hat"]["mu_a"] == pytest.approx(0.5, abs=1e-3)
+        assert result.extras["mu_hat"]["mu_b"] == pytest.approx(2.0, abs=1e-3)
+        assert result.test["mu_a"] == pytest.approx(1.0)
+        assert result.test["mu_b"] == pytest.approx(1.0)
+
+
+class TestOneSidedRejectMultiPoi:
+    """One-sided statistics order on a scalar mu_hat and reject joint points."""
+
+    @pytest.mark.parametrize("TestStatClass", [QMu, QTilde, Q0])
+    def test_multi_poi_rejected(self, TestStatClass):
+        """A two-POI point raises a clear error naming the count."""
+        params = create_params_2poi()
+        observed = create_observation_2poi(10.0, 25.0)
+
+        with pytest.raises(ValueError, match="single POI"):
+            TestStatClass().compute(poisson_nll_2poi, params, observed, {"mu_a": 1.0, "mu_b": 1.0})
 
 
 # =============================================================================

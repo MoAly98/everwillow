@@ -427,12 +427,16 @@ class TMu(CowanTestStatistic):
         poi_test: PoiPoint,
         **fit_kwargs: tp.Any,
     ) -> tuple[Array, dict[str, tp.Any]]:
-        """Compute t_μ for a single observation."""
-        poi_key = single_poi_key(poi_test)
+        """Compute t_μ for a single observation.
 
+        Handles a joint point of any dimension: the constrained fit fixes every
+        POI in ``poi_test``, and ``t`` follows a chi-square with as many degrees
+        of freedom as POIs (Cowan Eq. 21).
+        """
         fit_free = fit(nll_fn, params, observation, **fit_kwargs)
         fitted_state: sl.State[Array] = fit_free.params
-        mu_hat = fitted_state[poi_key]
+        # The fitted POI estimate is the sub-mapping over the tested keys.
+        mu_hat = {key: fitted_state[key] for key in poi_test}
 
         fit_constrained = constrained_fit(nll_fn, params, observation, poi_test, **fit_kwargs)
 

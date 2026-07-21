@@ -60,9 +60,35 @@ def nll_two_nuisance(params, observation):
     return poisson_term + constraint_theta + constraint_alpha
 
 
+def poisson_nll_2poi(params, observation):
+    """Two independent Poisson channels, each with its own signal strength.
+
+    Channel A: n_a ~ Poisson(mu_a * S + B); channel B likewise with mu_b.
+    The NLL is separable, so the joint t statistic is the sum of the two
+    single-channel t values, which makes expected values easy to precompute.
+    """
+    mu_a = params["mu_a"]
+    mu_b = params["mu_b"]
+    n_exp_a = mu_a * S + B
+    n_exp_b = mu_b * S + B
+    n_a = observation["n_a"]
+    n_b = observation["n_b"]
+    return (n_exp_a - n_a * jnp.log(n_exp_a)) + (n_exp_b - n_b * jnp.log(n_exp_b))
+
+
 def create_params(mu_init: float = 1.0) -> sl.State:
     """Create initial parameter state."""
     return sl.State.from_pytree({"mu": mu_init})
+
+
+def create_params_2poi(mu_a: float = 1.0, mu_b: float = 1.0) -> sl.State:
+    """Create initial parameter state for the two-POI model."""
+    return sl.State.from_pytree({"mu_a": mu_a, "mu_b": mu_b})
+
+
+def create_observation_2poi(n_a: float, n_b: float) -> dict[str, float]:
+    """Create a two-channel observation dict."""
+    return {"n_a": n_a, "n_b": n_b}
 
 
 def create_observation(n: float) -> dict[str, float]:

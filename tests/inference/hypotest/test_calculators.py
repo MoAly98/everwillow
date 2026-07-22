@@ -109,13 +109,14 @@ class _ExponentialCLsDist(Distribution):
     """
 
     def null_pval(self, result):
-        return jnp.exp(-result.test["mu"]) * 0.5
+        (poi,) = result.test.values()
+        return jnp.exp(-poi) * 0.5
 
     def alt_pval(self, result):
         return jnp.array(0.5)
 
     def pvalue_bands(self, result):
-        poi = result.test["mu"]
+        (poi,) = result.test.values()
         palt = jnp.array(0.5)
         rates = [0.5, 0.6, 0.8, 1.0, 1.2]
         pnulls = [jnp.exp(-r * poi) * palt for r in rates]
@@ -541,6 +542,87 @@ class TestFitKwargsForwarding:
 
         assert spy.call_args_list
         assert all(call.kwargs.get("max_steps") == 7 for call in spy.call_args_list)
+
+
+# =============================================================================
+# poi_key resolution — optional field with per-call override
+# =============================================================================
+
+
+class TestPoiKeyResolution:
+    """poi_key is optional: mappings never need it, scalars resolve per-call
+    then field, and the limit methods accept a per-call target POI."""
+
+    def test_joint_calculator_without_poi_key(self):
+        """A calculator with no poi_key runs joint tests from full mappings."""
+        calc = AsymptoticCalculator(
+            nll_fn=poisson_nll_2poi,
+            params=create_params_2poi(),
+            observation=create_observation_2poi(10.0, 25.0),
+            test_statistic=TMu(),
+            distribution=TMuAsymptotic(dof=2),
+            predict_fn=predict_fn_2poi,
+        )
+
+        result = calc.test({"mu_a": 1.0, "mu_b": 1.0})
+
+        assert float(result.pnull) == pytest.approx(0.024326, rel=1e-3)
+
+    def test_scalar_without_poi_key_raises(self, calc_factory):
+        """A bare scalar cannot resolve without a POI key; the error says how."""
+        calc = calc_factory(poi_key=None)
+
+        with pytest.raises(ValueError, match="no POI key"):
+            calc.test(1.0)
+
+    def test_upper_limit_without_poi_key_raises(self, calc_factory):
+        """The limit axis needs a POI key from the field or the call."""
+        calc = calc_factory(poi_key=None)
+
+        with pytest.raises(ValueError, match="no POI key"):
+            calc.upper_limit(BisectionLimitSolver(bounds=(0.0, 5.0), tol=0.01))
+
+    def test_upper_limit_per_call_poi_key_overrides_field(self):
+        """The per-call poi_key picks the limit axis over the field."""
+        calc = AsymptoticCalculator(
+            nll_fn=_dummy_nll,
+            params=sl.State.from_pytree({"mu": 0.0, "nu": 0.0}),
+            observation=_DUMMY_OBS,
+            poi_key="mu",
+            test_statistic=_IdentityTestStat(),
+            distribution=_ExponentialCLsDist(),
+        )
+
+        with mock.patch.object(
+            _IdentityTestStat, "compute", autospec=True, side_effect=_IdentityTestStat.compute
+        ) as spy:
+            calc.upper_limit(BisectionLimitSolver(bounds=(0.0, 5.0), tol=0.5), level=0.05, poi_key="nu")
+
+        tested_keys = {key for call in spy.call_args_list for key in call.args[4]}
+        assert tested_keys == {"nu"}
+
+    def test_unknown_poi_key_raises(self, calc_factory):
+        """A resolved poi_key must name a model parameter."""
+        calc = calc_factory(poi_key="typo")
+
+        with pytest.raises(ValueError, match="typo"):
+            calc.test(1.0)
+
+    def test_toy_poi_alt_broadcasts_over_tested_keys(self):
+        """A scalar poi_alt broadcasts over the tested point's POIs, so a
+        keyless joint toy calculator still produces palt."""
+        calc = ToyCalculator(
+            nll_fn=poisson_nll,
+            params=create_params(mu_init=1.0),
+            observation=create_observation(10.0),
+            test_statistic=QTilde(),
+            toy_generator=ToyGenerator(predict_fn=predict_fn, ntoys=50),
+            key=jax.random.key(3),
+        )
+
+        result = calc.test({"mu": 1.0})
+
+        assert result.palt is not None
 
 
 # =============================================================================

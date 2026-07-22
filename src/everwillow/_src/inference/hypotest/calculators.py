@@ -72,7 +72,12 @@ class HypoTestCalculator(eqx.Module):
         nll_fn: Negative log-likelihood function taking (params, observation).
         params: Initial parameter state.
         observation: Observed data passed to nll_fn.
-        poi_key: Canonical key for the parameter of interest, e.g. "mu".
+        poi_key: Canonical key of the default parameter of interest, e.g.
+            "mu". Optional: a full point mapping never needs it. It is
+            consulted only where a bare scalar must be resolved into a point,
+            i.e. ``test(1.0)`` and the limit methods (whose solvers walk one
+            POI axis); the limit methods also take a per-call ``poi_key``
+            override, which wins over the field.
         test_statistic: Test statistic to use. Defaults to QTilde.
         limit_solver: Solver for computing upper limits. Defaults to None.
             Limits cannot be computed if limit_solver is None and no solver
@@ -82,9 +87,28 @@ class HypoTestCalculator(eqx.Module):
     nll_fn: tp.Callable[[PyTree, PyTree], float]
     params: sl.State
     observation: PyTree
-    poi_key: sl.K
+    poi_key: sl.K | None = None
     test_statistic: TestStatistic = eqx.field(default_factory=QTilde)
     limit_solver: LimitSolver | None = None
+
+    def _resolve_poi_key(self, poi_key: sl.K | None = None) -> sl.K:
+        """Resolve the target POI: a per-call key overrides the field.
+
+        Raises:
+            ValueError: If neither is set, or the resolved key does not name
+                a model parameter.
+        """
+        resolved = poi_key if poi_key is not None else self.poi_key
+        if resolved is None:
+            msg = (
+                "no POI key: set the poi_key field or pass poi_key per call; "
+                "joint tests pass a full point mapping instead"
+            )
+            raise ValueError(msg)
+        if resolved not in self.params:
+            msg = f"poi_key {resolved!r} does not name a model parameter; known keys: {tuple(self.params)}"
+            raise ValueError(msg)
+        return resolved
 
     def _as_point(self, poi_test: float | PoiPoint) -> PoiPoint:
         """Normalise a tested POI into a point mapping.
@@ -94,7 +118,7 @@ class HypoTestCalculator(eqx.Module):
         ``poi_key``. The non-mapping branch must cover JAX arrays and tracers,
         since the limit solvers evaluate ``test()`` at traced scalar POIs.
         """
-        return poi_test if isinstance(poi_test, tp.Mapping) else {self.poi_key: poi_test}
+        return poi_test if isinstance(poi_test, tp.Mapping) else {self._resolve_poi_key(): poi_test}
 
     @abc.abstractmethod
     def test(
@@ -184,13 +208,15 @@ class HypoTestCalculator(eqx.Module):
         level: float,
         criterion: tp.Callable[[HypoTestResult], PyTree],
         fit_kwargs: dict[str, tp.Any] | None,
+        poi_key: sl.K | None = None,
     ) -> PyTree:
         """Compose criterion(test(poi)) into a solver objective and solve it."""
         solver = self._resolve_solver(solver)
+        key_for_limit = self._resolve_poi_key(poi_key)
 
         def objective(poi: float, key: PRNGKeyArray | None) -> PyTree:
             del key  # the base calculator has no randomness to route into test()
-            return _require_criterion_value(criterion(self.test(poi, **(fit_kwargs or {}))))
+            return _require_criterion_value(criterion(self.test({key_for_limit: poi}, **(fit_kwargs or {}))))
 
         return solver.solve(objective, level)
 
@@ -200,6 +226,7 @@ class HypoTestCalculator(eqx.Module):
         *,
         level: float = 0.05,
         criterion: tp.Callable[[HypoTestResult], PyTree] | None = None,
+        poi_key: sl.K | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> Array:
         """Find the upper limit: the POI value where the criterion crosses ``level``.
@@ -221,6 +248,9 @@ class HypoTestCalculator(eqx.Module):
                 ``lambda result: result.pnull`` sets a CLs+b limit instead.
                 A criterion returning several quantities (any pytree) gives
                 one limit per leaf.
+            poi_key: The POI the limit is set on, for this call. Defaults to
+                the ``poi_key`` field. In a multi-POI model the other POIs
+                are profiled in every fit unless pinned via ``fit_kwargs``.
             fit_kwargs: Fit options forwarded to every ``test()`` evaluation,
                 e.g. ``fixed`` parameters or ``bounds`` transforms. Passed as
                 a dict because names like ``bounds`` and ``solver`` mean
@@ -230,12 +260,12 @@ class HypoTestCalculator(eqx.Module):
             The POI value where the criterion equals ``level``.
 
         Raises:
-            ValueError: If no solver is configured, or the criterion returns
-                None (the default criterion needs palt, e.g. from an Asimov
-                dataset or alternative-hypothesis toys).
+            ValueError: If no solver or POI key is configured, or the
+                criterion returns None (the default criterion needs palt,
+                e.g. from an Asimov dataset or alternative-hypothesis toys).
         """
         crit = criterion if criterion is not None else self.cls
-        return self._solve_limit(solver, level, crit, fit_kwargs)
+        return self._solve_limit(solver, level, crit, fit_kwargs, poi_key)
 
     def upper_limit_bands(
         self,
@@ -243,6 +273,7 @@ class HypoTestCalculator(eqx.Module):
         *,
         level: float = 0.05,
         criterion: tp.Callable[[HypoTestResult], BandValues] | None = None,
+        poi_key: sl.K | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> BandValues:
         """Find the expected upper limits at the standard sigma bands (Brazil bands).
@@ -260,17 +291,19 @@ class HypoTestCalculator(eqx.Module):
                 BandValues). Defaults to per-band expected CLs. For example
                 ``lambda result: calc.pvalue_bands(result).null_pvalue``
                 uses the expected pnull bands instead.
+            poi_key: The POI the limits are set on, for this call. Defaults
+                to the ``poi_key`` field.
             fit_kwargs: Fit options forwarded to every ``test()`` evaluation.
 
         Returns:
             BandValues with one limit per sigma band.
 
         Raises:
-            ValueError: If no solver is configured, or the criterion returns
-                None (the distribution cannot compute expected bands, e.g.
-                without an Asimov test statistic).
+            ValueError: If no solver or POI key is configured, or the
+                criterion returns None (the distribution cannot compute
+                expected bands, e.g. without an Asimov test statistic).
         """
-        return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs)
+        return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs, poi_key)
 
     def _region_criterion(
         self,
@@ -504,9 +537,10 @@ class ToyCalculator(HypoTestCalculator):
             Defaults to ``SimpleEmpiricalDistribution.from_toys``
             (plain tail counting).
         poi_alt: POI point of the alternative hypothesis used for the
-            second toy ensemble (needed for palt and hence CLs). A scalar names
-            the value for ``poi_key``; defaults to 0.0 (background-only, for
-            exclusion tests). Set to None to generate null-hypothesis toys only.
+            second toy ensemble (needed for palt and hence CLs). A scalar sets
+            every tested POI to that value, like ``poi_asimov``; defaults to
+            0.0 (background-only, for exclusion tests). Set to None to
+            generate null-hypothesis toys only.
         key: PRNG key for toy generation. Required; every stochastic method
             uses it unless a per-call key overrides it.
     """
@@ -554,7 +588,10 @@ class ToyCalculator(HypoTestCalculator):
         generator = tp.cast(ToyGenerator, self.toy_generator)
 
         point = self._as_point(poi_test)
-        poi_alt = self._as_point(self.poi_alt) if self.poi_alt is not None else None
+        # A scalar poi_alt broadcasts over the tested POIs, like poi_asimov.
+        poi_alt = self.poi_alt
+        if poi_alt is not None and not isinstance(poi_alt, tp.Mapping):
+            poi_alt = dict.fromkeys(point, poi_alt)
 
         toys = generator.generate(
             self.nll_fn,
@@ -590,11 +627,13 @@ class ToyCalculator(HypoTestCalculator):
         level: float,
         criterion: tp.Callable[[HypoTestResult], PyTree],
         fit_kwargs: dict[str, tp.Any] | None,
+        poi_key: sl.K | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ) -> PyTree:
         """Stochastic variant: thread a fresh key into every test() evaluation."""
         key = key if key is not None else self.key
+        key_for_limit = self._resolve_poi_key(poi_key)
 
         solver = self._resolve_solver(solver)
         if not isinstance(solver, StochasticLimitSolver):
@@ -606,7 +645,9 @@ class ToyCalculator(HypoTestCalculator):
             raise TypeError(msg)
 
         def objective(poi: float, eval_key: PRNGKeyArray | None) -> PyTree:
-            return _require_criterion_value(criterion(self.test(poi, key=eval_key, **(fit_kwargs or {}))))
+            return _require_criterion_value(
+                criterion(self.test({key_for_limit: poi}, key=eval_key, **(fit_kwargs or {})))
+            )
 
         return solver.solve(objective, level, key=key)
 
@@ -616,6 +657,7 @@ class ToyCalculator(HypoTestCalculator):
         *,
         level: float = 0.05,
         criterion: tp.Callable[[HypoTestResult], PyTree] | None = None,
+        poi_key: sl.K | None = None,
         key: PRNGKeyArray | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> Array:
@@ -631,6 +673,8 @@ class ToyCalculator(HypoTestCalculator):
             level: Target criterion value. Defaults to 0.05 (a 95% CL limit).
             criterion: Maps a HypoTestResult to the quantity the limit is
                 defined on. Defaults to CLs.
+            poi_key: The POI the limit is set on, for this call. Defaults to
+                the ``poi_key`` field.
             key: PRNG key driving the solver and the per-evaluation toys.
                 Defaults to the calculator's ``key`` field.
             fit_kwargs: Fit options forwarded to every ``test()`` evaluation.
@@ -640,12 +684,12 @@ class ToyCalculator(HypoTestCalculator):
 
         Raises:
             TypeError: If the solver is not a `StochasticLimitSolver`.
-            ValueError: If no solver is configured, or the criterion returns
-                None (the default criterion needs palt, e.g. from
-                alternative-hypothesis toys via ``poi_alt``).
+            ValueError: If no solver or POI key is configured, or the
+                criterion returns None (the default criterion needs palt,
+                e.g. from alternative-hypothesis toys via ``poi_alt``).
         """
         crit = criterion if criterion is not None else self.cls
-        return self._solve_limit(solver, level, crit, fit_kwargs, key=key)
+        return self._solve_limit(solver, level, crit, fit_kwargs, poi_key, key=key)
 
     def upper_limit_bands(
         self,
@@ -653,6 +697,7 @@ class ToyCalculator(HypoTestCalculator):
         *,
         level: float = 0.05,
         criterion: tp.Callable[[HypoTestResult], BandValues] | None = None,
+        poi_key: sl.K | None = None,
         key: PRNGKeyArray | None = None,
         fit_kwargs: dict[str, tp.Any] | None = None,
     ) -> BandValues:
@@ -668,6 +713,8 @@ class ToyCalculator(HypoTestCalculator):
             level: Target criterion value. Defaults to 0.05 (95% CL limits).
             criterion: Maps a HypoTestResult to per-band values (a
                 BandValues). Defaults to per-band expected CLs.
+            poi_key: The POI the limits are set on, for this call. Defaults
+                to the ``poi_key`` field.
             key: PRNG key driving the solver and the per-evaluation toys.
             fit_kwargs: Fit options forwarded to every ``test()`` evaluation.
 
@@ -677,10 +724,10 @@ class ToyCalculator(HypoTestCalculator):
         Raises:
             TypeError: If a key is given with a solver that is not a
                 `StochasticLimitSolver`.
-            ValueError: If no solver is configured, or the criterion returns
-                None.
+            ValueError: If no solver or POI key is configured, or the
+                criterion returns None.
         """
-        return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs, key=key)
+        return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs, poi_key, key=key)
 
     def confidence_region(
         self,

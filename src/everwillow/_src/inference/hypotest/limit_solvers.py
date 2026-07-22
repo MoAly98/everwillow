@@ -220,7 +220,7 @@ class BisectionLimitSolver(StochasticLimitSolver):
 
     Attributes:
         bounds: A tuple of lower and upper bounds for the search.
-        tol: Early-exit threshold: stop as soon as |objective(mid) − level| < tol.
+        tol: Early-exit threshold: stop as soon as ``abs(objective(mid) - level) < tol``.
             Set to the Monte Carlo noise of the criterion for toy-based limits.
             tol=0.0 disables the early exit and runs all maxiter halvings.
         maxiter: The maximum number of iterations to perform.

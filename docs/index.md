@@ -12,6 +12,7 @@ getting-started
 quickstart
 statelib
 combining-models
+multi-poi
 extending-hypotest
 asimov-datasets
 tips

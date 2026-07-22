@@ -19,11 +19,14 @@ Subclass `TestStatistic` and implement `_compute`. The base class `compute()`
 method calls `_compute()`, packages the result into a `TestStatResult`, and
 returns it:
 
+The tested hypothesis arrives as a *POI point*: a mapping from POI key to
+value, e.g. `{"mu": 1.0}`. One-sided statistics that order on a scalar
+`mu_hat` should reject points naming more than one POI:
+
 ```python
 import jax.numpy as jnp
 
 import everwillow as ew
-import everwillow.statelib as sl
 from everwillow.hypotest.test_statistics import TestStatistic
 from everwillow.hypotest.utils import constrained_fit
 
@@ -31,15 +34,17 @@ from everwillow.hypotest.utils import constrained_fit
 class SignedQMu(TestStatistic):
     """Signed q_mu: negative when mu_hat > mu_test."""
 
-    def _compute(self, nll_fn, params, observation, poi_key, poi_test, **kw):
+    def _compute(self, nll_fn, params, observation, poi_test, **kw):
+        (poi_key,) = poi_test  # a signed statistic orders on one scalar POI
+        poi_value = poi_test[poi_key]
+
         fit_free = ew.fit(nll_fn, params, observation, **kw)
         mu_hat = fit_free.params[poi_key]
 
-        fixed = sl.State.from_pytree({poi_key: poi_test})
-        fit_cond = constrained_fit(nll_fn, params, observation, fixed, **kw)
+        fit_cond = constrained_fit(nll_fn, params, observation, poi_test, **kw)
 
         q = 2.0 * (fit_cond.nll - fit_free.nll)
-        q_signed = jnp.sign(poi_test - mu_hat) * q
+        q_signed = jnp.sign(poi_value - mu_hat) * q
 
         return q_signed, {"mu_hat": mu_hat}
 ```
@@ -171,10 +176,9 @@ toys = toy_gen.generate(
     nll,
     params,
     observed,
-    "mu",
-    poi_null=1.0,
+    poi_null={"mu": 1.0},
     test_statistic=QTilde(),
-    poi_alt=0.0,
+    poi_alt={"mu": 0.0},
     key=jax.random.key(0),
 )
 ```

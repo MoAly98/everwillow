@@ -46,10 +46,10 @@
    :no-index:
 ```
 
-## Upper Limits
+## Limit Solvers
 
 ```{eval-rst}
-.. automodule:: everwillow.hypotest.upper_limit
+.. automodule:: everwillow.hypotest.limit_solvers
    :members:
    :show-inheritance:
    :no-index:

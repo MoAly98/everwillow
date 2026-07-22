@@ -28,7 +28,7 @@ When `predict_fn` is not provided and no `asimov_observation` is given,
 `None`. Downstream effects:
 
 - `CLs` returns `None` if `palt` is `None`
-- `calc.expected()` returns `None`
+- `calc.pvalue_bands()` returns `None`
 
 **Practical summary**: If you only need `null_pval` with TMu/QMu/Q0
 distributions, no Asimov is needed. For CLs limits or Brazil bands, you need it.

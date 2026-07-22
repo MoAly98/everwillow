@@ -160,7 +160,7 @@ print(f"CLs:            {calc.cls(result):.6f}")
 
 # Expected CLs at standard sigma bands (from Asimov dataset).
 # bands.cl_s is a BandValues — iterable as (name, value) pairs.
-bands = calc.expected(result)
+bands = calc.pvalue_bands(result)
 for name, val in bands.cl_s:
     print(f"  {name}: {float(val):.6f}")
 # minus_2sigma: 0.000012
@@ -195,148 +195,75 @@ result = ew.fit(
 )
 ```
 
-Hypothesis testing in everwillow is built from three composable pieces:
+Hypothesis testing in everwillow is built from four composable pieces:
 
 - **Test statistic**  - computes a scalar from the NLL and data. `QTilde` (default) and `QMu` are one-sided for upper limits, `Q0` is for discovery, `TMu` is two-sided for intervals.
 - **Distribution**  - converts the test statistic into p-values. Asymptotic distributions (`QTildeAsymptotic`, `QMuAsymptotic`, etc.) use the Cowan et al. formulas. `SimpleEmpiricalDistribution` uses toys.
-- **Calculator**  - binds the model (NLL, parameters, data) and orchestrates the test. `AsymptoticCalculator` extends `HypoTestCalculator` with Asimov dataset generation via `predict_fn`.
+- **Calculator**  - binds the model (NLL, parameters, data) and orchestrates the test. `HypoTestCalculator` is the abstract core; `AsymptoticCalculator` computes p-values from a fixed distribution and can generate the Asimov dataset via `predict_fn`; `ToyCalculator` regenerates toy ensembles at every tested POI.
+- **Limit solver**  - locates where a criterion crosses the target level: `RootFindingLimitSolver` (adaptive, deterministic criteria), `GridScanLimitSolver` (fixed grid, all bands in one pass), `BisectionLimitSolver` (stepped bisection with fresh toys per step).
 
 ### Toy-based p-values
 
-Replace asymptotic distributions with toys by generating pseudo-experiments with `ToyGenerator`:
+`ToyCalculator` throws pseudo-experiments (toys) at every tested POI and builds
+the p-values from the resulting empirical distribution:
 
 ```python
 import jax
 
-from everwillow.hypotest.calculators import HypoTestCalculator
-from everwillow.hypotest.distributions import SimpleEmpiricalDistribution
-from everwillow.hypotest.test_statistics import QTilde
+from everwillow.hypotest.calculators import ToyCalculator
 from everwillow.hypotest.toys import ToyGenerator
 
-# Generate toys under null (poi_null=1.0) and alternative (poi_alt=0.0) hypotheses.
-# poi_null is the hypothesis under which null toys are generated.
-# poi_alt is the hypothesis under which alternative toys are generated.
-# Toys are generated in a vectorised manner using jax.vmap by default.
-toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=5000)
-toys = toy_gen.generate(
-    nll,
-    params,
-    observed,
-    "mu",
-    poi_null=1.0,
-    poi_alt=0.0,
-    key=jax.random.key(42),
-    predict_fn=predict,
-)
+# The generator holds only the sampling configuration. With predict_fn set,
+# each toy Poisson-fluctuates the predicted yields; pass sample_fn instead
+# for any other sampling scheme. Toys are vectorised with jax.vmap by default.
+toy_gen = ToyGenerator(predict_fn=predict, ntoys=5000)
 
-# Build empirical distribution from toys
-dist = SimpleEmpiricalDistribution.from_toys(toys)
-
-# Use with calculator for p-values.
-# calc.test(poi_value) evaluates the test statistic at poi_value using
-# the distribution built from toys — this should match poi_null for
-# the distribution to be valid.
-toy_calc = HypoTestCalculator(
+toy_calc = ToyCalculator(
     nll_fn=nll,
     params=params,
     observation=observed,
     poi_key="mu",
-    test_statistic=QTilde(),
-    distribution=dist,
+    toy_generator=toy_gen,
+    poi_alt=0.0,  # background-only alternative ensembles, needed for CLs
+    key=jax.random.key(42),  # one key is enough for a whole analysis
 )
+
+# Toys are thrown at poi=1.0 under both hypotheses; p-values come from tail
+# counting by default (swap distribution_factory for e.g. smoothed variants).
 result = toy_calc.test(1.0)
 print(f"CLs (toy): {toy_calc.cls(result):.4f}")
 ```
 
+The calculator is a pure function of its inputs: rerunning with the same key
+gives identical ensembles, and a per-call ``key=`` override draws an
+independent replica. If you have toys generated once externally, wrap them as
+a fixed distribution on the asymptotic calculator instead:
+``AsymptoticCalculator(..., distribution=SimpleEmpiricalDistribution.from_toys(toys))``.
+
 ### Upper limits
 
-All upper limit functions take a user-composed objective and find where it
-crosses a target level. They work with any calculator — asymptotic or toy-based.
-
-**`upper_limit`** — determine limit by using a bisection root-finding algorithm.
-This is the standard choice for asymptotic distributions and cases where the objective is a
-deterministic function of POI:
+The calculator computes limits: `upper_limit()` finds the POI value where CLs
+crosses the target level, and `upper_limit_bands()` gives the expected
+(Brazil-band) limits. A `LimitSolver` decides how the crossing is located;
+set it once on the calculator.
 
 ```python
-from everwillow.hypotest.upper_limit import upper_limit
+from everwillow.hypotest.limit_solvers import RootFindingLimitSolver
 
+calc = AsymptoticCalculator(
+    nll_fn=nll,
+    params=params,
+    observation=observed,
+    poi_key="mu",
+    predict_fn=predict,
+    limit_solver=RootFindingLimitSolver(bounds=(0.0, 5.0)),
+)
 
-# Compose a poi -> scalar objective from the calculator:
-def cls_objective(poi):
-    return calc.cls(calc.test(poi))
-
-
-# solve for objective = level
-limit = upper_limit(cls_objective, bounds=(0.0, 5.0), level=0.05)
+limit = calc.upper_limit(level=0.05)
 print(f"95% CL upper limit: {float(limit):.4f}")
 # 95% CL upper limit: 1.3673
-```
 
-**`upper_limit_scan`** — evaluates the objective on a grid and interpolates.
-Useful when you already know a narrow region around which the limit sits.
-
-```python
-from everwillow.hypotest.upper_limit import upper_limit_scan
-
-scan = jnp.linspace(0.0, 3.0, 100)
-limit_scan = upper_limit_scan(cls_objective, scan, level=0.05)
-print(f"95% CL upper limit (scan): {float(limit_scan):.4f}")
-```
-
-**`upper_limit_toys`** — stochastic bisection for objectives that regenerate
-toys at each POI evaluation. Takes `(poi, key)` and uses a fresh PRNG key per
-iteration:
-
-```python
-from everwillow.hypotest.upper_limit import upper_limit_toys
-
-
-def stochastic_cls(poi, key):
-    """Regenerate toys at each POI value during the search."""
-    toys = toy_gen.generate(
-        nll,
-        params,
-        observed,
-        "mu",
-        poi_null=poi,
-        poi_alt=0.0,
-        key=key,
-        predict_fn=predict,
-    )
-    dist = SimpleEmpiricalDistribution.from_toys(toys)
-    toy_calc = HypoTestCalculator(
-        nll_fn=nll,
-        params=params,
-        observation=observed,
-        poi_key="mu",
-        test_statistic=QTilde(),
-        distribution=dist,
-    )
-    return toy_calc.cls(toy_calc.test(poi))
-
-
-limit_toys = upper_limit_toys(
-    stochastic_cls, bounds=(0.0, 5.0), key=jax.random.key(0), tol=0.01
-)
-```
-
-**`expected_upper_limit`** — finds expected limits at each sigma band. Takes a
-`poi -> BandValues` objective and calls `upper_limit` five times (once per
-band):
-
-```python
-from everwillow.hypotest.upper_limit import expected_upper_limit
-
-
-def band_cls_objective(poi):
-    result = calc.test(poi)
-    bands = calc.expected(result)
-    return bands.cl_s
-
-
-# Returns BandValues — each entry is the upper limit at that sigma band.
-brazil = expected_upper_limit(band_cls_objective, bounds=(0.0, 5.0), level=0.05)
-
+brazil = calc.upper_limit_bands(level=0.05)
 for name, val in brazil:
     print(f"  {name}: {float(val):.4f}")
 # minus_2sigma: 0.2734
@@ -344,4 +271,56 @@ for name, val in brazil:
 # median:       0.5746
 # plus_1sigma:  0.8792
 # plus_2sigma:  1.3121
+```
+
+For a blind analysis, the expected limit is the observed limit computed on
+the Asimov dataset:
+
+```python
+asimov_data = predict(sl.State.from_pytree({"mu": 0.0}))
+expected_calc = AsymptoticCalculator(
+    nll_fn=nll,
+    params=params,
+    observation=asimov_data,
+    poi_key="mu",
+    predict_fn=predict,
+    limit_solver=RootFindingLimitSolver(bounds=(0.0, 5.0)),
+)
+expected_limit = expected_calc.upper_limit(level=0.05)
+```
+
+### Toy-based upper limits
+
+`ToyCalculator` throws fresh toys at every POI the solver evaluates, so the
+empirical distribution always matches the tested hypothesis. The `key` seeds
+all toy throws: one key covers the whole analysis, rerunning with the same
+key reproduces it exactly, and a different key draws an independent replica.
+
+The standard workflow is a grid scan; the observed limit and all bands come
+from a single pass over the grid.
+
+```python
+from everwillow.hypotest.limit_solvers import BisectionLimitSolver, GridScanLimitSolver
+
+# toy_gen is the ToyGenerator from the toy-based p-values section above.
+toy_calc = ToyCalculator(
+    nll_fn=nll,
+    params=params,
+    observation=observed,
+    poi_key="mu",
+    toy_generator=toy_gen,
+    key=jax.random.key(42),
+    limit_solver=GridScanLimitSolver(scan=jnp.linspace(0.01, 3.0, 40)),
+)
+
+toy_limit = toy_calc.upper_limit(level=0.05)
+toy_brazil = toy_calc.upper_limit_bands(level=0.05)
+
+# Solvers can also be swapped per call. A bisection search narrows in on the
+# crossing instead of scanning a whole grid; tol stops it once the criterion
+# is within the Monte Carlo precision of the toys.
+limit_bisect = toy_calc.upper_limit(
+    BisectionLimitSolver(bounds=(0.01, 3.0), tol=0.01),
+    level=0.05,
+)
 ```

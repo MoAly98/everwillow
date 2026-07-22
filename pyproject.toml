@@ -174,7 +174,7 @@ per-file-ignores."src/everwillow/statelib/*.py" = ["PLC0414", "RUF022"]
 per-file-ignores."src/everwillow/_src/statelib/state.py" = ["PLC0415"]  # try/except IPython detection
 per-file-ignores."src/everwillow/parameters/*.py" = ["PLC0414", "RUF022"]
 per-file-ignores."examples/**/*.py" = ["PLC0415", "E501"]
-per-file-ignores."tests/**/*.py" = ["PLC0415", "EM101", "SIM108"]
+per-file-ignores."tests/**/*.py" = ["PLC0415", "EM101", "SIM108", "PLC2701"]  # tests import _src directly by convention
 flake8-unused-arguments.ignore-variadic-names = true
 isort.required-imports = ["from __future__ import annotations"]
 

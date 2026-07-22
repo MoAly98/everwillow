@@ -10,6 +10,9 @@ import typing as tp
 import equinox as eqx
 from jaxtyping import Array
 
+if tp.TYPE_CHECKING:
+    from everwillow._src.inference.hypotest.distributions import Distribution
+
 __all__ = [
     "BandValues",
     "ExpectedBands",
@@ -122,9 +125,11 @@ class HypoTestResult(eqx.Module):
         pnull: p-value under the tested hypothesis (poi_test).
         palt: p-value under the alternative hypothesis (poi_alt / background-only).
         test_stat_result: Full test statistic result with fit information.
+        dist: The distribution of the test statistic which was used to compute p-values.
     """
 
     q_obs: Array
     pnull: Array | None
     palt: Array | None
     test_stat_result: TestStatResult
+    distribution: Distribution | None = None

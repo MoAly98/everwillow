@@ -44,16 +44,16 @@ class TestToyGenerator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
+        toy_gen = ToyGenerator(ntoys=100, **{gen_method: gen_fn})
         toys = toy_gen.generate(
             poisson_nll,
             params,
             observed,
             "mu",
             poi_null=1.0,
+            test_statistic=QTilde(),
             poi_alt=0.0,
             key=jax.random.key(42),
-            **{gen_method: gen_fn},
         )
 
         assert isinstance(toys, ToyResult)
@@ -66,7 +66,7 @@ class TestToyGenerator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=10)
+        toy_gen = ToyGenerator(ntoys=10)
 
         with pytest.raises(ValueError, match="Either sample_fn or predict_fn"):
             toy_gen.generate(
@@ -75,6 +75,7 @@ class TestToyGenerator:
                 observed,
                 "mu",
                 poi_null=1.0,
+                test_statistic=QTilde(),
                 key=jax.random.key(42),
             )
 
@@ -87,7 +88,7 @@ class TestToyGenerator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=500)
+        toy_gen = ToyGenerator(predict_fn=predict_fn, ntoys=500)
         toys = toy_gen.generate(
             poisson_nll,
             params,
@@ -95,8 +96,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(123),
-            predict_fn=predict_fn,
         )
 
         # Mean of q_alt should be larger than mean of q_null
@@ -110,7 +111,7 @@ class TestToyGenerator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=50)
+        toy_gen = ToyGenerator(predict_fn=predict_fn, ntoys=50)
 
         toys1 = toy_gen.generate(
             poisson_nll,
@@ -119,8 +120,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(999),
-            predict_fn=predict_fn,
         )
 
         toys2 = toy_gen.generate(
@@ -130,8 +131,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(999),
-            predict_fn=predict_fn,
         )
 
         assert jnp.allclose(toys1.q_alt, toys2.q_alt)
@@ -142,7 +143,7 @@ class TestToyGenerator:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=50)
+        toy_gen = ToyGenerator(predict_fn=predict_fn, ntoys=50)
 
         toys1 = toy_gen.generate(
             poisson_nll,
@@ -151,8 +152,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(111),
-            predict_fn=predict_fn,
         )
 
         toys2 = toy_gen.generate(
@@ -162,8 +163,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(222),
-            predict_fn=predict_fn,
         )
 
         assert not jnp.allclose(toys1.q_alt, toys2.q_alt)
@@ -185,8 +186,8 @@ class TestToyGenerator:
         observed = create_observation(15.0)
         key = jax.random.key(42)
 
-        gen_default = ToyGenerator(test_statistic=QTilde(), ntoys=20)
-        gen_custom = ToyGenerator(test_statistic=QTilde(), ntoys=20, map_fn=map_fn)
+        gen_default = ToyGenerator(predict_fn=predict_fn, ntoys=20)
+        gen_custom = ToyGenerator(predict_fn=predict_fn, ntoys=20, map_fn=map_fn)
 
         toys_default = gen_default.generate(
             poisson_nll,
@@ -195,8 +196,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=key,
-            predict_fn=predict_fn,
         )
         toys_custom = gen_custom.generate(
             poisson_nll,
@@ -205,8 +206,8 @@ class TestToyGenerator:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=key,
-            predict_fn=predict_fn,
         )
 
         assert jnp.allclose(toys_default.q_null, toys_custom.q_null, atol=1e-4)
@@ -226,7 +227,7 @@ class TestToyGeneratorPoissonSampler:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=100)
+        toy_gen = ToyGenerator(predict_fn=predict_fn, ntoys=100)
         toys = toy_gen.generate(
             poisson_nll,
             params,
@@ -234,8 +235,8 @@ class TestToyGeneratorPoissonSampler:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(42),
-            predict_fn=predict_fn,
         )
 
         assert jnp.all(jnp.isfinite(toys.q_alt))
@@ -287,7 +288,7 @@ class TestToyGeneratorIntegration:
         params = create_params(mu_init=1.0)
         observed = create_observation(15.0)
 
-        toy_gen = ToyGenerator(test_statistic=QTilde(), ntoys=200)
+        toy_gen = ToyGenerator(predict_fn=predict_fn, ntoys=200)
         toys = toy_gen.generate(
             poisson_nll,
             params,
@@ -295,8 +296,8 @@ class TestToyGeneratorIntegration:
             "mu",
             poi_null=1.0,
             poi_alt=0.0,
+            test_statistic=QTilde(),
             key=jax.random.key(42),
-            predict_fn=predict_fn,
         )
         dist = SimpleEmpiricalDistribution.from_toys(toys)
 

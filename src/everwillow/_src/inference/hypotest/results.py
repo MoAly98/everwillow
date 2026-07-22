@@ -8,6 +8,7 @@ from __future__ import annotations
 import typing as tp
 
 import equinox as eqx
+import jax.tree_util as jtu
 from jaxtyping import Array
 
 if tp.TYPE_CHECKING:
@@ -17,6 +18,7 @@ __all__ = [
     "BandValues",
     "ExpectedBands",
     "HypoTestResult",
+    "RegionResult",
     "TestStatResult",
     "ToyResult",
 ]
@@ -135,3 +137,30 @@ class HypoTestResult(eqx.Module):
     palt: Array | None
     test_stat_result: TestStatResult
     distribution: Distribution | None = None
+
+
+class RegionResult(eqx.Module):
+    """Confidence-region scan of a criterion over hypothesis points.
+
+    A point belongs to the region when its criterion value is at least
+    ``level`` (it is not excluded at the 1 - level confidence level). For a
+    2-D region, contour ``values`` at ``level`` downstream, e.g. with
+    ``matplotlib.pyplot.contour``.
+
+    Attributes:
+        points: The scanned hypothesis points, one mapping per point, as
+            normalised by the calculator.
+        values: Criterion value per point. A criterion returning several
+            quantities (any pytree) yields one stacked array per leaf, each
+            with one entry per point.
+        level: Criterion value defining region membership.
+    """
+
+    points: tuple[tp.Mapping[tp.Any, Array], ...]
+    values: tp.Any
+    level: float
+
+    @property
+    def inside(self) -> tp.Any:
+        """Region membership per point: ``values >= level``, per criterion leaf."""
+        return jtu.tree_map(lambda leaf: leaf >= self.level, self.values)

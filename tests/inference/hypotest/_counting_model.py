@@ -91,6 +91,12 @@ def create_observation_2poi(n_a: float, n_b: float) -> dict[str, float]:
     return {"n_a": n_a, "n_b": n_b}
 
 
+def predict_fn_2poi(params_state: sl.State) -> dict[str, float]:
+    """Prediction function for the two-POI model (Asimov data)."""
+    tree = params_state.to_pytree()
+    return {"n_a": tree["mu_a"] * S + B, "n_b": tree["mu_b"] * S + B}
+
+
 def create_observation(n: float) -> dict[str, float]:
     """Create observation dict."""
     return {"n": n}

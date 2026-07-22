@@ -43,15 +43,19 @@ from everwillow._src.inference.hypotest.results import (
 from everwillow._src.inference.hypotest.results import (
     TestStatResult as TSResult,
 )
-from everwillow._src.inference.hypotest.test_statistics import QMu, QTilde, TestStatistic
+from everwillow._src.inference.hypotest.test_statistics import QMu, QTilde, TestStatistic, TMu
 from everwillow._src.inference.hypotest.toys import ToyGenerator
 from everwillow._src.inference.hypotest.utils import cl_s, significance
 
 from ._counting_model import (
     create_observation,
+    create_observation_2poi,
     create_params,
+    create_params_2poi,
     poisson_nll,
+    poisson_nll_2poi,
     predict_fn,
+    predict_fn_2poi,
 )
 
 # =============================================================================
@@ -537,6 +541,183 @@ class TestFitKwargsForwarding:
 
         assert spy.call_args_list
         assert all(call.kwargs.get("max_steps") == 7 for call in spy.call_args_list)
+
+
+# =============================================================================
+# confidence_region — criterion field over hypothesis points
+# =============================================================================
+
+
+class TestConfidenceRegion:
+    """confidence_region evaluates criterion(test(point)) over hypothesis points."""
+
+    def test_default_criterion_is_null_pvalue(self, calc_factory):
+        """Default criterion is pnull: exp(-poi)*0.5 on the synthetic model."""
+        calc = calc_factory()
+        points = [{"mu": 0.0}, {"mu": 1.0}, {"mu": 2.0}]
+
+        region = calc.confidence_region(points, level=0.05)
+
+        assert region.values.shape == (3,)
+        expected = [0.5, 0.5 * float(jnp.exp(-1.0)), 0.5 * float(jnp.exp(-2.0))]
+        for got, want in zip(region.values, expected, strict=True):
+            assert float(got) == pytest.approx(want, rel=1e-6)
+
+    def test_inside_mask(self, calc_factory):
+        """inside is values >= level: pnull(mu) = exp(-mu)/2 crosses 0.05 at mu=ln(10)."""
+        calc = calc_factory()
+
+        region = calc.confidence_region([{"mu": 1.0}, {"mu": 3.0}], level=0.05)
+
+        assert bool(region.inside[0])  # exp(-1)/2 = 0.184 >= 0.05
+        assert not bool(region.inside[1])  # exp(-3)/2 = 0.025 < 0.05
+
+    def test_scalar_points_use_poi_key(self, calc_factory):
+        """Bare scalars are valid points for the calculator's poi_key."""
+        calc = calc_factory()
+
+        region = calc.confidence_region([0.0, 1.0])
+
+        assert float(region.values[0]) == pytest.approx(0.5, rel=1e-6)
+        assert float(region.values[1]) == pytest.approx(0.5 * float(jnp.exp(-1.0)), rel=1e-6)
+
+    def test_custom_criterion(self, calc_factory):
+        """A user criterion (CLs here) replaces the default: exp(-poi)."""
+        calc = calc_factory()
+
+        region = calc.confidence_region([{"mu": 1.0}], criterion=calc.cls)
+
+        assert float(region.values[0]) == pytest.approx(float(jnp.exp(-1.0)), rel=1e-6)
+
+    def test_pytree_criterion_stacks_per_leaf(self, calc_factory):
+        """A criterion returning a pytree yields one stacked array per leaf."""
+        calc = calc_factory()
+
+        region = calc.confidence_region(
+            [{"mu": 0.0}, {"mu": 2.0}],
+            criterion=lambda result: {"pnull": result.pnull, "palt": result.palt},
+        )
+
+        assert region.values["pnull"].shape == (2,)
+        assert region.values["palt"].shape == (2,)
+        assert float(region.values["pnull"][1]) == pytest.approx(0.5 * float(jnp.exp(-2.0)), rel=1e-6)
+        assert float(region.values["palt"][0]) == pytest.approx(0.5, rel=1e-6)
+
+    def test_fit_kwargs_forwarded(self, calc_factory):
+        """fit_kwargs reach the test statistic in the scanned evaluations."""
+        calc = calc_factory()
+
+        with mock.patch.object(
+            _IdentityTestStat, "compute", autospec=True, side_effect=_IdentityTestStat.compute
+        ) as spy:
+            calc.confidence_region([{"mu": 0.0}, {"mu": 1.0}], fit_kwargs={"max_steps": 7})
+
+        assert spy.call_args_list
+        assert all(call.kwargs.get("max_steps") == 7 for call in spy.call_args_list)
+
+    def test_map_fn_override_matches_vmap(self, calc_factory):
+        """A sequential lax.map produces the same field as the default vmap."""
+        calc = calc_factory()
+        points = [{"mu": 0.0}, {"mu": 1.0}, {"mu": 2.0}]
+
+        default = calc.confidence_region(points)
+        sequential = calc.confidence_region(points, map_fn=lambda fn: lambda xs: jax.lax.map(fn, xs))
+
+        assert jnp.array_equal(default.values, sequential.values)
+
+    def test_mismatched_point_keys_raise(self, calc_factory):
+        """Points naming different POIs cannot form one scan."""
+        calc = calc_factory()
+
+        with pytest.raises(ValueError, match="same POI keys"):
+            calc.confidence_region([{"mu": 0.0}, {"nu": 1.0}])
+
+    def test_joint_two_poi_region_values(self):
+        """2-POI TMu scan gives the chi-square_2 tail exp(-t/2) at each point.
+
+        At {mu_a: 1, mu_b: 1} with n=(10, 25): t = 7.4320 (sum of the two
+        channels), pnull = exp(-7.4320/2) = 0.024326. At the MLE point
+        {mu_a: 0.5, mu_b: 2.0}: t = 0, pnull = 1.
+        """
+        calc = AsymptoticCalculator(
+            nll_fn=poisson_nll_2poi,
+            params=create_params_2poi(),
+            observation=create_observation_2poi(10.0, 25.0),
+            poi_key="mu_a",
+            test_statistic=TMu(),
+            distribution=TMuAsymptotic(dof=2),
+            predict_fn=predict_fn_2poi,
+        )
+
+        region = calc.confidence_region([{"mu_a": 1.0, "mu_b": 1.0}, {"mu_a": 0.5, "mu_b": 2.0}], level=0.05)
+
+        assert float(region.values[0]) == pytest.approx(0.024326, rel=1e-3)
+        assert float(region.values[1]) == pytest.approx(1.0, abs=1e-3)
+        assert not bool(region.inside[0])
+        assert bool(region.inside[1])
+
+
+class TestToyCalculatorConfidenceRegion:
+    """ToyCalculator.confidence_region regenerates toys with a fresh key per point."""
+
+    def _make_calc(self, **overrides):
+        params = create_params(mu_init=1.0)
+        observed = create_observation(10.0)
+        kwargs = {
+            "nll_fn": poisson_nll,
+            "params": params,
+            "observation": observed,
+            "poi_key": "mu",
+            "test_statistic": QTilde(),
+            "toy_generator": ToyGenerator(predict_fn=predict_fn, ntoys=100),
+            "key": jax.random.key(11),
+        }
+        kwargs.update(overrides)
+        return ToyCalculator(**kwargs)
+
+    def test_reproducible_with_same_key(self):
+        """The same calculator key gives an identical scan."""
+        calc = self._make_calc()
+        points = [{"mu": 0.5}, {"mu": 1.0}]
+
+        r1 = calc.confidence_region(points, criterion=lambda r: r.pnull)
+        r2 = calc.confidence_region(points, criterion=lambda r: r.pnull)
+
+        assert jnp.array_equal(r1.values, r2.values)
+
+    def test_distinct_keys_per_point(self):
+        """Identical points in one scan get independent toy ensembles."""
+        calc = self._make_calc()
+
+        region = calc.confidence_region([{"mu": 1.0}, {"mu": 1.0}], criterion=lambda r: r.pnull)
+
+        # Same hypothesis, different subkeys: the empirical p-values differ.
+        assert float(region.values[0]) != float(region.values[1])
+
+    def test_per_call_key_changes_ensembles(self):
+        """A per-call key overrides the calculator's key field."""
+        calc = self._make_calc()
+        points = [{"mu": 1.0}]
+
+        r_field = calc.confidence_region(points, criterion=lambda r: r.pnull)
+        r_call = calc.confidence_region(points, criterion=lambda r: r.pnull, key=jax.random.key(99))
+
+        assert float(r_field.values[0]) != float(r_call.values[0])
+
+    def test_physics_ordering(self):
+        """pnull is high at the well-fitting point and low far from it.
+
+        n_obs=10 has mu_hat=0.5; testing mu=0.5 fits, mu=3.0 is strongly
+        disfavored (expected 35 vs observed 10).
+        """
+        calc = self._make_calc()
+
+        region = calc.confidence_region([{"mu": 0.5}, {"mu": 3.0}], criterion=lambda r: r.pnull, level=0.05)
+
+        assert float(region.values[0]) > 0.3
+        assert float(region.values[1]) < 0.05
+        assert bool(region.inside[0])
+        assert not bool(region.inside[1])
 
 
 # =============================================================================

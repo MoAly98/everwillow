@@ -8,6 +8,7 @@ from everwillow._src.inference.hypotest.results import ExpectedBands as Expected
 from everwillow._src.inference.hypotest.results import (
     HypoTestResult as HypoTestResult,
 )
+from everwillow._src.inference.hypotest.results import RegionResult as RegionResult
 
 __all__ = [
     "TestStatResult",
@@ -15,4 +16,5 @@ __all__ = [
     "BandValues",
     "ExpectedBands",
     "HypoTestResult",
+    "RegionResult",
 ]

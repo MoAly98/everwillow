@@ -21,6 +21,8 @@ import abc
 import typing as tp
 
 import equinox as eqx
+import jax
+import jax.numpy as jnp
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 import everwillow._src.statelib as sl
@@ -34,6 +36,7 @@ from everwillow._src.inference.hypotest.results import (
     BandValues,
     ExpectedBands,
     HypoTestResult,
+    RegionResult,
     ToyResult,
 )
 from everwillow._src.inference.hypotest.test_statistics import PoiPoint, QTilde, TestStatistic
@@ -268,6 +271,102 @@ class HypoTestCalculator(eqx.Module):
                 without an Asimov test statistic).
         """
         return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs)
+
+    def _region_criterion(
+        self,
+        criterion: tp.Callable[[HypoTestResult], PyTree] | None,
+    ) -> tp.Callable[[HypoTestResult], PyTree]:
+        """Resolve the region criterion, defaulting to the null p-value.
+
+        The null p-value is the joint-region criterion: with ``TMu`` and
+        ``TMuAsymptotic(dof=k)`` its ``level`` sublevel set is the standard
+        chi-square region. CLs is not the default because it is a
+        one-sided single-POI construction.
+        """
+        if criterion is not None:
+            return criterion
+
+        def default_criterion(result: HypoTestResult) -> Array | None:
+            return result.pnull
+
+        return default_criterion
+
+    def _stack_points(
+        self,
+        points: tp.Iterable[float | PoiPoint],
+    ) -> tuple[tuple[PoiPoint, ...], dict[sl.K, Array]]:
+        """Normalise points and stack their values leaf-wise for mapping.
+
+        Every point must name the same POI keys so the scan can be expressed
+        as one mapped evaluation over stacked value arrays.
+        """
+        normalized = tuple(self._as_point(p) for p in points)
+        if not normalized:
+            msg = "confidence_region needs at least one hypothesis point"
+            raise ValueError(msg)
+        keys = tuple(normalized[0])
+        if any(tuple(p) != keys for p in normalized):
+            msg = "all points in a scan must name the same POI keys"
+            raise ValueError(msg)
+        stacked = {key: jnp.stack([jnp.asarray(p[key]) for p in normalized]) for key in keys}
+        return normalized, stacked
+
+    def confidence_region(
+        self,
+        points: tp.Iterable[float | PoiPoint],
+        *,
+        level: float = 0.05,
+        criterion: tp.Callable[[HypoTestResult], PyTree] | None = None,
+        fit_kwargs: dict[str, tp.Any] | None = None,
+        map_fn: tp.Callable = jax.vmap,
+    ) -> RegionResult:
+        """Evaluate the region criterion over hypothesis points.
+
+        A point belongs to the joint confidence region when the criterion is
+        at least ``level`` (not excluded at the 1 - level confidence level).
+        The default criterion is the null p-value, so with ``TMu`` and
+        ``TMuAsymptotic(dof=k)`` this is the standard chi-square region with
+        one degree of freedom per POI. Contour the returned values at
+        ``level`` downstream for a 2-D region plot.
+
+        The scanned grid must respect the physical boundaries of the model
+        (e.g. expected yields stay positive), otherwise those points evaluate
+        to NaN.
+
+        Args:
+            points: Hypothesis points to scan. Each is a mapping from POI key
+                to value, or a bare scalar for this calculator's ``poi_key``.
+                All points must name the same POI keys.
+            level: Criterion value defining region membership. Defaults to
+                0.05 (a 95% CL region).
+            criterion: Maps a HypoTestResult to the quantity the region is
+                defined on. Defaults to the null p-value. A criterion
+                returning several quantities (any pytree) gives one stacked
+                array per leaf.
+            fit_kwargs: Fit options forwarded to every ``test()`` evaluation,
+                e.g. ``fixed`` parameters pinning POIs that are not scanned.
+            map_fn: Maps the per-point evaluation over the stacked points.
+                Defaults to ``jax.vmap``. Replace with e.g.
+                ``lambda fn: partial(jax.lax.map, fn, batch_size=32)`` to scan
+                in chunks when memory is tight, or a Python loop for
+                step-through debugging.
+
+        Returns:
+            RegionResult with the criterion values per point and the
+            membership mask at ``level``.
+
+        Raises:
+            ValueError: If no points are given, the points name different POI
+                keys, or the criterion returns None.
+        """
+        crit = self._region_criterion(criterion)
+        normalized, stacked = self._stack_points(points)
+
+        def eval_point(point: PoiPoint) -> PyTree:
+            return _require_criterion_value(crit(self.test(point, **(fit_kwargs or {}))))
+
+        values = map_fn(eval_point)(stacked)
+        return RegionResult(points=normalized, values=values, level=level)
 
 
 class AsymptoticCalculator(HypoTestCalculator):
@@ -582,3 +681,47 @@ class ToyCalculator(HypoTestCalculator):
                 None.
         """
         return self._solve_limit(solver, level, self._band_criterion(criterion), fit_kwargs, key=key)
+
+    def confidence_region(
+        self,
+        points: tp.Iterable[float | PoiPoint],
+        *,
+        level: float = 0.05,
+        criterion: tp.Callable[[HypoTestResult], PyTree] | None = None,
+        key: PRNGKeyArray | None = None,
+        fit_kwargs: dict[str, tp.Any] | None = None,
+        map_fn: tp.Callable = jax.vmap,
+    ) -> RegionResult:
+        """Region scan with toy ensembles regenerated at every point.
+
+        Each point receives its own subkey (split from ``key``), so the
+        ensembles are independent per hypothesis and the whole scan is
+        reproducible from the calculator's key.
+
+        Args:
+            points: Hypothesis points to scan, as in the base method.
+            level: Criterion value defining region membership.
+            criterion: Maps a HypoTestResult to the region quantity. Defaults
+                to the null p-value.
+            key: PRNG key driving the per-point toy ensembles. Defaults to the
+                calculator's ``key`` field.
+            fit_kwargs: Fit options forwarded to every ``test()`` evaluation.
+            map_fn: Maps the per-point evaluation over the stacked points and
+                subkeys. Defaults to ``jax.vmap``; see the base method for
+                memory-friendly alternatives.
+
+        Returns:
+            RegionResult with the criterion values per point and the
+            membership mask at ``level``.
+        """
+        key = key if key is not None else self.key
+        crit = self._region_criterion(criterion)
+        normalized, stacked = self._stack_points(points)
+        subkeys = jax.random.split(key, len(normalized))
+
+        def eval_point(point_and_key: tuple[PoiPoint, PRNGKeyArray]) -> PyTree:
+            point, eval_key = point_and_key
+            return _require_criterion_value(crit(self.test(point, key=eval_key, **(fit_kwargs or {}))))
+
+        values = map_fn(eval_point)((stacked, subkeys))
+        return RegionResult(points=normalized, values=values, level=level)
